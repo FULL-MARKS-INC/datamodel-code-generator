@@ -6,20 +6,97 @@ import inspect
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeGuard, TypeVar, cast
+from urllib.parse import unquote_to_bytes
 
 from fastapi import APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.params import Depends
+from fastapi.routing import APIRoute
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
+from starlette.routing import Match
 from typing_extensions import TypeIs
 
 if TYPE_CHECKING:
     from starlette.requests import Request
+    from starlette.types import Receive, Scope, Send
 
 MethodT = TypeVar("MethodT")
 _REQUEST_VALUES: Final = frozenset({"input", "ctx", "url"})
+_PERCENT: Final = ord("%")
+_SLASH: Final = "\udc2f"
+"""Stands for an encoded slash while a route matches; no decoded path holds a lone surrogate."""
+
+
+class RawPathRouter(APIRouter):
+    """An APIRouter that matches its routes with each slash the raw path encodes kept inside its segment.
+
+    FastAPI matches and handles an included router through these methods, once per request; a path without an encoded
+    slash, or whose raw path does not spell it, goes through them unchanged. So does a path that selects a route the
+    router's user added, such as a mount or a Starlette route, which receives the decoded path as FastAPI routes it.
+    """
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        """Match the routes against the path with its encoded slashes marked."""
+        if (marked := self._marked(scope)) is None:
+            return super().matches(scope)
+        _, match, child_scope = marked
+        return match, child_scope
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Select the route by the path with its encoded slashes marked; the route puts the slashes back."""
+        if (marked := self._marked(scope)) is None:
+            await super().handle(scope, receive, send)
+            return
+        decoded, scope["path"] = scope["path"], marked[0]
+        try:
+            await super().handle(scope, receive, send)
+        finally:
+            scope["path"] = decoded
+
+    def _marked(self, scope: Scope) -> tuple[str, Match, Scope] | None:
+        """Return the marked path and its match, unless it selects a route other than a RawPathRoute."""
+        if (path := _segmented(scope)) is None:
+            return None
+        match, child_scope = super().matches({**scope, "path": path})
+        if match is not Match.NONE and not isinstance(child_scope.get("route"), RawPathRoute):
+            return None
+        return path, match, child_scope
+
+
+class RawPathRoute(APIRoute):
+    """An APIRoute of a RawPathRouter: it puts the slashes back in the path and its values before the endpoint runs."""
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Restore the decoded path and the path parameter values, then handle the request."""
+        if _SLASH in (path := scope["path"]):
+            scope["path"] = path.replace(_SLASH, "/")
+            scope["path_params"] = {
+                name: value.replace(_SLASH, "/") if isinstance(value, str) else value
+                for name, value in scope["path_params"].items()
+            }
+        await super().handle(scope, receive, send)
+
+
+def _segmented(scope: Scope) -> str | None:
+    """Return the path with the slashes its raw path encodes after the root path marked, or None without any."""
+    raw: bytes = scope.get("raw_path") or b""
+    if _PERCENT not in raw or (raw.find(b"%2F") < 0 and raw.find(b"%2f") < 0):
+        return None
+    path: str = scope["path"]
+    segments = (unquote_to_bytes(segment).decode(errors="replace") for segment in raw.split(b"/"))
+    marked = "/".join(segment.replace("/", _SLASH) for segment in segments)
+    plain = marked.replace(_SLASH, "/")
+    if not path.endswith(plain):
+        return None
+    offset = len(path) - len(plain)
+    root = scope.get("root_path", "")
+    start = max(offset, len(root) if path.startswith(root) else 0)
+    tail = marked[start - offset :]
+    if _SLASH not in tail:
+        return None
+    return path[:start] + tail
 
 
 def _coroutine_function(value: object) -> TypeGuard[Callable[..., Awaitable[object]]]:
@@ -106,6 +183,8 @@ def build(  # noqa: PLR0913
 ) -> APIRouter:
     """Register the routes in order on a new router; each looks its service's method up as it registers.
 
+    The router is a RawPathRouter, so a percent-encoded slash stays inside the path parameter it belongs to.
+
     The service Protocols and FastAPI check the services and settings. Refused here is what would otherwise drop a
     dependency or an authorization without an error: a dependency for a method the router does not have, or one
     that is no sequence of Depends, and, by the secured routes, a missing authorize callback.
@@ -119,7 +198,7 @@ def build(  # noqa: PLR0913
             msg = f"operation_dependencies[{name!r}] must be a sequence of Depends(...) values"
             raise TypeError(msg)
     wiring = Wiring(services=services, authorize=authorize, dependencies=own)
-    router = APIRouter(prefix=prefix, dependencies=dependencies)
+    router = RawPathRouter(prefix=prefix, dependencies=dependencies, route_class=RawPathRoute)
     for _, add in routes:
         add(router, wiring)
     return router
