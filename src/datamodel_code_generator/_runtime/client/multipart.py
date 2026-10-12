@@ -354,26 +354,26 @@ def _shaped(plan: PartPlan | None) -> str | None:
 
 
 def encode_multipart(
-    value: JSONValue,
-    content_types: Mapping[str, str] | None = None,
-    styled: Mapping[str, ParameterPlan] | None = None,
-    sent: str | None = None,
-    plans: Mapping[str, PartPlan] | None = None,
+    value: JSONValue, form: MultipartForm, sent: str | None = None
 ) -> tuple[bytes | FormParts, str | None]:
     """Encode an object as ordered form-data parts, repeating a part for each array member; an empty one writes none.
 
-    The body is sent in the media type `sent` names. A member with an encoding's media type is written in it. A member
-    in `styled` writes a part for each name and value its query style gives, without percent-encoding, and no two
-    members may then write parts of the same name. A member in `plans` is written as its plan says: a part for each
-    item only when it repeats, as JSON when it is of the JSON kind.
+    The body is sent in the media type `sent` names. A member with an encoding's media type in the form is written in
+    it. A member the form encodes writes a part for each name and value its query style gives, without
+    percent-encoding, and no two members may then write parts of the same name. A member the form plans, or else any
+    member when it plans the others, is written as its plan says: a part for each item only when it repeats, as JSON
+    when it is of the JSON kind.
     """
     if not isinstance(value, Mapping):
         msg = "A multipart form value must be an object"
         raise ParameterEncodingError(msg)
+    content_types = dict(form.content_types)
+    styled = {plan.name: plan for plan in form.encoded}
+    plans = {plan.name: plan for plan in form.parts or ()}
     entries: list[Entry] = []
     owners: dict[str, str] = {}
     for name, item in value.items():
-        if styled and (style := styled.get(name)) is not None:
+        if (style := styled.get(name)) is not None:
             pairs = part_pairs(style, item)
             if any(owners.setdefault(key, name) != name for key, _ in pairs):
                 raise ParameterEncodingError(_CLAIMED)
@@ -381,10 +381,9 @@ def encode_multipart(
             continue
         if styled and owners.setdefault(name, name) != name:
             raise ParameterEncodingError(_CLAIMED)
-        declared = None if content_types is None else content_types.get(name)
-        plan = plans.get(name) if plans else None
+        plan = plans.get(name, form.additional)
         for member in item if isinstance(item, list) and (plan is None or plan.repeated) else (item,):
-            content, media_type = multipart_member(member, declared or _shaped(plan))
+            content, media_type = multipart_member(member, content_types.get(name) or _shaped(plan))
             entries.append(_entry(name, content, media_type))
     return _encoded(entries, sent)
 
@@ -560,7 +559,8 @@ class MultipartForm:
     """How a form-data body is written: the parts a call gives, checked by its members' plans, or an object's members.
 
     An object's members are written in the media types of their encodings, and a member in `encoded` writes a part for
-    each name and value its query style gives. With `members`, `parts` plans the members written as JSON.
+    each name and value its query style gives. With `members`, `parts` plans the members written as JSON, or every
+    member when `additional` plans the other properties as JSON.
     """
 
     parts: tuple[PartPlan, ...] | None = None
@@ -573,13 +573,7 @@ class MultipartForm:
         """Return the body and its media type, which keeps the sent type's parameters beside its boundary."""
         if not self.members:
             return encode_parts(value, self.parts, self.additional, sent)
-        return encode_multipart(
-            cast("JSONValue", value),
-            dict(self.content_types) if self.content_types else None,
-            {plan.name: plan for plan in self.encoded} if self.encoded else None,
-            sent,
-            {plan.name: plan for plan in self.parts} if self.parts else None,
-        )
+        return encode_multipart(cast("JSONValue", value), self, sent)
 
 
 class BoundParts(BoundBody):

@@ -18,6 +18,7 @@ from datamodel_code_generator._fastapi._compiled_templates import security as se
 from datamodel_code_generator._fastapi._compiled_templates import services as services_template
 from datamodel_code_generator._fastapi.plan import (
     Default,
+    JsonPartSpec,
     MemberDefault,
     ParameterDefault,
     RootDefault,
@@ -53,7 +54,6 @@ if TYPE_CHECKING:
         Argument,
         BodySpec,
         GroupSpec,
-        JsonPartSpec,
         MediaSpec,
         NativeField,
         OperationSpec,
@@ -1153,10 +1153,17 @@ def _body_media(module: Module, body: BodySpec) -> str:
         entries = [f"media_type={item.media_type!r}", f"kind={_request_kind(item)!r}"]
         if item.kind != "binary" and item.use is not None and item.use.type is not None:
             entries.append(f"adapter={_adapter(module, item.use.type)}")
-        if item.kind in {"form", "multipart"} and (fields := body.form_fields):
+        if fields := item.fields:
             entries.append(f"fields={_tuple([field_plan(module.local, plan) for plan in fields])}")
-        if item.kind == "multipart" and (parts := body.json_parts):
+        if parts := item.json_parts:
             entries.append(f"json_parts={_tuple([_json_part(module, part) for part in parts])}")
+        if (additional := item.additional) is not None:
+            plan = (
+                _json_part(module, additional)
+                if isinstance(additional, JsonPartSpec)
+                else field_plan(module.local, additional)
+            )
+            entries.append(f"additional={plan}")
         media.append(f"{module.local('_runtime.server.requests', 'BodyMedia')}({', '.join(entries)})")
     return _tuple(media)
 
