@@ -71,7 +71,7 @@
         "/paths/~1health/get": "health_check"
       },
       "server_router_names": {
-        "untagged": "misc"
+        "default": "misc"
       },
       "server_parameter_names": {
         "/paths/~1files~1{file.name}~1{dcg_p0}/get": {
@@ -79,6 +79,13 @@
         }
       }
     },
+    "package_snapshots": [],
+    "readme": [
+      "pydantic_v2.BaseModel"
+    ]
+  },
+  "names-default": {
+    "input": "naming-default.yaml",
     "package_snapshots": [],
     "readme": [
       "pydantic_v2.BaseModel"

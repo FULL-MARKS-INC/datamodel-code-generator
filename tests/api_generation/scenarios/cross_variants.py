@@ -29,14 +29,14 @@ def services(server: ModuleType, models: ModuleType, record: Recorder) -> dict[s
         record(name, arguments)
         return models.PetResponse(id=1, origin=models.Origin(country="jp"), name="Rex", tags=["a"])
 
-    class Untagged(server.services.UntaggedService):
+    class Default(server.services.DefaultService):
         def post_form(self, **arguments: object) -> object:
             return answer("post_form", arguments)
 
         def post_parts(self, **arguments: object) -> object:
             return answer("post_parts", arguments)
 
-    return {"untagged": Untagged()}
+    return {"default": Default()}
 
 
 def calls(kit: Kit) -> Calls:

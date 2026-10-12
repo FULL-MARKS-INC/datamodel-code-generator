@@ -212,13 +212,16 @@ work for them as well. See [Target Generation Options](cli-reference/target-gene
 | `--server-body-modes` | none | The body mode of single operations, over `--server-body-mode` |
 | `--server-primary-responses` | inferred | The response a bare return value takes: `status_code` and an optional `media_type` |
 | `--server-operation-names` | inferred | Service method names of single operations |
-| `--server-router-names` | inferred | Group keys, such as `tag:pets` or `untagged`, to group names: router modules, service arguments, and `<Name>Service` Protocols |
+| `--server-router-names` | inferred | Group keys, such as `tag:pets` or `default`, to group names: router modules, service arguments, and `<Name>Service` Protocols |
 | `--server-parameter-names` | inferred | Method argument names of single operations, keyed by location and name such as `query:limit` |
 
 Operations are grouped by their first tag, under the key `tag:<tag>`, and operations without a tag under the key
-`untagged`, which makes the `untagged` router module, the `UntaggedService` Protocol, and the `untagged=` argument of
-`create_app` and `build_router`. With `--server-layout single`, every operation is in the group `all`: one
-`routes.py`, one `Service` Protocol, and the argument `service=`.
+`default`, which makes the `default` router module, the `DefaultService` Protocol, and the `default=` argument of
+`create_app` and `build_router`; the generated client calls the same operations `client.default`. A tag whose name
+also derives `default`, such as `default` or `Default`, is another group: on the server and the client alike, the
+one declared first keeps `default` and the other takes a number, such as `default_1`, as other derived names do.
+With `--server-layout single`, every operation is in the group `all`: one `routes.py`, one `Service` Protocol, and
+the argument `service=`.
 
 `--server-handler-modes`, `--server-body-modes`, `--server-primary-responses`, `--server-operation-names`,
 `--server-router-names`, and `--server-parameter-names` take a JSON object, inline or as the path of a JSON file, as
