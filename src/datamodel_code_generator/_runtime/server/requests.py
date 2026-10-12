@@ -170,14 +170,33 @@ def _validated(adapter: TypeAdapter[object] | None, value: object) -> object:
     return value if adapter is None else adapter.validate_python(value)
 
 
+@dataclass(frozen=True, slots=True)
+class JsonPart:
+    """One multipart member whose parts carry JSON: its name, the adapter of its value or items, and its repeats."""
+
+    name: str
+    adapter: TypeAdapter[object]
+    repeated: bool = False
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BodyMedia:
-    """One declared request media type, how the adapter reads it, and the model's adapter."""
+    """One declared request media type, how the adapter reads it, and the model's adapter.
+
+    A form's members are read as text in the kinds of `fields`, and those of a multipart form in `json_parts` as JSON.
+    """
 
     media_type: str
     kind: RequestKind
     adapter: TypeAdapter[object] | None = None
     fields: tuple[FieldPlan, ...] = ()
+    json_parts: tuple[JsonPart, ...] = ()
+    members: Mapping[str, FieldPlan | JsonPart] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Index the members of a multipart form by name once."""
+        members: tuple[FieldPlan | JsonPart, ...] = (*self.fields, *self.json_parts)
+        object.__setattr__(self, "members", {item.name: item for item in members})
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -249,25 +268,48 @@ async def _read(media: BodyMedia, media_type: str, body: bytes, request: Request
         case "form":
             return _validated(adapter, plain(decode_form(body, media.fields, _TEXT)))
         case "multipart":
-            return _validated(adapter, plain(await _parts(request, media.fields)))
+            return _validated(adapter, plain(await _parts(request, media.members)))
         case _:
             pass
     return body
 
 
-async def _parts(request: Request, fields: tuple[FieldPlan, ...]) -> dict[str, object]:
-    """Return the parts of a multipart body by name, uploads read to bytes and text in its field's kind.
+async def _parts(request: Request, members: Mapping[str, FieldPlan | JsonPart]) -> dict[str, object]:
+    """Return the parts of a multipart body by name: uploads read to bytes, text in its field's kind, JSON validated.
 
-    A repeated field holds a list, and a single-valued one its last part.
+    A repeated member holds a list, and a single-valued one its last part. The request is refused with the records of
+    every JSON part its member's adapter rejects.
     """
-    declared = {item.name: item for item in fields}
     parts: dict[str, object] = {}
+    records: list[Record] = []
     async with request.form() as form:
         for name in dict.fromkeys(form.keys()):
-            field = declared.get(name, _TEXT)
-            values = [
-                await value.read() if isinstance(value, UploadFile) else typed(value, field.kind)
-                for value in form.getlist(name)
-            ]
-            parts[name] = values if field.repeated else values[-1]
+            member = members.get(name, _TEXT)
+            received = form.getlist(name)
+            if isinstance(member, JsonPart):
+                values = await _json(member, received if member.repeated else received[-1:], records)
+            else:
+                values = [
+                    await value.read() if isinstance(value, UploadFile) else typed(value, member.kind)
+                    for value in received
+                ]
+            parts[name] = values if member.repeated else values[-1]
+    if records:
+        raise RequestValidationError(records)
     return parts
+
+
+async def _json(member: JsonPart, received: list[UploadFile | str], records: list[Record]) -> list[object]:
+    """Return the parts of a JSON member, sent as fields or as files, parsed by its adapter as a JSON body is.
+
+    A part the adapter rejects leaves its records, located at the member and, when it repeats, the part's index.
+    """
+    values: list[object] = []
+    for index, value in enumerate(received):
+        location = ("body", member.name, index) if member.repeated else ("body", member.name)
+        try:
+            values.append(member.adapter.validate_json(await value.read() if isinstance(value, UploadFile) else value))
+        except ValidationError as error:
+            records.extend(model_records(error, location))
+            values.append(None)
+    return values

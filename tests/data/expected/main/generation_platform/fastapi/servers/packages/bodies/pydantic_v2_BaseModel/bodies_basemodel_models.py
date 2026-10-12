@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict
 
 from pydantic import BaseModel, ConfigDict, RootModel, conint, constr
@@ -26,6 +27,27 @@ class Check(BaseModel):
     )
     code: int | None = None
     scores: list[conint(ge=0)] | None = None
+
+
+class Filter(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    color: str | None = None
+    minAge: conint(ge=0) | None = None
+
+
+class Level(Enum):
+    int_1 = 1
+    a = 'a'
+    bool_True = True
+
+
+class Choices(BaseModel):
+    either: Filter | str | None = None
+    level: Level | None = None
+    words: list[str] | str | None = None
+    lists: list[int] | list[str] | None = None
 
 
 class FieldProfilesPostRequest(BaseModel):
@@ -88,6 +110,17 @@ class FieldNativeFormsPostRequest(BaseModel):
 class FieldUploadsPostRequest(BaseModel):
     file: bytes
     note: str | None = None
+
+
+class FieldSearchesPostRequest(BaseModel):
+    filter: Filter
+    filters: list[Filter] | None = None
+    tags: list[str] | None = None
+    limit: int | None = None
+
+
+class FieldChoiceFilesPostRequest(Choices):
+    file: bytes | None = None
 
 
 class FieldNotesPostRequest(RootModel[Item | None]):

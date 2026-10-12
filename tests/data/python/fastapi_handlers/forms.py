@@ -1,4 +1,4 @@
-"""Services of the forms server: URL-encoded fields, uploaded files, and lists of files, recorded as received."""
+"""Services of the forms server: URL-encoded fields, uploaded files, lists of files, and JSON parts, as received."""
 
 from __future__ import annotations
 
@@ -31,5 +31,8 @@ def services(server: ModuleType, _models: ModuleType, calls: list[str]) -> dict[
 
         def upload_many(self, *, body: object) -> None:
             calls.append(f"upload_many({_describe(body)})")
+
+        def search(self, *, body: object) -> None:
+            calls.append(f"search({_describe(body)})")
 
     return {"default": {"untagged": Untagged()}}

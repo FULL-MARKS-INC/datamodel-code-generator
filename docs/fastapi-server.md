@@ -422,6 +422,26 @@ numbers, and booleans (`--strict-types`), repeated path placeholders, request bo
 and binary bodies, multipart forms, and forms of the `pydantic_v2.dataclass` backend. A multipart form body reaches
 the method as its model, with uploads read to `bytes`.
 
+A multipart part is text when the type of its member, or of the member's items when that type is an array, has one
+scalar kind, with one part for each item of an array. A part of any other member is JSON, as the generated client
+sends it: an object, a mapping, each item of an array of objects, a union of a string and an object, an enum of mixed
+kinds, or a union of an array and another type, whose array is one part. So is a part of a member whose `encoding`
+names one JSON media type and no style, such as `contentType: application/json`, a scalar included. A JSON part is
+parsed by `TypeAdapter.validate_json` of the member's type, or of its items' type, whatever media type the part names
+and whether it arrives as a field or as a file. A part that is not JSON, or that the type rejects, answers `422` with
+its records at `["body", name]`, or at `["body", name, index]` for a member that repeats, before the rest of the body
+is validated. A part of a property the schema does not declare is read as text, whatever `additionalProperties` says.
+
+A URL-encoded form carries text alone. For a member without one scalar kind, such as an object, an array of objects,
+or `type: [integer, boolean]`, declared by the schema or by a schema it combines with `allOf`, generation stops with
+`A parameter value needs one unambiguous scalar kind`, as it does for the generated client and for a parameter,
+unless an `encoding` gives the member a style.
+
+The adapters read no `encoding` that names another media type, part headers, `allowReserved`, or a style other than
+the default `form` with `explode: true`, and none that gives any style to a member without one scalar kind, which
+the client spreads over several pairs or parts: generation stops with an error that names the encoding.
+`--server-body-mode request` passes any such body to the method unread.
+
 The router splits a request path at the slashes the request sends, so a percent-encoded slash (`%2F`) stays inside
 its path parameter, whose value receives `/`, of whatever style; FastAPI alone routes by the decoded path, where
 `%2F` would end the segment. A path without an encoded slash is routed as FastAPI routes it, and so is one that
@@ -443,11 +463,12 @@ spellings than FastAPI does for a parameter it reads itself: integers and number
 `2.5`, and `1e3` but not `05`, `+1`, or `1_000`, and booleans only as `true` and `false`. Turning on
 `--strict-types int float bool` therefore narrows what those parameters accept. A repeated single value is taken as
 FastAPI takes it, by adapters too: the last query value, cookie, form field, and object member, and the first header.
-A parameter with JSON `content` is parsed by its model's `TypeAdapter.validate_json`, as a JSON body is, so pydantic's
-JSON rules apply: a number is read as a float first, so a `Decimal` field gets the float's value
-(`0.1000000000000000000000000001` becomes `Decimal("0.1")`) and `NaN` and `Infinity` reach a `float` field; an object
-that repeats a member keeps the last value; and text that is not JSON, or JSON past pydantic's limits such as an
-integer of thousands of digits or deep nesting, answers `422` with `json_invalid`.
+A parameter with JSON `content`, like a JSON part of a multipart form, is parsed by its model's
+`TypeAdapter.validate_json`, as a JSON body is, so pydantic's JSON rules apply: a number is read as a float first, so
+a `Decimal` field gets the float's value (`0.1000000000000000000000000001` becomes `Decimal("0.1")`) and `NaN` and
+`Infinity` reach a `float` field; an object that repeats a member keeps the last value; and text that is not JSON, or
+JSON past pydantic's limits such as an integer of thousands of digits or deep nesting, answers `422` with
+`json_invalid`.
 A strict bytes type (`--strict-types bytes` with `format: binary`) cannot be a path, query,
 header, or cookie parameter, since a parameter carries text: generation stops with an error that names it.
 A path, query, header, or cookie parameter whose schema mixes scalar kinds keeps every member when one of them is a

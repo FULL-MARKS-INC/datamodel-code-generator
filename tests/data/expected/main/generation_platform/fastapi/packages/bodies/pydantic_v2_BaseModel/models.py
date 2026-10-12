@@ -46,18 +46,14 @@ class FieldFormEitherPostRequest(BaseModel):
     items: list[int] | None = None
 
 
-class Point(BaseModel):
-    x: float | None = None
-
-
-class FieldFormNestedPostRequest(BaseModel):
+class FieldFormExtrasPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
     __annotations__ = {
         '__pydantic_extra__': Dict[str, int],
     }
-    point: Point | None = None
+    ratio: float | None = None
 
 
 class FieldFormClosedPostRequest(BaseModel):

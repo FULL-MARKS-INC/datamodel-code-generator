@@ -1,6 +1,6 @@
 # forms
 serve pydantic_v2.BaseModel
-service UntaggedService: post_form, post_notes, upload, upload_many
+service UntaggedService: post_form, post_notes, search, upload, upload_many
 service UntaggedService without its methods: TypeError
 > POST /forms
   post_form(FieldFormsPostRequest(name='a', count=1, tags=None))
@@ -59,8 +59,28 @@ service UntaggedService without its methods: TypeError
 < 204 - b''
 > POST /batches
 < 422 application/json [{"type": "missing", "loc": ["body", "files"]}]
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'blue', 'minAge': 3}, filters=[{'color': 'a', 'minAge': None}, {'color': None, 'minAge': 2}], tags=['a', 'b c'], file=b'data'))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'plain', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'file', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'kept', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+< 422 application/json [{"type": "json_invalid", "loc": ["body", "filter"]}]
+> POST /searches
+< 422 application/json [{"type": "greater_than_equal", "loc": ["body", "filter", "minAge"]}, {"type": "string_type", "loc": ["body", "filters", 1, "color"]}, {"type": "json_invalid", "loc": ["body", "filters", 2]}, {"type": "json_invalid", "loc": ["body", "tags", 0]}]
+> POST /searches
+< 422 application/json [{"type": "model_type", "loc": ["body", "filter"]}]
+> POST /searches
+< 422 application/json [{"type": "missing", "loc": ["body", "filter"]}]
 serve pydantic_v2.dataclass
-service UntaggedService: post_form, post_notes, upload, upload_many
+service UntaggedService: post_form, post_notes, search, upload, upload_many
 service UntaggedService without its methods: TypeError
 > POST /forms
   post_form(FieldFormsPostRequest(name='a', count=1, tags=None))
@@ -118,3 +138,23 @@ service UntaggedService without its methods: TypeError
 < 204 - b''
 > POST /batches
 < 422 application/json [{"type": "missing", "loc": ["body", "files"]}]
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'blue', 'minAge': 3}, filters=[{'color': 'a', 'minAge': None}, {'color': None, 'minAge': 2}], tags=['a', 'b c'], file=b'data'))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'plain', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'file', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+  search(FieldSearchesPostRequest(filter={'color': 'kept', 'minAge': None}, filters=None, tags=None, file=None))
+< 204 - b''
+> POST /searches
+< 422 application/json [{"type": "json_invalid", "loc": ["body", "filter"]}]
+> POST /searches
+< 422 application/json [{"type": "greater_than_equal", "loc": ["body", "filter", "minAge"]}, {"type": "string_type", "loc": ["body", "filters", 1, "color"]}, {"type": "json_invalid", "loc": ["body", "filters", 2]}, {"type": "json_invalid", "loc": ["body", "tags", 0]}]
+> POST /searches
+< 422 application/json [{"type": "dataclass_type", "loc": ["body", "filter"]}]
+> POST /searches
+< 422 application/json [{"type": "missing", "loc": ["body", "filter"]}]

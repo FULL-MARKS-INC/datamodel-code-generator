@@ -13,7 +13,67 @@ paths:
               properties:
                 meta: {type: object, properties: {name: {type: string}}}
             encoding:
-              meta: {contentType: application/json}
+              meta: {contentType: application/xml}
+      responses:
+        "204": {description: Done.}
+  /encoded-types:
+    post:
+      operationId: postEncodedTypes
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                meta: {type: object, properties: {name: {type: string}}}
+            encoding:
+              meta: {contentType: "application/json, application/xml"}
+      responses:
+        "204": {description: Done.}
+  /encoded-quoted:
+    post:
+      operationId: postEncodedQuoted
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                meta: {type: object, properties: {name: {type: string}}}
+            encoding:
+              meta: {contentType: 'application/json; a="x,y"'}
+      responses:
+        "204": {description: Done.}
+  /encoded-file:
+    post:
+      operationId: postEncodedFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+            encoding:
+              file: {contentType: application/json}
+      responses:
+        "204": {description: Done.}
+  /encoded-styled:
+    post:
+      operationId: postEncodedStyled
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                ids: {type: array, items: {type: integer}}
+            encoding:
+              ids: {style: form, contentType: application/json}
       responses:
         "204": {description: Done.}
   /mixed-encoded:
@@ -108,6 +168,65 @@ paths:
               ids: {style: form, explode: false}
       responses:
         "204": {description: Done.}
+  /members:
+    post:
+      operationId: postMembers
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                location: {type: object, properties: {x: {type: integer}}}
+                stops: {type: array, items: {type: object, properties: {x: {type: integer}}}}
+                level: {type: [integer, boolean]}
+      responses:
+        "204": {description: Done.}
+  /inherited:
+    post:
+      operationId: postInherited
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/Base"}
+                - {type: object, properties: {name: {type: string}}}
+      responses:
+        "204": {description: Done.}
+  /spread:
+    post:
+      operationId: postSpread
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                point: {type: object, properties: {x: {type: integer}}}
+            encoding:
+              point: {style: form, explode: true}
+      responses:
+        "204": {description: Done.}
+  /spread-parts:
+    post:
+      operationId: postSpreadParts
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                point: {type: object, properties: {x: {type: integer}}}
+            encoding:
+              point: {explode: true}
+      responses:
+        "204": {description: Done.}
   /schemaless:
     post:
       operationId: postSchemaless
@@ -138,3 +257,9 @@ paths:
           content:
             application/x-www-form-urlencoded:
               schema: {type: object}
+components:
+  schemas:
+    Base:
+      type: object
+      properties:
+        loc: {type: object, properties: {x: {type: integer}}}

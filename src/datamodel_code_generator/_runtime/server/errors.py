@@ -40,7 +40,7 @@ def media_invalid(location: tuple[str, ...]) -> Record:
     return {"type": "media_invalid", "loc": location, "msg": "Invalid request body"}
 
 
-def model_records(error: ValidationError, location: tuple[str, ...]) -> list[Record]:
+def model_records(error: ValidationError, location: tuple[str | int, ...]) -> list[Record]:
     """Return the records of a value the model rejects, located as FastAPI locates its own, without the value."""
     return [
         {**item, "loc": (*location, *item["loc"])}

@@ -3,7 +3,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, RootModel, conint
+
+
+class Filter(BaseModel):
+    color: str | None = None
+    minAge: conint(ge=0) | None = None
 
 
 class FieldFormsPostRequest(BaseModel):
@@ -24,3 +29,10 @@ class FieldUploadsPostRequest(BaseModel):
 class FieldBatchesPostRequest(BaseModel):
     files: list[bytes]
     label: str | None = None
+
+
+class FieldSearchesPostRequest(BaseModel):
+    filter: Filter
+    filters: list[Filter] | None = None
+    tags: list[str] | None = None
+    file: bytes | None = None

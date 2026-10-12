@@ -2335,6 +2335,162 @@
             "text/plain"
           ]
         ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "{\"color\": \"blue\", \"minAge\": 3}",
+            "application/json"
+          ],
+          [
+            "filters",
+            null,
+            "{\"color\": \"a\"}",
+            "application/json"
+          ],
+          [
+            "filters",
+            null,
+            "{\"minAge\": 2}",
+            "application/json"
+          ],
+          [
+            "tags",
+            null,
+            "\"a\"",
+            "application/json"
+          ],
+          [
+            "tags",
+            null,
+            "\"b c\"",
+            "application/json"
+          ],
+          [
+            "file",
+            "a.bin",
+            "data",
+            "application/octet-stream"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "{\"color\": \"plain\"}",
+            null
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            "blob",
+            "{\"color\": \"file\"}",
+            "application/json"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "{",
+            "application/json"
+          ],
+          [
+            "filter",
+            null,
+            "{\"color\": \"last\", \"color\": \"kept\"}",
+            "application/json"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "{",
+            "application/json"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "{\"minAge\": -1}",
+            "application/json"
+          ],
+          [
+            "filters",
+            null,
+            "{}",
+            "application/json"
+          ],
+          [
+            "filters",
+            null,
+            "{\"color\": 1}",
+            "application/json"
+          ],
+          [
+            "filters",
+            null,
+            "nope",
+            "application/json"
+          ],
+          [
+            "tags",
+            null,
+            "a",
+            "application/json"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "filter",
+            null,
+            "null",
+            "application/json"
+          ]
+        ]
+      },
+      {
+        "method": "POST",
+        "url": "/searches",
+        "files": [
+          [
+            "tags",
+            null,
+            "\"a\"",
+            "application/json"
+          ]
+        ]
       }
     ],
     "package_snapshots": []

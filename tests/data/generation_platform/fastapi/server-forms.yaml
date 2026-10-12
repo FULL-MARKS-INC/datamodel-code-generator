@@ -59,3 +59,29 @@ paths:
                 label: {type: string}
       responses:
         "204": {description: Done.}
+  /searches:
+    post:
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [filter]
+              properties:
+                filter: {$ref: "#/components/schemas/Filter"}
+                filters: {type: array, items: {$ref: "#/components/schemas/Filter"}}
+                tags: {type: array, items: {type: string}}
+                file: {type: string, format: binary}
+            encoding:
+              tags: {contentType: application/json}
+      responses:
+        "204": {description: Done.}
+components:
+  schemas:
+    Filter:
+      type: object
+      properties:
+        color: {type: string}
+        minAge: {type: integer, minimum: 0}

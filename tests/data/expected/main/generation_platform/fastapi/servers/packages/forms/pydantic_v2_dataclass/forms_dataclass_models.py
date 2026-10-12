@@ -3,8 +3,15 @@
 
 from __future__ import annotations
 
+from pydantic import conint
 from pydantic.dataclasses import dataclass
 from typing_extensions import TypeAliasType
+
+
+@dataclass
+class Filter:
+    color: str | None = None
+    minAge: conint(ge=0) | None = None
 
 
 @dataclass
@@ -27,3 +34,11 @@ class FieldUploadsPostRequest:
 class FieldBatchesPostRequest:
     files: list[bytes]
     label: str | None = None
+
+
+@dataclass
+class FieldSearchesPostRequest:
+    filter: Filter
+    filters: list[Filter] | None = None
+    tags: list[str] | None = None
+    file: bytes | None = None

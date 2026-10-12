@@ -123,6 +123,48 @@ paths:
                 note: {type: string}
       responses:
         "204": {description: Done.}
+  /searches:
+    post:
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [filter]
+              properties:
+                filter: {$ref: "#/components/schemas/Filter"}
+                filters: {type: array, items: {$ref: "#/components/schemas/Filter"}}
+                tags: {type: array, items: {type: string}}
+                limit: {type: integer}
+            encoding:
+              tags: {contentType: application/json}
+      responses:
+        "204": {description: Done.}
+  /choices:
+    post:
+      operationId: postChoices
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/Choices"}
+      responses:
+        "204": {description: Done.}
+  /choice-files:
+    post:
+      operationId: postChoiceFiles
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/Choices"}
+                - {type: object, properties: {file: {type: string, format: binary}}}
+      responses:
+        "204": {description: Done.}
   /checks:
     post:
       operationId: postCheck
@@ -171,3 +213,16 @@ components:
       properties:
         code: {type: string, x-python-type: int}
         scores: {type: array, items: {type: integer, minimum: 0}}
+    Filter:
+      type: object
+      additionalProperties: false
+      properties:
+        color: {type: string}
+        minAge: {type: integer, minimum: 0}
+    Choices:
+      type: object
+      properties:
+        either: {anyOf: [{$ref: "#/components/schemas/Filter"}, {type: string}]}
+        level: {enum: [1, a, true]}
+        words: {anyOf: [{type: array, items: {type: string}}, {type: string}]}
+        lists: {anyOf: [{type: array, items: {type: integer}}, {type: array, items: {type: string}}]}

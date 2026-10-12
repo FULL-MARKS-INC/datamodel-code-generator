@@ -53,6 +53,7 @@ if TYPE_CHECKING:
         Argument,
         BodySpec,
         GroupSpec,
+        JsonPartSpec,
         MediaSpec,
         NativeField,
         OperationSpec,
@@ -1136,6 +1137,13 @@ def _parameter_arguments(module: Module, adapters: list[Argument]) -> str:
     return _tuple(arguments)
 
 
+def _json_part(module: Module, part: JsonPartSpec) -> str:
+    """Return the JsonPart constructor of one multipart member, with the adapter of its value or items."""
+    repeated = ", repeated=True" if part.repeated else ""
+    adapter = _adapter(module, part.type)
+    return f"{module.local('_runtime.server.requests', 'JsonPart')}({part.name!r}, {adapter}{repeated})"
+
+
 def _body_media(module: Module, body: BodySpec) -> str:
     """Return the BodyMedia constructors of an adapter body, as one tuple."""
     media: list[str] = []
@@ -1145,6 +1153,8 @@ def _body_media(module: Module, body: BodySpec) -> str:
             entries.append(f"adapter={_adapter(module, item.use.type)}")
         if item.kind in {"form", "multipart"} and (fields := body.form_fields):
             entries.append(f"fields={_tuple([field_plan(module.local, plan) for plan in fields])}")
+        if item.kind == "multipart" and (parts := body.json_parts):
+            entries.append(f"json_parts={_tuple([_json_part(module, part) for part in parts])}")
         media.append(f"{module.local('_runtime.server.requests', 'BodyMedia')}({', '.join(entries)})")
     return _tuple(media)
 

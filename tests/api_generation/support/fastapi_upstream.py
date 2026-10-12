@@ -43,6 +43,9 @@ class _Uploads:
     def upload_many(self, **_: object) -> None:
         return None
 
+    def search(self, **_: object) -> None:
+        return None
+
 
 def _scope(length: int) -> dict[str, Any]:
     return {
