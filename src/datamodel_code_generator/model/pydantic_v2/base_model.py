@@ -81,6 +81,7 @@ from datamodel_code_generator.model.pydantic_v2.imports import (
 from datamodel_code_generator.model.pydantic_v2.version import (
     PYDANTIC_V2_ALIAS_GENERATORS_MINIMUM,
     PYDANTIC_V2_ANNOTATED_FORWARD_REF_MINIMUM,
+    PYDANTIC_V2_COMPILED_PATTERN_MINIMUM,
     PYDANTIC_V2_FIELD_DEPRECATED_MINIMUM,
     PYDANTIC_V2_MISSING_MINIMUM,
     PYDANTIC_V2_PROTECTED_NAMESPACES_MINIMUM,
@@ -105,7 +106,7 @@ from datamodel_code_generator.reference import FieldNameResolver, ModelType
 from datamodel_code_generator.types import chain_as_tuple
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from jinja2 import Template
     from typing_extensions import TypedDict, Unpack
@@ -540,16 +541,21 @@ def _prepare_python_patterns(
             data_type._set_runtime_expression_imports((*data_type.runtime_expression_imports, pattern.import_))  # noqa: SLF001
 
 
-def _copy_alias_data_type(data_type: DataType, prepared: dict[str, PythonRuntimeExpression]) -> DataType | None:
+def _copy_alias_data_type(data_type: DataType, prepared: dict[str, PythonRuntimeExpression] | None) -> DataType | None:
     """Copy only the path to alias-specific nodes; collapsed fields may share the other nodes.
 
     ``con*`` calls render as ``Annotated`` constraints because type checkers reject calls in aliases,
     and patterns that need Python's engine are compiled because an alias has no model config.
+    Without ``prepared`` the patterns stay strings, for targets that predate compiled patterns.
     """
     nested = [_copy_alias_data_type(nested_type, prepared) for nested_type in data_type.data_types]
     dict_key = None if data_type.dict_key is None else _copy_alias_data_type(data_type.dict_key, prepared)
     kwargs = data_type.kwargs
-    pattern = _compiled_python_pattern(kwargs.get("pattern"), data_type, None, prepared) if kwargs else None
+    pattern = (
+        _compiled_python_pattern(kwargs.get("pattern"), data_type, None, prepared)
+        if kwargs and prepared is not None
+        else None
+    )
     base = (
         _ANNOTATED_CONSTRAINT_BASES.get((import_.from_, import_.import_))
         if (import_ := data_type.import_) is not None and data_type.is_func and kwargs
@@ -597,9 +603,13 @@ def _prepare_type_alias_field(
     prepared: dict[str, PythonRuntimeExpression],
     replace_data_type: Callable[[DataModelFieldBase, DataType], None],
 ) -> bool:
-    """Make a type alias body a valid type expression that validates without a model config."""
-    changed = _prepare_field_python_pattern(field, None, prepared)
-    if (data_type := _copy_alias_data_type(field.data_type, prepared)) is None:
+    """Make a type alias body a valid type expression that validates without a model config.
+
+    A target that predates compiled patterns keeps string patterns: the models that use the alias select the engine.
+    """
+    compiled = prepared if model_target_supports(field.parent, PYDANTIC_V2_COMPILED_PATTERN_MINIMUM) else None
+    changed = compiled is not None and _prepare_field_python_pattern(field, None, compiled)
+    if (data_type := _copy_alias_data_type(field.data_type, compiled)) is None:
         return changed
     replace_data_type(field, data_type)
     return True
@@ -1169,6 +1179,50 @@ def has_lookaround_pattern(
     return False
 
 
+def _model_references(model: DataModel, base_classes: Iterable[BaseClassDataType]) -> Iterator[Reference]:
+    """Yield the references that the fields of ``model`` and the given base classes name."""
+    for field in model.fields:
+        for data_type in field.data_type.all_data_types:
+            if (reference := data_type.reference) is not None:
+                yield reference
+    for base_class in base_classes:
+        if (reference := base_class.reference) is not None:
+            yield reference
+
+
+def models_reaching_string_pattern_aliases(models: Iterable[DataModel]) -> set[int]:
+    """Return the ids of the models that reach a type alias keeping a string pattern for the ``python-re`` engine.
+
+    A target that predates compiled patterns keeps string patterns in type aliases, which have no config.
+    Pydantic builds an alias that is named more than once with the config of the outermost model, and a model
+    with the fields of its bases, so a model reaches an alias through any chain of fields and base classes.
+    The result is empty when the target compiles these patterns.
+    """
+    from datamodel_code_generator.model.type_alias import TypeAliasBase  # noqa: PLC0415
+
+    models = list(models)
+    pending: list[DataModel] = [
+        model
+        for model in models
+        if isinstance(model, TypeAliasBase)
+        and not model_target_supports(model, PYDANTIC_V2_COMPILED_PATTERN_MINIMUM)
+        and has_lookaround_pattern(model.fields)
+    ]
+    if not pending:
+        return set()
+    referrers: defaultdict[int, list[DataModel]] = defaultdict(list)
+    for model in models:
+        for reference in _model_references(model, model.base_classes):
+            referrers[id(reference.source)].append(model)
+    reached = {id(model) for model in pending}
+    while pending:
+        for referrer in referrers.get(id(pending.pop()), ()):
+            if id(referrer) not in reached:
+                reached.add(id(referrer))
+                pending.append(referrer)
+    return reached
+
+
 def _explicit_alias_conflicts_with_pydantic(field: DataModelFieldBase, name: str) -> bool:
     """Respect configured namespaces for actual attribute collisions, retaining warning-only aliases."""
     if name == "model_config" or name.startswith("_"):
@@ -1619,14 +1673,35 @@ class BaseModel(BaseModelBase):
 
         Collapsed root models inline their patterns; a config that already names an engine is kept.
         """
-        if not has_lookaround_pattern(self.fields):
+        if has_lookaround_pattern(self.fields):
+            self._select_python_regex_engine()
+
+    @classmethod
+    def finalize_type_alias_users(cls, models: list[DataModel]) -> None:
+        """Select Python's regex engine in every model that reaches a string pattern type alias.
+
+        A model inherits the config of all its bases, so only the references of its own fields count.
+        """
+        if not (reached := models_reaching_string_pattern_aliases(models)):
             return
+        for model in models:
+            if isinstance(model, cls) and any(
+                id(reference.source) in reached for reference in _model_references(model, ())
+            ):
+                model._keep_string_pattern_aliases_out_of_bases()  # noqa: SLF001
+                model._select_python_regex_engine()  # noqa: SLF001
+
+    def _select_python_regex_engine(self) -> None:
+        """Set ``regex_engine`` unless the config already names an engine."""
         config_parameters = dict(_config_dict_items(self.extra_template_data.get("config")))
         if "regex_engine" in config_parameters:
             return
         config_parameters["regex_engine"] = '"python-re"'
         self._set_config(config_parameters)
         self.invalidate_render_caches()
+
+    def _keep_string_pattern_aliases_out_of_bases(self) -> None:
+        """Keep the bases free of types Pydantic builds before the config applies; a model names none there."""
 
     def _set_config(self, config_parameters: dict[str, Any]) -> None:
         """Store the ConfigDict rendered as ``model_config``."""
