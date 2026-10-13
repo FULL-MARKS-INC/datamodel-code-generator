@@ -9236,18 +9236,17 @@ def test_main_jsonschema_property_names_additional_properties_schema_with_proper
         force_exec_validation=True,
     )
     # Pydantic validates constrained typed-extra keys only in this supported range.
-    if not version.parse("2.11") <= version.parse(PYDANTIC_VERSION) < version.parse("2.13"):
-        return
-    assert_generated_model_json_validation(
-        output_file,
-        module_name="property_names_additional_properties_schema_with_properties",
-        model_name="KnownAndNamedExtra",
-        valid_json='{"name":"known","valid_key":1}',
-        invalid_json='{"name":"known","Invalid":1}',
-        expected_error_type="string_pattern_mismatch",
-        expected_attribute_path=("__pydantic_extra__",),
-        expected_attribute_value={"valid_key": 1},
-    )
+    if version.parse("2.11") <= version.parse(PYDANTIC_VERSION) < version.parse("2.13"):  # pragma: no cover
+        assert_generated_model_json_validation(
+            output_file,
+            module_name="property_names_additional_properties_schema_with_properties",
+            model_name="KnownAndNamedExtra",
+            valid_json='{"name":"known","valid_key":1}',
+            invalid_json='{"name":"known","Invalid":1}',
+            expected_error_type="string_pattern_mismatch",
+            expected_attribute_path=("__pydantic_extra__",),
+            expected_attribute_value={"valid_key": 1},
+        )
 
 
 def test_main_jsonschema_property_names_true_additional_properties_schema_with_properties(output_file: Path) -> None:
