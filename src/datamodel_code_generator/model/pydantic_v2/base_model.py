@@ -1195,6 +1195,7 @@ def has_lookaround_pattern(
     fields: list[DataModelFieldBase],
     *,
     follow_references: bool = False,
+    include_compiled: bool = True,
     _visited: set[int] | None = None,
 ) -> bool:
     """Check if any field has a regex pattern that needs pydantic's ``python-re`` regex engine.
@@ -1205,17 +1206,21 @@ def has_lookaround_pattern(
     When ``follow_references`` is True, also inspect patterns reachable through referenced
     models (generated type aliases/root types) -- needed for Pydantic v2 dataclasses, where
     alias patterns are compiled with the consuming dataclass's config rather than their own.
+    When ``include_compiled`` is False, patterns the parser already wrapped in ``re.compile`` are skipped.
     """
     if _visited is None:
         _visited = set()
     for field in fields:
-        pattern = isinstance(field.constraints, Constraints) and field.constraints.pattern
-        if pattern and _needs_python_regex_engine(pattern, field.data_type, field.parent):
+        if (
+            (pattern := isinstance(field.constraints, Constraints) and field.constraints.pattern)
+            and (include_compiled or not isinstance(field.extras.get(_COMPILED_PATTERN_KEY), PythonRuntimeExpression))
+            and _needs_python_regex_engine(pattern, field.data_type, field.parent)
+        ):
             return True
         for data_type in field.data_type.all_data_types:
             pattern = (data_type.kwargs or {}).get("pattern")
             if isinstance(pattern, PythonRuntimeExpression):
-                pattern = str(pattern)
+                pattern = str(pattern) if include_compiled else None
             if pattern and _needs_python_regex_engine(pattern, data_type, field.parent):
                 return True
             if not follow_references or data_type.reference is None:
@@ -1224,7 +1229,9 @@ def has_lookaround_pattern(
             source_fields = getattr(source, "fields", None)
             if source_fields is not None and id(source) not in _visited:
                 _visited.add(id(source))
-                if has_lookaround_pattern(source_fields, follow_references=True, _visited=_visited):
+                if has_lookaround_pattern(
+                    source_fields, follow_references=True, include_compiled=include_compiled, _visited=_visited
+                ):
                     return True
     return False
 
@@ -1256,7 +1263,7 @@ def models_reaching_string_pattern_aliases(models: Iterable[DataModel]) -> set[i
         for model in models
         if isinstance(model, TypeAliasBase)
         and not model_target_supports(model, PYDANTIC_V2_COMPILED_PATTERN_MINIMUM)
-        and has_lookaround_pattern(model.fields)
+        and has_lookaround_pattern(model.fields, include_compiled=False)
     ]
     if not pending:
         return set()
