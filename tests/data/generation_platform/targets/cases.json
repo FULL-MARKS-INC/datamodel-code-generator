@@ -580,5 +580,15 @@
       {"generate": {"input": {"path": "contacts.yaml"}}},
       {"file_modes": ["models.py"]}
     ]
+  },
+  "nullable-map-layout": {
+    "input": {"path": "nullable-map-layout.yaml"},
+    "model": {"openapi_scopes": ["api"], "output": "models"},
+    "steps": [{"generate": {}}, {"tree": null}]
+  },
+  "nullable-map-class-keys": {
+    "input": {"path": "nullable-map-class-keys.yaml"},
+    "model": {"openapi_scopes": ["api"], "aliases": {"Tags1.label": "tag_label"}},
+    "steps": [{"generate": {}}, {"check": {}}]
   }
 }

@@ -727,6 +727,7 @@ class _YieldingName(NamedTuple):
     reference: Reference
     base_name: str
     model_type: str
+    created_name: str
 
 
 def get_relative_path(base_path: PurePath, target_path: PurePath) -> PurePath:
@@ -874,6 +875,9 @@ class ModelResolver:  # noqa: PLR0904
         self._yielding_names: dict[str, _YieldingName] = {}
         self._yielding_name_start_hints: dict[tuple[str, str, str, str], int] = {}
         self._matched_model_name_keys: set[str] = set()
+        self.assigned_yielding_names: Mapping[str, tuple[str, str | None]] = {}
+        self.final_yielding_names: dict[str, tuple[str, str | None]] = {}
+        self.yielding_name_changes: set[str] = set()
         self._new_references_yield = False
 
         # Default value overrides from external JSON file
@@ -934,6 +938,9 @@ class ModelResolver:  # noqa: PLR0904
         self.__dict__.setdefault("_yielding_names", {})
         self.__dict__.setdefault("_yielding_name_start_hints", {})
         self.__dict__.setdefault("_matched_model_name_keys", set())
+        self.__dict__.setdefault("assigned_yielding_names", {})
+        self.__dict__.setdefault("final_yielding_names", {})
+        self.__dict__.setdefault("yielding_name_changes", set())
         self.__dict__.setdefault("_new_references_yield", False)
         for name, value in slot_state.items():
             setattr(self, name, value)
@@ -1047,12 +1054,14 @@ class ModelResolver:  # noqa: PLR0904
         """Keep the current names of yielding references from now on and return the ids of those references.
 
         Model name keys of ``--model-name-map`` that matched no other reference apply to these references by their
-        final names.
+        final names. The final names are recorded, and the names of references that changed name since they were
+        created, for a parse that names these references as they end.
         """
-        yielding_references = [entry.reference for entry in self._yielding_names.values()]
+        entries = list(self._yielding_names.values())
         self._yielding_names.clear()
         self._yielding_name_start_hints.clear()
-        for reference in yielding_references:
+        for entry in entries:
+            reference = entry.reference
             if (name := reference.name) not in self._matched_model_name_keys and (
                 mapped_name := self.model_name_map.get(name)
             ) is not None:
@@ -1060,7 +1069,10 @@ class ModelResolver:  # noqa: PLR0904
                 reference.name = mapped_name
                 reference.duplicate_name = None
                 self._update_reference_name(name, mapped_name)
-        return {id(reference) for reference in yielding_references}
+            self.final_yielding_names[reference.path] = reference.name, reference.duplicate_name
+            if reference.name != entry.created_name:
+                self.yielding_name_changes.update((entry.created_name, reference.name))
+        return {id(entry.reference) for entry in entries}
 
     def _evict_yielding_reference(self, name: str) -> None:
         """Move a yielding reference off ``name`` so that a reference that does not yield can take it.
@@ -1497,7 +1509,7 @@ class ModelResolver:  # noqa: PLR0904
                     self._update_reference_name(old_name, new_name)
                     break
 
-    def add(  # noqa: PLR0912, PLR0913
+    def add(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
         self,
         path: Sequence[str],
         original_name: str,
@@ -1514,7 +1526,8 @@ class ModelResolver:  # noqa: PLR0904
         """Add or update a model reference with the given path and name.
 
         A reference yields its name when ``yields`` says so, or when it is created inside
-        ``yielding_new_references()`` and is no primary definition; a yielding reference keeps yielding.
+        ``yielding_new_references()`` and is no primary definition; a yielding reference keeps yielding. A yielding
+        reference takes the name ``assigned_yielding_names`` gives its path, the name it ended with in an earlier parse.
         """
         joined_path = self.join_path(tuple(path))
         is_root = joined_path == "#" or (joined_path.endswith("#") and "/" not in joined_path.split("#")[-1])
@@ -1533,7 +1546,8 @@ class ModelResolver:  # noqa: PLR0904
                 return reference
         name = original_name
         duplicate_name: str | None = None
-        yields = (reference is not None and self._yielding_names.pop(reference.name, None) is not None) or (
+        previous_entry = self._yielding_names.pop(reference.name, None) if reference is not None else None
+        yields = previous_entry is not None or (
             yields
             if yields is not None
             else reference is None
@@ -1541,7 +1555,9 @@ class ModelResolver:  # noqa: PLR0904
             and class_name
             and not self._is_primary_definition(path)
         )
-        if class_name:
+        if yields and (assigned := self.assigned_yielding_names.get(joined_path)) is not None:
+            name, duplicate_name = assigned
+        elif class_name:
             name = self._check_parent_scope_option(name, path)
             name = self._apply_full_path_naming(name, path)
 
@@ -1601,7 +1617,12 @@ class ModelResolver:  # noqa: PLR0904
             self.references[joined_path] = reference
             self._update_reference_name(None, name, unique=unique)
         if yields:
-            self._yielding_names[name] = _YieldingName(reference, duplicate_name or name.rpartition(".")[2], model_type)
+            self._yielding_names[name] = _YieldingName(
+                reference,
+                duplicate_name or name.rpartition(".")[2],
+                model_type,
+                previous_entry.created_name if previous_entry is not None else name,
+            )
         return reference
 
     def get(self, path: Sequence[str] | str) -> Reference | None:

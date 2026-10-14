@@ -10112,6 +10112,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             **(self._get_python_type_flags(obj) or {"is_dict": True}),
         )
 
+    def _typed_nullable_map_value_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
+        """Return the value schema of a nullable map unless this run keeps the values of nullable maps untyped."""
+        return None if self.run_context.untyped_nullable_maps else _nullable_map_value_schema(obj)
+
     def _parse_nullable_map(
         self, name: str, obj: JsonSchemaObject, path: list[str], additional_properties: JsonSchemaObject
     ) -> DataType:
@@ -10120,6 +10124,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         Models created for the values give way to every other model, so the names other models had before
         typed values stay theirs.
         """
+        self.typed_nullable_maps = True
         with self.model_resolver.yielding_new_references():
             map_type = self._parse_additional_properties_map(name, obj, path, additional_properties)
         return self.data_type(data_types=[map_type], is_optional=obj.type_has_null)
@@ -10862,7 +10867,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return self.parse_enum(name, item, get_special_path("enum", path), singular_name=singular_name)
         if shared_numeric_constraints:
             return self._get_data_type(item, localize_constraints=False)
-        if (value_schema := _nullable_map_value_schema(item)) is not None:
+        if (value_schema := self._typed_nullable_map_value_schema(item)) is not None:
             return self._parse_nullable_map(name, item, get_special_path("object", path), value_schema)
         return self.get_data_type(item)
 
@@ -11329,10 +11334,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 data_type = self.parse_enum_as_literal(obj)
             else:  # pragma: no cover
                 data_type = self.parse_enum(name, obj, path)
-        elif (value_schema := _nullable_map_value_schema(obj)) is not None:
+        elif (value_schema := self._typed_nullable_map_value_schema(obj)) is not None:
             reference = self.model_resolver.add(
                 path, self._apply_title_as_name(name, obj), loaded=True, class_name=True
             )
+            self.typed_nullable_map_reference_ids.add(id(reference))
             data_type = self._parse_nullable_map(name, obj, path, value_schema)
         elif obj.type:
             if preserve_constraints and effective_use_annotated:

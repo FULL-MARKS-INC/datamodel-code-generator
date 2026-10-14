@@ -2016,6 +2016,8 @@ def _build_generation_parser(  # noqa: PLR0913, PLR0917
     formatter_cwd: Path | None = None,
     preserve_circular_root_models: bool = False,
     suppress_parse_warnings: bool = False,
+    untyped_nullable_maps: bool = False,
+    yielding_names: tuple[tuple[str, tuple[str, str | None]], ...] = (),
     reference_cache: Any | None = None,
     python_type_expressions: _PythonTypeExpressions | None = None,
     openapi_parser_factory: OpenAPIParserFactory | None = None,
@@ -2049,6 +2051,8 @@ def _build_generation_parser(  # noqa: PLR0913, PLR0917
         formatter_cwd=formatter_cwd,
         preserve_circular_root_models=preserve_circular_root_models,
         suppress_parse_warnings=suppress_parse_warnings,
+        untyped_nullable_maps=untyped_nullable_maps,
+        yielding_names=yielding_names,
     )
     return parser
 
@@ -2072,6 +2076,8 @@ def _build_generation_retry_parser(  # noqa: PLR0913, PLR0917
     formatter_cwd: Path | None = None,
     preserve_circular_root_models: bool = False,
     suppress_parse_warnings: bool = False,
+    untyped_nullable_maps: bool = False,
+    yielding_names: tuple[tuple[str, tuple[str, str | None]], ...] = (),
     openapi_parser_factory: OpenAPIParserFactory | None = None,
 ) -> tuple[Any, DataModelSet, bool]:
     """Build one fresh parser for an internal compatibility retry."""
@@ -2102,6 +2108,8 @@ def _build_generation_retry_parser(  # noqa: PLR0913, PLR0917
         formatter_cwd=formatter_cwd,
         preserve_circular_root_models=preserve_circular_root_models,
         suppress_parse_warnings=suppress_parse_warnings,
+        untyped_nullable_maps=untyped_nullable_maps,
+        yielding_names=yielding_names,
         reference_cache=reference_cache,
         python_type_expressions=python_type_expressions,
         openapi_parser_factory=openapi_parser_factory,
@@ -2407,6 +2415,82 @@ def _parse_collapse_root_models_retry(
         raise public_error from None
 
 
+def _parse_again(  # noqa: PLR0913, PLR0917
+    input_: _GenerationInput,
+    input_text: str | None,
+    input_file_type: InputFileType,
+    source_override: Mapping[str, Any] | None,
+    config: GenerateConfig,
+    dataclass_arguments: DataclassArguments,
+    schema_versions: _SchemaVersions,
+    diagnostic_source_path: Path | None,
+    remote_text_cache: DefaultPutDict[str, str],
+    reference_cache: Any | None,
+    base_path: Path,
+    *,
+    skip_root_model: bool,
+    prefetched_source: tuple[Path, bytes] | None,
+    formatter_cwd: Path | None,
+    preserve_circular_root_models: bool,
+    parser_settings_path: Path | None,
+    capture: GenerationCaptureSession[object] | None,
+    openapi_parser_factory: OpenAPIParserFactory | None,
+    untyped_nullable_maps: bool = True,
+    yielding_names: tuple[tuple[str, tuple[str, str | None]], ...] = (),
+) -> tuple[Any, _ParserResults, DataModelSet, bool, defaultdict[str, dict[str, Any]] | None]:
+    """Parse once more, with the values of nullable maps untyped as earlier releases did, or typed under given names.
+
+    The values of nullable maps get models that give their names to every other model. Options keyed by class name
+    are looked up while models are created, so a run whose map value models end under other names, which such
+    options name, is parsed again with those models named as they end.
+
+    A run keeps these values untyped when typing them changes where models are written, the files written, or the
+    models a collapse keeps; the decision covers the whole run, so every input of a directory run is then untyped.
+    The first parse already reported its warnings, so this one reports none. The caller disposes the parser it does
+    not keep only after binding the kept one, as both share loaded documents.
+    """
+    extra_template_data = _prepare_generation_extra_template_data(config)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        parser, data_model_types, defer_formatting = _build_generation_retry_parser(
+            input_,
+            input_text,
+            input_file_type,
+            source_override,
+            config,
+            extra_template_data,
+            dataclass_arguments,
+            schema_versions,
+            diagnostic_source_path,
+            remote_text_cache,
+            reference_cache,
+            base_path,
+            skip_root_model=skip_root_model,
+            prefetched_source=prefetched_source,
+            formatter_cwd=formatter_cwd,
+            preserve_circular_root_models=preserve_circular_root_models,
+            suppress_parse_warnings=True,
+            untyped_nullable_maps=untyped_nullable_maps,
+            yielding_names=yielding_names,
+            openapi_parser_factory=openapi_parser_factory,
+        )
+        results = _parse_with_disposal(
+            input_, parser, config, parser_settings_path=parser_settings_path, capture=capture
+        )
+    return parser, results, data_model_types, defer_formatting, extra_template_data
+
+
+def _same_model_placement(
+    parser: Any, results: _ParserResults, other_parser: Any, other_results: _ParserResults
+) -> bool:
+    """Return whether two parses write the same modules with the same models other than typed map values."""
+    return (
+        isinstance(other_results, str) == isinstance(results, str)
+        and (isinstance(results, str) or set(other_results) == set(results))
+        and other_parser.model_placement == parser.model_placement
+    )
+
+
 def _dispose_capture_parser(parser: Any, capture: GenerationCaptureSession[object], *, discard: bool) -> None:
     """Release a capture parser without replacing an active primary failure."""
     if sys.exc_info()[0] is not None:
@@ -2512,6 +2596,69 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                 parser_settings_path=parser_settings_path,
                 capture=capture,
             )
+        if yielding_names := parser.yielding_names_to_assign:
+            reparse_caches = parser.remote_text_cache, getattr(parser, "remote_object_cache", None), parser.base_path
+            preserve_circular_root_models = parser.run_context.preserve_circular_root_models
+            if capture is None:
+                parser.dispose()
+            else:
+                _dispose_capture_parser(parser, capture, discard=True)
+            del parser
+            parser, results, data_model_types, defer_formatting, extra_template_data = _parse_again(
+                input_,
+                input_text,
+                input_file_type,
+                source_override,
+                config,
+                dataclass_arguments,
+                schema_versions,
+                diagnostic_source_path,
+                *reparse_caches,
+                skip_root_model=skip_root_model,
+                prefetched_source=prefetched_source,
+                formatter_cwd=None if use_output_cwd else output_context_path,
+                preserve_circular_root_models=preserve_circular_root_models,
+                parser_settings_path=parser_settings_path,
+                capture=capture,
+                openapi_parser_factory=openapi_parser_factory,
+                untyped_nullable_maps=False,
+                yielding_names=yielding_names,
+            )
+        discarded_parser = None
+        if parser.typed_nullable_maps and parser.typed_map_values_may_move_models:
+            try:
+                untyped_parse = _parse_again(
+                    input_,
+                    input_text,
+                    input_file_type,
+                    source_override,
+                    config,
+                    dataclass_arguments,
+                    schema_versions,
+                    diagnostic_source_path,
+                    parser.remote_text_cache,
+                    getattr(parser, "remote_object_cache", None),
+                    parser.base_path,
+                    skip_root_model=skip_root_model,
+                    prefetched_source=prefetched_source,
+                    formatter_cwd=None if use_output_cwd else output_context_path,
+                    preserve_circular_root_models=parser.run_context.preserve_circular_root_models,
+                    parser_settings_path=parser_settings_path,
+                    capture=capture,
+                    openapi_parser_factory=openapi_parser_factory,
+                )
+            except BaseException:
+                if capture is None:
+                    with contextlib.suppress(BaseException):
+                        parser.dispose()
+                else:
+                    _dispose_capture_parser(parser, capture, discard=True)
+                raise
+            if _same_model_placement(parser, results, untyped_parse[0], untyped_parse[1]):
+                discarded_parser = untyped_parse[0]
+            else:
+                discarded_parser = parser
+                parser, results, data_model_types, defer_formatting, extra_template_data = untyped_parse
         model_metadata = parser.model_metadata
         if repair_modules := parser.invalid_dotted_stdout_repair_modules:
             legacy_inventory = parser.generated_model_inventory
@@ -2520,6 +2667,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
             retry_reference_cache = getattr(parser, "remote_object_cache", None)
             retry_base_path = parser.base_path
             preserve_circular_root_models = parser.run_context.preserve_circular_root_models
+            untyped_nullable_maps = parser.run_context.untyped_nullable_maps or parser.typed_nullable_maps
         if capture is None:
             parser.dispose()
         else:
@@ -2528,6 +2676,11 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
             finally:
                 _dispose_capture_parser(parser, capture, discard=False)
         del parser
+        if discarded_parser is not None:
+            if capture is None:
+                discarded_parser.dispose()
+            else:
+                _dispose_capture_parser(discarded_parser, capture, discard=True)
 
         if repair_modules:
             retry_config = config.model_copy(
@@ -2556,6 +2709,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                     prefetched_source=prefetched_source,
                     formatter_cwd=None if use_output_cwd else output_context_path,
                     preserve_circular_root_models=preserve_circular_root_models,
+                    untyped_nullable_maps=untyped_nullable_maps,
                     openapi_parser_factory=openapi_parser_factory,
                 )
                 retry_results = _parse_with_disposal(

@@ -3653,6 +3653,60 @@ def test_main_jsonschema_allof_scalar_roots(output_file: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("reuse_args", "expected_file"),
+    [
+        pytest.param(["--reuse-model"], "nullable_map_value_reuse.py", id="reuse-model"),
+        pytest.param(
+            ["--reuse-model", "--collapse-reuse-models"],
+            "nullable_map_value_reuse_collapse_reuse_models.py",
+            id="collapse-reuse-models",
+        ),
+    ],
+)
+def test_main_jsonschema_nullable_map_value_reuse_model(
+    output_file: Path, reuse_args: list[str], expected_file: str
+) -> None:
+    """Keep a definition as its own model when an earlier nullable map value duplicates it."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "nullable_map_value_reuse.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file=expected_file,
+        extra_args=[
+            "--output-model-type",
+            DataModelType.PydanticV2BaseModel.value,
+            *reuse_args,
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+        ],
+        force_exec_validation=True,
+    )
+
+
+def test_main_jsonschema_nullable_map_value_reuse_tree(output_dir: Path) -> None:
+    """Keep a definition in its module when a nullable map value duplicates it across the reuse tree."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "nullable_map_value_reuse.json",
+        output_path=output_dir,
+        input_file_type="jsonschema",
+        expected_directory=EXPECTED_JSON_SCHEMA_PATH / "nullable_map_value_reuse_tree",
+        extra_args=[
+            "--output-model-type",
+            DataModelType.PydanticV2BaseModel.value,
+            "--reuse-model",
+            "--reuse-scope",
+            "tree",
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+        ],
+        force_exec_validation=True,
+    )
+
+
 def test_main_root_model_with_additional_properties(output_file: Path) -> None:
     """Test root model with additional properties."""
     run_main_and_assert(
