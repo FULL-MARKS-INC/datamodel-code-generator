@@ -8608,7 +8608,10 @@ a `typing_extensions` name that `typing` also exports is read as the `typing` na
 `collections.abc` name, such as `typing.SupportsInt` or `collections.abc.Callable`, is a known type that takes no
 number keyword. A union keeps a keyword only when every member other than `None` takes it, so `int | None` keeps the
 keywords in Pydantic models and `int | str` does not; `msgspec` writes no type-dependent keyword (number, string or
-array) on an `x-python-type` union. Custom templates receive the same values as the built-in ones.
+array) on an `x-python-type` union. A `Literal` is read like a union of the types of its values (`str`, `bytes`, `int`,
+`float` or `bool`, with the values of a nested `Literal` and without `None`), so `Literal[1, 2.5]` and
+`Literal[1, None]` keep the number keywords in Pydantic models, while `Literal["a", 1]` and `Literal[True, False]` keep
+none; `msgspec` accepts no constraint on a `Literal`. Custom templates receive the same values as the built-in ones.
 
 A named schema whose `allOf` merges into one scalar type, such as
 `{"allOf": [{"type": "string", "format": "duration"}, {"minimum": 0}]}`, is a root model of that type and follows the
@@ -8645,8 +8648,9 @@ without `type` is written as `Any`, which takes none of them, so `{"minLength": 
 "pattern": "^1"}` leaves the field unconstrained. For compatibility, a schema type `string` also writes `minItems` and
 `maxItems`, and a schema type `array` also writes `minLength` and `maxLength`, as their length bounds.
 
-A `typing` alias, an abstract collection, `Annotated[T, ...]` and `Final[T]` are read as for number keywords, so
-`typing.List[int]`, `collections.abc.Sequence[int]` and `Annotated[list[int], ...]` take the keywords of `list`.
+A `typing` alias, an abstract collection, `Annotated[T, ...]`, `Final[T]` and `Literal` are read as for number
+keywords, so `typing.List[int]`, `collections.abc.Sequence[int]` and `Annotated[list[int], ...]` take the keywords of
+`list`, and `Literal["a", "bb", None]` and `Literal[b"a", b"bb"]` take those of `str` and `bytes` in Pydantic models.
 
 | Python type | Pydantic | msgspec |
 |-------------|----------|---------|

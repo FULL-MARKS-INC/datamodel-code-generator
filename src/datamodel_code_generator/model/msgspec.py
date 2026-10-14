@@ -1011,6 +1011,7 @@ class DataTypeManager(_DataTypeManager):
     })
     ANNOTATION_UNIONS_TAKE_CONSTRAINTS: ClassVar[bool] = False
     FIXED_TUPLES_TAKE_LENGTH: ClassVar[bool] = False
+    LITERALS_TAKE_CONSTRAINTS: ClassVar[bool] = False
 
 
 _rebuild_model_with_datamodel_namespace(Constraints)

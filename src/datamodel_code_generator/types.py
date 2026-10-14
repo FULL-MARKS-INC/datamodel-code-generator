@@ -1319,6 +1319,12 @@ TYPE_DEPENDENT_KEYWORDS: frozenset[str] = NUMBER_KEYWORDS | STRING_KEYWORDS | AR
 _NO_KEYWORDS: frozenset[str] = frozenset()
 _UNION_PATHS: frozenset[str] = frozenset({"typing.Union", "typing.Optional", UNION, OPTIONAL})
 _QUALIFIER_PATHS: frozenset[str] = frozenset({"typing.Annotated", "typing.Final", IMPORT_ANNOTATED.import_, "Final"})
+_LITERAL_VALUE_TYPE_PATHS: Mapping[type, str] = MappingProxyType({
+    str: "str",
+    bytes: "bytes",
+    int: "int",
+    float: "float",
+})
 _STANDARD_CLASS_PATHS: Mapping[str, str] = MappingProxyType({
     "typing.Text": "str",
     "typing.List": "list",
@@ -1400,6 +1406,7 @@ class DataTypeManager(ABC):
     KNOWN_TYPE_IMPORTS: ClassVar[tuple[ModuleType, ...]] = (generator_imports,)
     ANNOTATION_UNIONS_TAKE_CONSTRAINTS: ClassVar[bool] = True
     FIXED_TUPLES_TAKE_LENGTH: ClassVar[bool] = True
+    LITERALS_TAKE_CONSTRAINTS: ClassVar[bool] = True
 
     def __init__(  # noqa: PLR0913, PLR0917
         self,
@@ -1514,7 +1521,11 @@ class DataTypeManager(ABC):
         return self._annotation_constraint_keywords(data_type.python_type.expression)
 
     def _annotation_constraint_keywords(self, expression: PythonTypeExpr) -> frozenset[str]:
-        """Return the keywords every member of a union takes, or those of the type that Annotated or Final qualifies."""
+        """Return the keywords every member of a union takes, or those of the type that Annotated or Final qualifies.
+
+        A ``Literal`` takes the keywords every value other than ``None`` takes as an instance of its type, where a
+        ``bool`` takes none and a nested ``Literal`` contributes its values.
+        """
         from datamodel_code_generator._python_type_annotation import (  # noqa: PLC0415
             PythonTypeBoundName,
             PythonTypeEllipsis,
@@ -1546,6 +1557,15 @@ class DataTypeManager(ABC):
             return (
                 frozenset.intersection(*map(self._annotation_constraint_keywords, members)) if members else _NO_KEYWORDS
             )
+        if path == "typing.Literal" and base is not expression:
+            if not self.LITERALS_TAKE_CONSTRAINTS:
+                return _NO_KEYWORDS
+            value_paths = set(self._literal_value_paths(expression))
+            return (
+                frozenset.intersection(*map(self.type_constraint_keywords, value_paths))
+                if value_paths
+                else _NO_KEYWORDS
+            )
         if (
             path == "tuple"
             and base is not expression
@@ -1554,6 +1574,26 @@ class DataTypeManager(ABC):
         ):
             return _NO_KEYWORDS
         return self.type_constraint_keywords(path)
+
+    @staticmethod
+    def _literal_value_paths(expression: PythonTypeExpr) -> Iterator[str]:
+        """Yield the type path of each value of a ``Literal`` other than ``None``, or ``""`` for an unclassified one."""
+        from datamodel_code_generator._python_type_annotation import (  # noqa: PLC0415
+            PythonTypeLiteralValue,
+            PythonTypeSubscript,
+            python_type_expr_arguments,
+            python_type_expr_base_name,
+        )
+
+        for argument in python_type_expr_arguments(expression):
+            if isinstance(argument, PythonTypeSubscript) and python_type_expr_base_name(argument) == "Literal":
+                yield from DataTypeManager._literal_value_paths(argument)
+            elif python_type_expr_base_name(argument) != NONE:
+                yield (
+                    _LITERAL_VALUE_TYPE_PATHS.get(type(argument.value), "")
+                    if isinstance(argument, PythonTypeLiteralValue)
+                    else ""
+                )
 
     def type_constraint_keywords(self, path: str) -> frozenset[str]:
         """Return the type-dependent keywords a type takes: its table entry, none for a known type, else all of them.
