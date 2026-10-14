@@ -1,5 +1,9 @@
 Add the runtime dependencies of example.server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
+Next steps: implement the stubs in services/pets.py, services/store.py, services/default.py, then run the server:
+  uv add uvicorn && uv run uvicorn example.server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev elsewhere/main.py
+See elsewhere/README.md.
 elsewhere/README.md
 elsewhere/__init__.py
 elsewhere/_generated/__init__.py
@@ -7,6 +11,7 @@ elsewhere/_generated/contract.py
 elsewhere/_generated/openapi.json
 elsewhere/_generated/openapi.py
 elsewhere/application.py
+elsewhere/main.py
 elsewhere/py.typed
 elsewhere/routers/__init__.py
 elsewhere/routers/default.py

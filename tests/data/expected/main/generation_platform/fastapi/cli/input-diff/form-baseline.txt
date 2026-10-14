@@ -9,7 +9,7 @@
  from fastapi.responses import Response
  from pydantic import AwareDatetime, Field
  
-@@ -77,7 +77,7 @@
+@@ -79,7 +79,7 @@
  
      def create_pet(
          *,
@@ -31,7 +31,7 @@
         }
 --- server/README.md (baseline input)
 +++ server/README.md (current input)
-@@ -73,7 +73,6 @@
+@@ -201,7 +201,6 @@
  A repeated single value is taken as FastAPI takes it, by adapters too: the last query value, cookie, form field, and object member, and the first header.
  A cookie parameter with a single value arrives as the request sent it, without percent-decoding.
  Adapters accept integers and numbers as JSON writes them and booleans as `true` or `false`, which is fewer spellings than FastAPI accepts for the parameters it reads.

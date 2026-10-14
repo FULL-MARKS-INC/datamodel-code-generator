@@ -33,6 +33,7 @@ def _add_list_pets(
     list_pets_handler = checked(
         pets.list_pets,
         'The pets.list_pets method of GET /pets',
+        ('invalid',),
     )
 
     def list_pets(
@@ -69,6 +70,7 @@ def _add_list_counts(
     list_counts_handler = checked(
         pets.list_counts,
         'The pets.list_counts method of GET /counts',
+        ('invalid',),
     )
 
     def list_counts(
@@ -105,6 +107,7 @@ def _add_get_code(
     get_code_handler = checked(
         pets.get_code,
         'The pets.get_code method of GET /code',
+        ('invalid',),
     )
 
     def get_code(
@@ -141,6 +144,7 @@ def _add_literal(
     literal_handler = checked(
         pets.literal,
         'The pets.literal method of GET /literal',
+        ('modes', 'named', 'listed'),
     )
 
     def literal(
@@ -178,6 +182,7 @@ def _add_literal_model(
     literal_model_handler = checked(
         pets.literal_model,
         'The pets.literal_model method of GET /literal-model',
+        ('modes',),
     )
 
     def literal_model(
@@ -213,6 +218,7 @@ def _add_get_pet(
     get_pet_handler = checked(
         pets.get_pet,
         'The pets.get_pet method of GET /pets/{petId}',
+        ('petId', 'limit', 'code', 'codes', 'step', 'raw', 'day', 'filter', 'pair', 'label', 'pet', 'tag'),
     )
 
     def get_pet(

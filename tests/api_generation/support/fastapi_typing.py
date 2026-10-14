@@ -51,13 +51,16 @@ def fastapi_missing_report(root: Path) -> str:
 
 
 def _samples_report(root: Path, package: str, sample: str) -> str:
-    """Check a package with a positive sample, then its negative sample line by line."""
+    """Check a package, with its entrypoint and the service stubs generation wrote, and a positive sample.
+
+    Then check the negative sample line by line.
+    """
     for name in (sample, f"{sample}_negative"):
         shutil.copyfile(SAMPLES / f"{name}.py", root / f"{name}.py")
     marked = marked_lines(root / f"{sample}_negative.py")
     lines = [
         f"{len(marked)} marked lines",
-        *checked(root, [package, f"{sample}.py"], f"{package} and {sample}.py"),
+        *checked(root, [package, "services", f"{sample}.py"], f"{package}, services, and {sample}.py"),
         *negative(root, f"{sample}_negative.py", marked),
     ]
     return "\n".join(lines) + "\n"

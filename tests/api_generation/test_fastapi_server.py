@@ -25,6 +25,7 @@ from scripts.build_docs_examples import (
 from tests.api_generation.support.cross_targets import cross_report
 from tests.api_generation.support.docs_tutorial import generate_project, run_python, run_tests, serve
 from tests.api_generation.support.fastapi_charsets import text_charsets
+from tests.api_generation.support.fastapi_entrypoint import fastapi_entrypoint_report
 from tests.api_generation.support.fastapi_openapi import SCENARIOS, fastapi_openapi_report
 from tests.api_generation.support.fastapi_server import fastapi_server_report
 from tests.api_generation.support.fastapi_upstream import fastapi_upstream_report
@@ -251,3 +252,14 @@ def test_docs_client_howto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caps
     for script in (*CLIENT_HOWTO_SCRIPTS, "generate"):
         assert_output(run_python(project.root, f"{script}.py"), EXPECTED_CLIENT_HOWTO / f"{script}.txt")
     assert_output(run_tests(project.root, "test_client.py"), EXPECTED_CLIENT_HOWTO / "pytest.txt")
+
+
+def test_fastapi_entrypoint(tmp_path: Path) -> None:
+    """Serve the generated entrypoint with the stubs generation writes once, an implementation, and broken modules.
+
+    Generation keeps the modules of the user's; the entrypoint names a missing module or class, lets the error of a
+    missing dependency through, and refuses a method that cannot take its route's arguments as it starts.
+    """
+    report, stubs = fastapi_entrypoint_report(tmp_path)
+    assert_output(report, EXPECTED / "entrypoint.txt")
+    assert_generated_modules_output(stubs, EXPECTED / "packages" / "entrypoint")

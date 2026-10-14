@@ -920,6 +920,45 @@ def test_watch_cli_regenerates_server_on_change(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.version_info < TARGET_PYTHON, reason="The server and client targets need Python 3.11 or later")
+def test_watch_cli_announces_implied_settings_once(tmp_path: Path) -> None:
+    """Name the settings a watched server implies on the first generation only, and the next steps after each."""
+    source = PROJECT_ROOT / "tests/data/generation_platform/fastapi"
+    input_file = tmp_path / "pets.yaml"
+    shutil.copy2(source / "pets.yaml", input_file)
+    router = _WatchedOutput(tmp_path / "server" / "routers" / "pets.py")
+    process, stdout_lines, stderr_lines, stdout_thread, stderr_thread = _start_watch_cli_until_ready(
+        input_file,
+        tmp_path / "models.py",
+        [
+            *("--input-file-type", "openapi", "--output-model-type", "pydantic_v2.BaseModel"),
+            *("--generate-server", "fastapi", "--server-output", str(tmp_path / "server")),
+            *("--server-package", "server", "--server-model-package", "models"),
+        ],
+    )
+
+    def notices(text: str) -> int:
+        return sum(text in line for line in stderr_lines)
+
+    regenerated = router.contains("Page size of a listing.")
+    try:
+        _write_watch_cli_input_and_wait(
+            process,
+            stdout_lines,
+            stderr_lines,
+            input_file,
+            (source / "cli" / "pets-baseline.yaml").read_text(encoding="utf-8"),
+            lambda: regenerated() and notices("Add the runtime dependencies") == 2,
+            "the server package to be regenerated with its notice",
+        )
+        assert_output(
+            f"implied notices {notices('set the options it needs')}; next steps {notices('Next steps:')}\n",
+            EXPECTED_MAIN_PATH / "generation_platform/fastapi/cli/watch/implied.txt",
+        )
+    finally:
+        _stop_watch_cli(process, stdout_thread, stderr_thread)
+
+
+@pytest.mark.skipif(sys.version_info < TARGET_PYTHON, reason="The server and client targets need Python 3.11 or later")
 def test_watch_cli_regenerates_client_job_on_change(tmp_path: Path) -> None:
     """Regenerate a client job of a watched batch whenever its input changes, as a model job is.
 

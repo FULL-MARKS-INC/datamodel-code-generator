@@ -86,7 +86,12 @@ class FastAPITarget:
         for problem in source.problems:
             output = shown(config.output, request.shown_root).as_posix()
             warnings.warn(f"{output}: {problem}", DocumentationAnnotationWarning, stacklevel=2)
-        return TargetRender(files=files, dependencies=_dependencies(plan, request.model_imports))
+        return TargetRender(
+            files=files,
+            dependencies=_dependencies(plan, request.model_imports),
+            implementations=renderer.implementations(),
+            next_steps=renderer.next_steps(),
+        )
 
 
 def _check_links(plan: ServerPlan, request: TargetRequest) -> None:

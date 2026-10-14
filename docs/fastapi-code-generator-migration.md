@@ -268,7 +268,8 @@ checkers point at the implementations to update.
 - **Delete stale router modules.** Generation overwrites every generated file but does not delete one. After you remove
   a tag from the document, its `server/routers/<group>.py` stays, and `--check` lists it as no longer generated. Delete
   it by hand.
-- **Keep your code outside the package.** `--check` also reports any other `.py` file under `--server-output`.
+- **Keep your code outside the package**, in the `services` modules that `main.py` imports, which generation writes
+  once with stubs. `--check` also reports any other `.py` file under `--server-output`.
 - **Watch the document.** `--watch` regenerates on every change of the input and needs the `watch` extra,
   `datamodel-code-generator[watch]`; see [Compare and watch](fastapi-server.md#compare-and-watch).
 

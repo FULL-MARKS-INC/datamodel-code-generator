@@ -183,7 +183,8 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
 The [preset](presets.md) supplies the model options, as in the model [quick start](getting-started.md), and
 `--openapi-scopes schemas api` makes models for the parameters, bodies, and responses of the operations too.
 
-Generation ends by printing the command that adds the package's runtime dependencies to your project:
+Generation ends by printing the command that adds the package's runtime dependencies to your project, and the next
+steps: a call of the first operation in a client's context, and the README of the package:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.notice -->
 <!-- fmt: off -->
@@ -191,12 +192,18 @@ Generation ends by printing the command that adds the package's runtime dependen
 ```text
 Add the runtime dependencies of client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
+Next steps: call the API with the client:
+  from client import Client
+
+  with Client(base_url=...) as client:
+      client.pets.list_pets(...)
+See client/_generated_docs/README.md.
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.notice -->
 
-Run it. `httpx2` is [HTTPX2](https://github.com/pydantic/httpx2), the HTTP library the client sends with; it is not
+Run the `uv add` command. `httpx2` is [HTTPX2](https://github.com/pydantic/httpx2), the HTTP library the client sends with; it is not
 the `datamodel-code-generator[httpx2]` extra, which only fetches remote schemas while generating. The command names
 only the minimum version of each package, so uv adds the latest release, and it grows with what the document uses,
 such as `httpx2[ws]` for WebSocket helpers or `cryptography` for public-key webhook signatures.
@@ -238,7 +245,7 @@ Every file here is overwritten on each run, so keep your own code outside `clien
 
 ### 3. Call the API
 
-Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn app:app`, or any server
+Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn server.main:app`, or any server
 that implements the document at `http://localhost:8000`. Then save `call.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.call -->
@@ -1357,7 +1364,9 @@ the package, because `--check` treats every `.py` file under `--client-output` a
 `--check` compares without writing and prints the differences as for models, and `--output-format json`
 emits the model generation and check payloads, as with `--generate-server`; their `target` names the package and
 the runtime dependencies of the `uv add` notice, such as `{"package": "client", "dependencies": ["httpx2>=2.13.0",
-"typing-extensions>=4.16", "pydantic>=2.14.0"]}`. `--diff-against` and `--watch` also work
+"typing-extensions>=4.16", "pydantic>=2.14.0"]}`. The generation payload adds the next steps of the notice: the
+package `readme`, with a path relative like those of `files`, and `usage`, the code that calls the first operation.
+`--diff-against` and `--watch` also work
 as they do with `--generate-server`. Use `--check` in CI to fail when the package is out of date; see
 [Check in CI](fastapi-server.md#check-in-ci), which applies to the client as well.
 
@@ -1366,14 +1375,18 @@ as they do with `--generate-server`. Use `--check` in CI to fail when the packag
 ### Requirements
 
 Like the server, the client needs Python 3.11 or later, both to run `datamodel-codegen` and as the target Python
-version; a target below 3.11, including the default 3.10, is refused.
+version. As for the server, a setting the client needs that you leave unset takes the value it needs, and a value you
+set that it cannot use is refused; see the server's [Requirements](fastapi-server.md#requirements), which also
+describes the notice that shows how to set them and `target.implied`. An unset target Python version is `3.11`; one
+below 3.11 that you or a preset set is refused.
 
 Settings of the generated client that change how its methods are declared or checked do not change the models: the
 same OpenAPI document and model settings produce the same model files whichever client settings you choose.
 
 The model's `openapi_scopes` must include `api`, so that the models cover the parameters, bodies, and responses of
-the operations; without it, generation stops with `Error: --generate-client requires --openapi-scopes to include api`
-and exit code 2, and the Python API raises `datamodel_code_generator.Error`. The client keeps every model setting
+the operations: unset, it is `schemas api`; scopes you give without `api` stop the run with
+`Error: --generate-client requires --openapi-scopes to include api` and exit code 2, and the Python API raises
+`datamodel_code_generator.Error`. The client keeps every model setting
 as given, including the generation timestamp, which `disable_timestamp` leaves out. The client files are headed,
 formatted, and encoded like the model files, by the same model settings: `formatters`, `custom_formatters` and
 `custom_formatters_kwargs`, `custom_file_header`, `custom_file_header_path` and `custom_file_header_mode`,
@@ -1394,16 +1407,18 @@ or `2.12`) is refused with `Error:` and exit code 2 for those models; leave it u
 backends do not use the option.
 
 `--use-missing-sentinel` needs `--target-pydantic-version 2.14`, with which the models import `MISSING` from
-`pydantic`. Model generation alone imports it from `pydantic.experimental.missing_sentinel`, which pydantic 2.14
-deprecates, when the target is unset or `2.12`, and refuses the option for `2` and `2.11`. With the target unset,
-`2`, `2.11`, or `2.12`, client generation stops with `Error: The client target needs --target-pydantic-version 2.14
-for --use-missing-sentinel, so that the models import MISSING from pydantic` and exit code 2.
+`pydantic`; with the sentinel, an unset target is `2.14`. Model generation alone imports it from
+`pydantic.experimental.missing_sentinel`, which pydantic 2.14 deprecates, when the target is unset or `2.12`, and
+refuses the option for `2` and `2.11`. With a target of `2`, `2.11`, or `2.12` that you set, client generation
+stops with `Error: The client target needs --target-pydantic-version 2.14 for --use-missing-sentinel, so that the
+models import MISSING from pydantic` and exit code 2.
 
 A `pydantic_v2.dataclass` field cannot tell an unset member from one set to `None`, so client generation with
 `--output-model-type pydantic_v2.dataclass` needs `--use-missing-sentinel`, and with it
-`--target-pydantic-version 2.14`. Without the sentinel, generation stops with `Error: The client target needs
---use-missing-sentinel with --target-pydantic-version 2.14 for 'pydantic_v2.dataclass' models, whose fields cannot
-tell an unset member from None` and exit code 2. With both, an optional field without a default holds `MISSING`, as it
+`--target-pydantic-version 2.14`: unset, the sentinel is on and the target is `2.14`. With the sentinel turned off,
+`use-missing-sentinel = false` in `pyproject.toml` or `use_missing_sentinel=False` for `generate()`, generation
+stops with `Error: The client target needs --use-missing-sentinel with --target-pydantic-version 2.14 for
+'pydantic_v2.dataclass' models, whose fields cannot tell an unset member from None` and exit code 2. With both, an optional field without a default holds `MISSING`, as it
 does for `pydantic_v2.BaseModel` when the options are set:
 
 ```python
@@ -1425,8 +1440,9 @@ msgspec decodes a union of structs only when every struct in it is tagged, and a
 all `str` or all `int` values, so client generation with `--output-model-type msgspec.Struct` needs
 [`--use-msgspec-tagged-unions`](cli-reference/model-customization.md#use-msgspec-tagged-unions) and
 [`--use-msgspec-nullable-enum-alias`](cli-reference/model-customization.md#use-msgspec-nullable-enum-alias), whether
-or not the document declares a discriminated union or an enum that lists `null`. Without them, generation stops with
-exit code 2 and an error that names every missing one, such as `Error: The client target needs
+or not the document declares a discriminated union or an enum that lists `null`: unset, both are on. With one turned
+off in `pyproject.toml` or for `generate()`, generation stops with exit code 2 and an error that names every one
+turned off, such as `Error: The client target needs
 --use-msgspec-tagged-unions for 'msgspec.Struct' models, so that their discriminated unions can be decoded; The
 client target needs --use-msgspec-nullable-enum-alias for 'msgspec.Struct' models, so that their enums that list null
 can be decoded`, and the Python API raises `datamodel_code_generator.Error`. A union of structs that has no
@@ -1560,7 +1576,7 @@ but the model metadata and a remote lock update and returns every model and clie
 the paths their import paths imply; see
 [Generating a Server or Client Package](using_as_module.md#generating-a-server-or-client-package).
 `load_pyproject_config()` reads the client keys of `pyproject.toml`, whose paths and documents resolve as they do on
-the command line. The `uv add` notice is a command-line message only.
+the command line. The `uv add` notice and the next steps are command-line messages only.
 
 ### Batch jobs
 

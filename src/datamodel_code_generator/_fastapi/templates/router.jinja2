@@ -20,6 +20,7 @@ def {{ route.adder }}(
     {{ route.handler }} = {{ route.lookup.function }}(
         {{ route.service }}.{{ route.lookup.method }},
         {{ route.lookup.label }},
+        {{ route.lookup.keywords }},
 {%- if route.lookup.asynchronous %}
         asynchronous=True,
 {%- endif %}

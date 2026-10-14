@@ -1,0 +1,2 @@
+Error: could not publish batch output: services/store.py: The server packages server of job 'server' and admin of job 'admin' would both import their implementation from this module: put each server package under a parent package of its own
+written: ['services/pets.py']

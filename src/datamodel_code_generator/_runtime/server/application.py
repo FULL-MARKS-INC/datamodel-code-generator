@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import inspect
+import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeGuard, TypeVar, cast
 from urllib.parse import unquote_to_bytes
 
@@ -185,17 +187,91 @@ def error_handlers(exception_handlers: Mapping[Any, Any] | None) -> dict[Any, An
     return {RequestValidationError: validation_error_handler, **(exception_handlers or {})}
 
 
-def checked(method: MethodT, label: str, *, asynchronous: bool = False) -> MethodT:
-    """Return a service method for its operation, refusing a coroutine function where a plain one runs or the reverse.
+def checked(
+    method: MethodT, label: str, keywords: tuple[str, ...] | None = None, *, asynchronous: bool = False
+) -> MethodT:
+    """Return a service method for its operation, refusing one that its route cannot call as the route calls it.
 
-    A mismatch would skip the method body or fail after it ran, so it stops the registration.
+    A coroutine function where a plain one runs, or the reverse, would skip the method body or fail after it ran, and a
+    signature that does not take the keyword arguments the route passes, `keywords`, would fail on every request:
+    either stops the registration. A wider signature, with defaults or `**kwargs`, takes them. A route of a custom
+    template that names no keywords is not checked for them, and neither is a callable without a signature.
     """
-    if _coroutine_function(method) is asynchronous:
+    if _coroutine_function(method) is not asynchronous:
+        kinds = ("a coroutine function", "a plain method")
+        found, needed = reversed(kinds) if asynchronous else kinds
+        msg = f"{label} is {found}, but the operation's handler mode needs {needed}"
+        raise TypeError(msg)
+    if keywords is None:
         return method
-    kinds = ("a coroutine function", "a plain method")
-    found, needed = reversed(kinds) if asynchronous else kinds
-    msg = f"{label} is {found}, but the operation's handler mode needs {needed}"
-    raise TypeError(msg)
+    try:
+        signature = _signature(cast("Callable[..., object]", method))
+    except ValueError:
+        return method
+    try:
+        signature.bind(**dict.fromkeys(keywords))
+    except TypeError as error:
+        name = getattr(method, "__qualname__", repr(method))
+        passed = ", ".join(keywords) or "none"
+        msg = f"{label}, {name}, cannot take the keyword arguments its route passes ({passed}): {error}"
+        raise TypeError(msg) from None
+    return method
+
+
+def _signature(method: Callable[..., object]) -> inspect.Signature:
+    """Return a method's own signature, not that of a function it wraps, without evaluating its annotations."""
+    if sys.version_info >= (3, 14):  # pragma: >=3.14 cover
+        from annotationlib import Format  # noqa: PLC0415
+
+        return inspect.signature(method, follow_wrapped=False, annotation_format=Format.FORWARDREF)
+    return inspect.signature(method, follow_wrapped=False)  # pragma: <3.14 cover
+
+
+def missing_implementation(error: ImportError, implementations: Mapping[str, str]) -> None:
+    """Raise an error naming what to write when the entrypoint could not import a module or name of yours.
+
+    `implementations` maps each module the entrypoint imports to the class or function it imports from it. Any other
+    import error, such as one in a module that an implementation imports, returns for the caller to re-raise unchanged.
+    Files are named where they are, relative to the working directory when they lie inside it.
+    """
+    package = __name__.partition("._runtime.")[0]
+    entrypoint = f"{package}.main"
+    root = Path(str(sys.modules[package].__file__)).parent
+    readme = f"see Next steps in {_shown(root / 'README.md')}"
+    name = error.name or ""
+    if isinstance(error, ModuleNotFoundError):
+        missing = {
+            module: item for module, item in implementations.items() if name in {module, module.rpartition(".")[0]}
+        }
+        if not missing:
+            return
+        files = [] if name in missing else [_shown(_file(root, package, name).with_suffix("") / "__init__.py")]
+        files.extend(f"{_shown(_file(root, package, module))} defining {item}" for module, item in missing.items())
+        msg = (
+            f"No module named {name!r}: create {', '.join(files)}, which {entrypoint} imports. Generating the "
+            f"server again writes missing modules with stubs; {readme}"
+        )
+    elif (
+        (item := implementations.get(name)) is not None
+        and getattr(error, "name_from", item) == item
+        and not hasattr(module := sys.modules.get(name), item)
+    ):
+        where = _shown(Path(str(getattr(module, "__file__", None) or _file(root, package, name))))
+        msg = f"{name} defines no {item}, which {entrypoint} imports: define it in {where}; {readme}"
+    else:
+        return
+    raise ImportError(msg, name=name) from error
+
+
+def _file(root: Path, package: str, module: str) -> Path:
+    """Return the file a module of the package's parent package would have, beside the package's directory."""
+    parent = package.rpartition(".")[0]
+    return root.parent.joinpath(*module.removeprefix(f"{parent}." if parent else "").split(".")).with_suffix(".py")
+
+
+def _shown(path: Path) -> str:
+    """Return a path relative to the working directory when it lies inside it."""
+    return (path.relative_to(cwd) if path.is_relative_to(cwd := Path.cwd()) else path).as_posix()
 
 
 def _is_sequence(value: object) -> TypeIs[Sequence[object]]:

@@ -32,6 +32,7 @@ def _add_get_keys(
     get_keys_handler = checked(
         default.get_keys,
         'The default.get_keys method of GET /keys',
+        ('principal',),
     )
 
     get_keys_authorize = wiring.authorizer()

@@ -1,7 +1,7 @@
 --- server/README.md
 +++ server/README.md (expected)
-@@ -92,5 +92,3 @@
- When an operation is added, removed, or changed, its method in `services.py` changes with it, so type checkers point at the implementations to update, and Python refuses to create an instance of a subclass that lacks a new method.
+@@ -221,5 +221,3 @@
+ Generation writes only the missing modules of `services`: a new router group gets its module with stubs, and the module of a renamed or removed group stays for you to move or delete.
  Each generation prints the `uv add` command that adds the runtime dependencies of the package to your project;
  run it again when a new version of datamodel-code-generator changes them.
 -

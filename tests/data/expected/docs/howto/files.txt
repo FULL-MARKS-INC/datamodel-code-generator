@@ -20,8 +20,12 @@ server/_runtime/server/requests.py
 server/_runtime/server/responses.py
 server/_runtime/server/security.py
 server/application.py
+server/main.py
 server/py.typed
 server/routers/__init__.py
 server/routers/photos.py
 server/security.py
 server/services.py
+services/__init__.py
+services/authorize.py
+services/photos.py

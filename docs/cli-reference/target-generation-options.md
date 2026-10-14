@@ -4150,6 +4150,7 @@ Choose how the server package lays out its routes (experimental).
         list_pets_handler = checked(
             service.list_pets,
             'The service.list_pets method of GET /pets',
+            ('limit',),
         )
 
         def list_pets(
@@ -4186,6 +4187,7 @@ Choose how the server package lays out its routes (experimental).
         create_pet_handler = checked(
             service.create_pet,
             'The service.create_pet method of POST /pets',
+            ('body',),
         )
 
         def create_pet(
@@ -4222,6 +4224,7 @@ Choose how the server package lays out its routes (experimental).
         replace_pet_handler = checked(
             service.replace_pet,
             'The service.replace_pet method of PUT /pets/{name}',
+            ('name', 'body'),
         )
 
         def replace_pet(
@@ -5098,6 +5101,7 @@ without a file against the working directory, and against the pyproject.toml dir
         list_pets_handler = checked(
             pets.list_pets,
             'The pets.list_pets method of GET /pets',
+            ('limit',),
         )
 
         def list_pets(
@@ -5134,6 +5138,7 @@ without a file against the working directory, and against the pyproject.toml dir
         create_pet_handler = checked(
             pets.create_pet,
             'The pets.create_pet method of POST /pets',
+            ('body',),
         )
 
         def create_pet(
@@ -5170,6 +5175,7 @@ without a file against the working directory, and against the pyproject.toml dir
         replace_pet_handler = checked(
             pets.replace_pet,
             'The pets.replace_pet method of PUT /pets/{name}',
+            ('name', 'body'),
         )
 
         def replace_pet(

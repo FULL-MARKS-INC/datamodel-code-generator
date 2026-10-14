@@ -26,6 +26,7 @@ def _add_get_values(
     get_values_handler = checked(
         default.get_values,
         'The default.get_values method of GET /values/{id}',
+        ('id', 'count', 'bounded', 'score', 'flag', 'name', 'label', 'counts', 'names', 'page', 'size', 'maybe', 'X_Trace', 'X_Tag', 'blob', 'visits'),
     )
 
     def get_values(
@@ -80,6 +81,7 @@ def _add_post_form(
     post_form_handler = checked(
         default.post_form,
         'The default.post_form method of POST /forms',
+        ('body',),
     )
 
     def post_form(
@@ -114,6 +116,7 @@ def _add_upload(
     upload_handler = checked(
         default.upload,
         'The default.upload method of POST /uploads',
+        ('body',),
     )
 
     def upload(

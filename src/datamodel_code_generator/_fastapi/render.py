@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import keyword
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from functools import cached_property
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Final
 
-from datamodel_code_generator._api_generation import RenderedFile
+from datamodel_code_generator._api_generation import RenderedFile, implementation_text
+from datamodel_code_generator._api_types import Implementation, NextSteps
 from datamodel_code_generator._fastapi._compiled_templates import application as application_template
+from datamodel_code_generator._fastapi._compiled_templates import authorize as authorize_template
 from datamodel_code_generator._fastapi._compiled_templates import contract as contract_template
 from datamodel_code_generator._fastapi._compiled_templates import facade as facade_template
+from datamodel_code_generator._fastapi._compiled_templates import implementation as implementation_template
+from datamodel_code_generator._fastapi._compiled_templates import main as main_template
 from datamodel_code_generator._fastapi._compiled_templates import openapi as openapi_template
 from datamodel_code_generator._fastapi._compiled_templates import readme as readme_template
 from datamodel_code_generator._fastapi._compiled_templates import router as router_template
@@ -332,6 +337,22 @@ class Module(TargetModule):
         return f"{value.prefix}{self.imported(value.import_)}{value.suffix}"
 
 
+class UserModule(Module):
+    """A module of the user's beside the server package, which imports the package's names by their absolute paths.
+
+    The names a method signature takes from the package, such as `HTTPResult`, are the ones the package exports.
+    """
+
+    def __init__(self, types: TypeNames, reserved: Iterable[str], package: str) -> None:
+        """Keep the server package the module imports from."""
+        super().__init__(types, reserved)
+        self.package = package
+
+    def local(self, module: str, name: str) -> str:  # noqa: ARG002
+        """Return the local name of a name the server package exports, imported from the package."""
+        return self.name(self.package, name)
+
+
 @dataclass(frozen=True, slots=True)
 class Builder:
     """A keyword-only builder function: `build_router` or `create_app`."""
@@ -348,6 +369,7 @@ class Lookup:
     function: str
     method: str
     label: str
+    keywords: str
     asynchronous: bool
 
 
@@ -483,6 +505,42 @@ class Scheme:
     keywords: tuple[Keyword, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class Owned:
+    """One module of the user's that `main.py` imports: the class of a group, or the authorize function.
+
+    `keyword` passes it to `create_app`, `base` is the class a class implements, none for the function, `alias` is its
+    name in `main.py`, and `source` is the stub generation writes while the module is missing.
+    """
+
+    module: str
+    name: str
+    alias: str
+    keyword: str
+    base: str
+    source: str
+
+    @property
+    def stem(self) -> str:
+        """Return the module's name within its package."""
+        return self.module.rpartition(".")[2]
+
+    @property
+    def path(self) -> PurePosixPath:
+        """Return the module's file relative to the directory that holds the server package."""
+        return PurePosixPath("services", f"{self.stem}.py")
+
+    @property
+    def file(self) -> str:
+        """Return the module's file relative to the server package, where its README is."""
+        return f"../{self.path}"
+
+    @property
+    def stub(self) -> str:
+        """Return the stub as generation writes it, formatted like the other generated modules."""
+        return implementation_text(self.path)
+
+
 class ServerRenderer:  # ruff: ignore[too-many-public-methods]
     """Render every module of one server package from its plan, codec plan, and wire plan."""
 
@@ -538,9 +596,119 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
             RenderedFile(path=generated / "openapi.json", kind="document", text=self.document),
             *((self.file(PurePosixPath("security.py"), "security", self.security()),) if self.plan.schemes else ()),
             self.file(PurePosixPath("services.py"), "services", self.services_module()),
+            self.file(PurePosixPath("main.py"), "entrypoint", self.main()),
             self.file(PurePosixPath("README.md"), "readme", self.readme()),
         )
         return (*files, *self.runtime())
+
+    @property
+    def services_package(self) -> str:
+        """Return the package of the user's implementations: `services`, beside the server package."""
+        parent = self.config.package.rpartition(".")[0]
+        return f"{parent}.services" if parent else "services"
+
+    @cached_property
+    def owned(self) -> tuple[Owned, ...]:
+        """Return the modules of the user's that `main.py` imports, each with the stub generation writes for it.
+
+        A router group's class takes the name of its Protocol without the `Service` suffix and lives in the module of
+        the group's stem; the operations of a secured document also need the authorize function.
+        """
+        services, taken = self.services_package, set[str]()
+        owned: list[Owned] = []
+        for group in self.plan.groups:
+            name = _implementation(group)
+            taken.add(alias := _unique(name, taken))
+            base = f"{group.service}[object]" if group.secured else group.service
+            source = self.stub(group, name).render(self.role)
+            owned.append(Owned(f"{services}.{group.stem}", name, alias, group.stem, base, source))
+        if self.plan.schemes:
+            source = self.authorize_stub().render(self.role)
+            owned.append(Owned(f"{services}.authorize", "authorize", "authorize", "authorize", "", source))
+        return tuple(owned)
+
+    def stub(self, group: GroupSpec, name: str) -> Templated:
+        """Return the module generation writes once for a router group: its class with a stub for each method.
+
+        Each method has the signature of the Protocol's, with `object` for the principal a secured group receives.
+        """
+        package = self.config.package
+        reserved = {name, *(argument.name for spec in group.operations for argument in spec.arguments)}
+        module = UserModule(self.types, reserved, package)
+        protocol = module.name(f"{package}.services", group.service)
+        return templated(
+            "implementation.jinja2",
+            implementation_template.render,
+            protocol=group.service,
+            services=f"{package}.services",
+            entrypoint=f"{package}.main",
+            name=name,
+            base=f"{protocol}[object]" if group.secured else protocol,
+            methods="every operation" if self.config.layout == "single" else f"the {group.stem} operations",
+            protocol_methods=[self.method(module, spec, "object") for spec in group.operations],
+            imports=module.imports(),
+        )
+
+    def authorize_stub(self) -> Templated:
+        """Return the module generation writes once for the authorize function of a secured document."""
+        package = self.config.package
+        module = UserModule(self.types, {"authorize", "requirement_sets", "credentials"}, package)
+        return templated(
+            "authorize.jinja2",
+            authorize_template.render,
+            package=package,
+            entrypoint=f"{package}.main",
+            requirement_sets=module.name(package, "RequirementSets"),
+            credentials=module.name(package, "Credentials"),
+            imports=module.imports(),
+        )
+
+    def implementations(self) -> tuple[RenderedFile, ...]:
+        """Return the user modules `main.py` imports, with stubs, and their package, beside the server package."""
+        if not (owned := self.owned):
+            return ()
+        docstring = (
+            f"Your implementations of {self.config.package}, which {self.config.package}.main imports.\n\n"
+            "datamodel-code-generator wrote this file once and never overwrites it, or the modules beside it."
+        )
+        return (
+            self.file(
+                PurePosixPath("services", "__init__.py"), "package", self.facade(self.services_package, docstring)
+            ),
+            *(RenderedFile(path=item.path, kind="implementation", text=item.source) for item in owned),
+        )
+
+    def next_steps(self) -> NextSteps:
+        """Return the README, the entrypoint and its application, and the implementations it imports."""
+        services = self.services_package.rpartition(".")[2]
+        return NextSteps(
+            readme=Path("README.md"),
+            app=f"{self.config.package}.main:app",
+            entrypoint=Path("main.py"),
+            implementations=tuple(
+                Implementation(module=item.module, name=item.name, path=Path(services, f"{item.stem}.py"))
+                for item in self.owned
+            ),
+        )
+
+    def main(self) -> Templated:
+        """Return the entrypoint: the application of `create_app` with an instance of each implementation."""
+        owned = self.owned
+        module = Module(self.types, {"app", "error", *(item.alias for item in owned)}, level=1, hints=False)
+        create_app = module.local("application", "create_app")
+        missing = module.local("_runtime.server.application", "missing_implementation") if owned else ""
+        return templated(
+            "main.jinja2",
+            main_template.render,
+            app=f"{self.config.package}.main:app",
+            services=self.services_package,
+            implementations=sorted(owned, key=lambda item: item.module.casefold()),
+            table=[Keyword(repr(item.module), repr(item.name)) for item in owned],
+            missing=missing,
+            create_app=create_app,
+            arguments=[Keyword(item.keyword, f"{item.alias}()" if item.base else item.alias) for item in owned],
+            imports=module.imports(),
+        )
 
     @staticmethod
     def facade(module: str, docstring: str, imports: str = "", exports: Iterable[str] = ()) -> Templated:
@@ -604,6 +772,9 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
                 for group in groups
             ],
             protocols=", ".join(group.service for group in groups),
+            services_package=self.services_package,
+            owned=self.owned,
+            app=f"{config.package}.main:app",
             arguments=", ".join((*arguments, *(("authorize=authorize",) if plan.schemes else ()))),
             schemes=[{"name": scheme.name, "credential": _credential(scheme)} for scheme in plan.schemes],
             forms=any(spec.body is not None and spec.body.form for spec in plan.operations),
@@ -745,7 +916,11 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
         asynchronous = spec.mode == "async"
         label = f"The {group.stem}.{spec.python_name} method of {spec.contract.method.upper()} {spec.contract.path}"
         lookup = Lookup(
-            module.local("_runtime.server.application", "checked"), spec.python_name, repr(label), asynchronous
+            module.local("_runtime.server.application", "checked"),
+            spec.python_name,
+            repr(label),
+            _tuple([repr(argument.name) for argument in spec.arguments]),
+            asynchronous,
         )
         parameters = [
             self.parameter(module, spec, argument, plan, principal)
@@ -895,12 +1070,15 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
             imports=module.imports(),
         )
 
-    def method(self, module: Module, spec: OperationSpec) -> Method:
-        """Return one operation's method: the keyword-only arguments the endpoint passes and the results it takes."""
+    def method(self, module: Module, spec: OperationSpec, principal: str = "PrincipalT_contra") -> Method:
+        """Return one operation's method: the keyword-only arguments the endpoint passes and the results it takes.
+
+        A secured operation's principal argument has the `principal` type.
+        """
         return Method(
             name=spec.python_name,
             asynchronous=spec.mode == "async",
-            parameters=tuple(self.parameters(module, spec, "PrincipalT_contra")),
+            parameters=tuple(self.parameters(module, spec, principal)),
             returns=_chain(module, self.results(module, spec)),
             docstring=format_docstring(
                 self.docstring(spec), 8, use_single_line_docstring=self.use_single_line_docstring

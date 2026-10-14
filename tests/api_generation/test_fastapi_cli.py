@@ -42,6 +42,7 @@ CLI = SOURCE / "cli"
 EXPECTED = DATA / "expected" / "main" / "generation_platform" / "fastapi"
 PACKAGE = EXPECTED / "packages" / "pets" / "pydantic_v2_BaseModel"
 DEPENDENCIES = EXPECTED / "cli" / "dependencies.txt"
+REGENERATED = EXPECTED / "cli" / "dependencies-regenerated.txt"
 SHARED_DEPENDENCIES = EXPECTED / "cli" / "shared-models-dependencies.txt"
 PYTHON = ["--target-python-version", "3.11"]
 SCOPES = ["--openapi-scopes", "schemas", "api"]
@@ -168,7 +169,7 @@ def test_fastapi_cli_generate(
         input_file_type="openapi",
         extra_args=_server(),
         capsys=capsys,
-        expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"),
+        expected_stderr=REGENERATED.read_text(encoding="utf-8"),
         assert_func=assert_file_content,
         expected_file=PACKAGE / "models.py",
     )
@@ -270,7 +271,8 @@ def test_fastapi_cli_check_outputs(
     which warns about the files it leaves in place and no longer generates.
     A case can name its model and server outputs, with the arguments that give their import paths. A model
     directory in such a nested layout is not importable under its own name, as the model checks of the helper
-    import it, so they are left out for it.
+    import it, so they are left out for it. The notice of the first generation marks the service stubs it creates,
+    and that of a generation over an earlier one does not.
     """
     case = CHECK_CASES[case_name]
     monkeypatch.chdir(tmp_path)
@@ -278,6 +280,7 @@ def test_fastapi_cli_check_outputs(
     output = Path(case.get("model", "models" if case.get("modular") else "models.py"))
     server = case.get("server", "server")
     notice = EXPECTED / "cli" / case.get("notice", DEPENDENCIES.name)
+    repeated = notice if case.get("fresh") else EXPECTED / "cli" / case.get("regenerated", REGENERATED.name)
     source = Path("pets.yaml")
     if case.get("modular") or case.get("source"):
         shutil.copytree(DATA / "generation_platform" / "targets" / "spec", tmp_path / "spec")
@@ -323,7 +326,7 @@ def test_fastapi_cli_check_outputs(
                 output_path=output,
                 extra_args=_server(*options, *case.get("options", ()), output=server),
                 capsys=capsys,
-                expected_stderr=notice.read_text(encoding="utf-8"),
+                expected_stderr=repeated.read_text(encoding="utf-8"),
                 skip_code_validation=unvalidated,
             )
     assert_output(
@@ -513,20 +516,25 @@ def test_fastapi_cli_unselected_pyproject(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 @pytest.mark.parametrize(
-    ("name", "arguments"),
+    ("name", "arguments", "notice"),
     [
-        ("base", []),
-        ("profile", ["--profile", "async"]),
-        ("cli-over-profile", ["--profile", "async", "--server-handler-mode", "sync"]),
-        ("cli-table", ["--server-handler-modes", '{"/paths/~1store~1inventory/get": "async"}']),
-        ("cli-empty-table", ["--profile", "async", "--server-handler-modes", "{}"]),
-        ("profile-output", ["--profile", "elsewhere"]),
-        ("cli-output", ["--profile", "elsewhere", "--server-output", "service"]),
+        ("base", [], DEPENDENCIES.name),
+        ("profile", ["--profile", "async"], DEPENDENCIES.name),
+        ("cli-over-profile", ["--profile", "async", "--server-handler-mode", "sync"], DEPENDENCIES.name),
+        (
+            "cli-table",
+            ["--server-handler-modes", '{"/paths/~1store~1inventory/get": "async"}'],
+            DEPENDENCIES.name,
+        ),
+        ("cli-empty-table", ["--profile", "async", "--server-handler-modes", "{}"], DEPENDENCIES.name),
+        ("profile-output", ["--profile", "elsewhere"], "dependencies-elsewhere.txt"),
+        ("cli-output", ["--profile", "elsewhere", "--server-output", "service"], "dependencies-service.txt"),
     ],
 )
 def test_fastapi_cli_precedence(
     name: str,
     arguments: list[str],
+    notice: str,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -537,7 +545,8 @@ def test_fastapi_cli_precedence(
     """
     monkeypatch.chdir(tmp_path)
     _copy(tmp_path, "pyproject-precedence.toml")
-    run_main_with_args(arguments, capsys=capsys, expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"))
+    expected = (EXPECTED / "cli" / notice).read_text(encoding="utf-8")
+    run_main_with_args(arguments, capsys=capsys, expected_stderr=expected)
     report = "".join(_methods(path) for path in sorted(tmp_path.glob("*/services.py")))
     assert_output(
         f"$ datamodel-codegen {' '.join(arguments)}\n{report}", EXPECTED / "cli" / "precedence" / f"{name}.txt"
@@ -558,11 +567,12 @@ def test_fastapi_cli_pyproject_paths(
     shutil.copy2(CLI / "names.json", project / "names.json")
     (work / "names.json").write_text('{"/paths/~1pets/get": "find_pets"}', encoding="utf-8")
     monkeypatch.chdir(work)
-    run_main_with_args([], capsys=capsys, expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"))
+    notice = (EXPECTED / "cli" / "dependencies-project.txt").read_text(encoding="utf-8")
+    run_main_with_args([], capsys=capsys, expected_stderr=notice.format(project=project.as_posix()))
     run_main_with_args(
         ["--server-output", "service", "--server-operation-names", "names.json"],
         capsys=capsys,
-        expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"),
+        expected_stderr=(EXPECTED / "cli" / "dependencies-service.txt").read_text(encoding="utf-8"),
     )
     services = sorted(tmp_path.rglob("services.py"), key=lambda path: path.relative_to(tmp_path).as_posix())
     assert_output(
@@ -600,7 +610,8 @@ def test_fastapi_cli_json_file_documents(
     for name in pyproject:
         shutil.copy2(CLI / name, project / "pyproject.toml")
     monkeypatch.chdir(work)
-    run_main_with_args(arguments, capsys=capsys, expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"))
+    notice = (EXPECTED / "cli" / "dependencies-project.txt").read_text(encoding="utf-8")
+    run_main_with_args(arguments, capsys=capsys, expected_stderr=notice.format(project=project.as_posix()))
     assert_output(_methods(project / "server" / "services.py"), EXPECTED / "cli" / "json-file-documents.txt")
 
 
@@ -664,7 +675,7 @@ def test_fastapi_cli_include_paths(
         extra_args=_server(*include, output="service"),
         copy_files=_inputs(tmp_path),
         capsys=capsys,
-        expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"),
+        expected_stderr=(EXPECTED / "cli" / "dependencies-include-paths.txt").read_text(encoding="utf-8"),
         file_should_not_exist=tmp_path / "server",
     )
     assert_output(
@@ -967,13 +978,13 @@ def test_fastapi_cli_output_options(
 
 @pytest.mark.parametrize(
     "scopes",
-    [["--openapi-scopes", "schemas"], ["--openapi-scopes", "schemas", "paths"], []],
-    ids=["schemas", "paths", "default"],
+    [["--openapi-scopes", "schemas"], ["--openapi-scopes", "schemas", "paths"]],
+    ids=["schemas", "paths"],
 )
 def test_fastapi_cli_api_scope_required(
     scopes: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Refuse a server whose model options leave out the api scope, instead of adding it to the models."""
+    """Refuse a server whose given scopes leave out the api scope, instead of adding it to the models."""
     monkeypatch.chdir(tmp_path)
     run_main_and_assert(
         input_path=Path("pets.yaml"),
@@ -1075,21 +1086,37 @@ def test_fastapi_cli_disable_warnings(
     )
 
 
+@pytest.mark.parametrize(
+    ("arguments", "stderr"),
+    [
+        (["--target-python-version", "3.10"], ""),
+        (
+            ["--preset", "standard-py310-20260909"],
+            ", which the preset standard-py310-20260909 sets to 3.10: use a preset for Python 3.11 or later",
+        ),
+    ],
+    ids=["option", "preset"],
+)
 def test_fastapi_cli_target_python(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    arguments: list[str],
+    stderr: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Refuse a server generation left at the default target Python version, before writing anything."""
+    """Refuse a server generation for a target Python version older than 3.11, from an option or a preset."""
     monkeypatch.chdir(tmp_path)
     run_main_and_assert(
         input_path=Path("pets.yaml"),
         output_path=Path("models.py"),
         input_file_type="openapi",
-        extra_args=[*SCOPES, *BACKEND, *FORMATTERS, "--disable-timestamp", *SERVER],
+        extra_args=[*SCOPES, *BACKEND, *FORMATTERS, "--disable-timestamp", *SERVER, *arguments],
         copy_files=_inputs(tmp_path),
         expected_exit=Exit.ERROR,
         capsys=capsys,
         expected_stderr=(
-            "Error: --target-python-version: The fastapi target needs a target Python version of 3.11 or later\n"
+            "Error: --target-python-version: The fastapi target needs a target Python version of 3.11 or later"
+            f"{stderr}\n"
         ),
         output_should_not_exist=True,
     )
@@ -1128,20 +1155,18 @@ def test_fastapi_cli_target_pydantic(
 @pytest.mark.parametrize(
     "arguments",
     [
-        [],
         ["--target-pydantic-version", "2"],
         ["--target-pydantic-version", "2.11"],
         ["--target-pydantic-version", "2.12"],
-        ["--output-model-type", "pydantic_v2.dataclass"],
-        ["--output-model-type", "pydantic_v2.dataclass", "--check"],
         ["--output-model-type", "pydantic_v2.dataclass", "--target-pydantic-version", "2.11"],
+        ["--output-model-type", "pydantic_v2.dataclass", "--target-pydantic-version", "2.11", "--check"],
     ],
-    ids=["unset", "2", "2.11", "2.12", "dataclass", "dataclass-check", "dataclass-2.11"],
+    ids=["2", "2.11", "2.12", "dataclass-2.11", "dataclass-2.11-check"],
 )
 def test_fastapi_cli_missing_sentinel_target(
     arguments: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Refuse a server whose models use MISSING without the target pydantic version that imports it from pydantic.
+    """Refuse a server whose models use MISSING with a given target pydantic version that cannot import it.
 
     The models stay those of a model-only run, which imports MISSING from pydantic for that target only. A target
     older than the sentinel's own minimum gets the same message, so that one change fixes the run.
@@ -1168,11 +1193,14 @@ def test_fastapi_cli_missing_sentinel_target(
 def test_fastapi_cli_dataclass_missing_sentinel(
     arguments: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Refuse a server of Pydantic dataclasses without --use-missing-sentinel, which tells unset members from None.
+    """Refuse a server of Pydantic dataclasses whose pyproject.toml turns --use-missing-sentinel off.
 
-    The message names the target pydantic version that the sentinel needs as well.
+    The sentinel tells unset members from None; the message names the target pydantic version it needs as well.
     """
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.datamodel-codegen]\nuse-missing-sentinel = false\n", encoding="utf-8"
+    )
     run_main_and_assert(
         input_path=Path("pets.yaml"),
         output_path=Path("models.py"),
@@ -1594,7 +1622,7 @@ def test_fastapi_cli_jobs_json_paths(
     run_main_with_args(
         ["--all-jobs", "--output-format", "json"],
         capsys=capsys,
-        expected_stderr=DEPENDENCIES.read_text(encoding="utf-8") * 2,
+        expected_stderr=(EXPECTED / "cli" / "dependencies-layout-jobs.txt").read_text(encoding="utf-8"),
     )
     run_main_with_args(
         ["--all-jobs", "--check", "--output-format", "json"],
@@ -1614,14 +1642,98 @@ def test_fastapi_cli_jobs_json_paths(
 def test_fastapi_cli_shared_models_jobs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Write the models two server jobs share once, next to the package of each job, then check them."""
+    """Write the models two server jobs share once, next to the package of each job, then check them.
+
+    Each server package has a parent package of its own, whose `services` package holds its implementations.
+    """
     monkeypatch.chdir(tmp_path)
     _copy(tmp_path, "pyproject-shared-models-jobs.toml")
     run_main_with_args(["--all-jobs"], capsys=capsys, expected_stderr=SHARED_DEPENDENCIES.read_text(encoding="utf-8"))
     assert_file_content(tmp_path / "models.py", PACKAGE / "models.py")
     assert_directory_content(tmp_path / "server", PACKAGE / "server")
-    assert_output(_methods(tmp_path / "admin" / "services.py"), EXPECTED / "cli" / "shared-models.txt")
+    assert_output(_methods(tmp_path / "back" / "admin" / "services.py"), EXPECTED / "cli" / "shared-models.txt")
     run_main_with_args(["--all-jobs", "--check"], capsys=capsys, assert_no_stderr=True)
+
+
+@pytest.mark.parametrize(
+    ("pyproject", "stub", "expected"),
+    [
+        ("pyproject-shared-parent-jobs.toml", False, "shared-parent-jobs.txt"),
+        ("pyproject-shared-parent-jobs.toml", True, "shared-parent-jobs-stub.txt"),
+        ("pyproject-shared-parent-documents.toml", False, "shared-parent-documents.txt"),
+    ],
+    ids=["same-document", "existing-stub", "other-document"],
+)
+def test_fastapi_cli_shared_parent_jobs(
+    pyproject: str,
+    stub: bool,
+    expected: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refuse two top-level server jobs in one parent package, which would import their implementations from one module.
+
+    Neither the document each job reads nor a module of the user's already in place changes that.
+    """
+    monkeypatch.chdir(tmp_path)
+    _copy(tmp_path, pyproject)
+    shutil.copy2(CLI / "pets-baseline.yaml", tmp_path / "pets-baseline.yaml")
+    if stub:
+        (tmp_path / "services").mkdir()
+        (tmp_path / "services" / "pets.py").write_text("# Yours\n", encoding="utf-8")
+    run_main_with_args(["--all-jobs"], expected_exit=Exit.ERROR)
+    captured = capsys.readouterr()
+    written = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.py"))
+    assert_output(f"{captured.err}written: {written}\n", EXPECTED / "cli" / expected)
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments"),
+    [
+        ("user-module", ["--output", "models.py"]),
+        ("models-module", ["--output", "services.py", "--server-model-package", "services"]),
+        ("suffixless-models-module", ["--output", "services", "--server-model-package", "services"]),
+        (
+            "models-package",
+            ["--input", "spec/modular.yaml", "--output", "services", "--server-model-package", "services"],
+        ),
+        (
+            "nested-models-module",
+            [
+                *("--output", "app/services.py", "--server-output", "app/server"),
+                *("--server-package", "app.server", "--server-model-package", "app.services"),
+            ],
+        ),
+        (
+            "nested-models-package",
+            [
+                *("--input", "spec/modular.yaml", "--output", "app/services", "--server-output", "app/server"),
+                *("--server-package", "app.server", "--server-model-package", "app.services"),
+            ],
+        ),
+    ],
+)
+def test_fastapi_cli_services_module(
+    name: str, arguments: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refuse models or a module beside the server package named like its services package, before writing anything.
+
+    A models module or a module of the user's would shadow the package or be shadowed by it, and a models package would
+    be the package itself.
+    """
+    monkeypatch.chdir(tmp_path)
+    _copy(tmp_path)
+    shutil.copytree(DATA / "generation_platform" / "targets" / "spec", tmp_path / "spec")
+    if name == "user-module":
+        (tmp_path / "services.py").write_text("# A module of yours\n", encoding="utf-8")
+    run_main_with_args(
+        ["--input", "pets.yaml", "--input-file-type", "openapi", *_server(), *arguments], expected_exit=Exit.ERROR
+    )
+    written = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.py"))
+    assert_output(
+        f"{capsys.readouterr().err}written: {written}\n", EXPECTED / "cli" / "services-module" / f"{name}.txt"
+    )
 
 
 def test_fastapi_cli_shared_models_timestamp(
@@ -1639,7 +1751,7 @@ def test_fastapi_cli_shared_models_timestamp(
             ["--all-jobs"], capsys=capsys, expected_stderr=SHARED_DEPENDENCIES.read_text(encoding="utf-8")
         )
     assert_file_content(tmp_path / "models.py", "cli/timestamp-models.py")
-    assert_file_content(tmp_path / "admin" / "services.py", "cli/timestamp-services.py")
+    assert_file_content(tmp_path / "back" / "admin" / "services.py", "cli/timestamp-services.py")
 
 
 @pytest.mark.parametrize(
@@ -2347,5 +2459,219 @@ def test_fastapi_cli_model_error_context(
         capsys=capsys,
         expected_stderr_contains=stderr,
         expected_stdout_path=EXPECTED / "cli" / "json" / "error-empty.txt" if structured else None,
+        output_should_not_exist=True,
+    )
+
+
+def test_fastapi_cli_implementation_stubs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Write each missing service module once with stubs, never over an edit, and never from a check or an input diff.
+
+    Neither --check nor --diff-against reports a missing module; the next generation writes it and asks to implement
+    its stubs. A group implemented as a package keeps it, and the notice names its initializer.
+    """
+    monkeypatch.chdir(tmp_path)
+    _copy(tmp_path)
+    arguments = ["--input", "pets.yaml", "--input-file-type", "openapi", "--output", "models.py", *_server()]
+    run_main_with_args(arguments, capsys=capsys, expected_stderr=DEPENDENCIES.read_text(encoding="utf-8"))
+    services = tmp_path / "services"
+    pets = services / "pets.py"
+    pets.write_text("# edited\n", encoding="utf-8")
+    (services / "store.py").unlink()
+    lines: list[str] = []
+    for options in (["--check"], ["--diff-against", "pets.yaml"]):
+        run_main_with_args([*arguments, *options], capsys=capsys, assert_no_stderr=True)
+        lines.append(f"{options[0]}: services {sorted(path.name for path in services.iterdir())}")
+    run_main_with_args([*arguments, "--output-format", "json"])
+    captured = capsys.readouterr()
+    target = json.loads(captured.out)["target"]
+    lines.extend((
+        (
+            f"generate: services {sorted(path.name for path in services.iterdir())}; "
+            f"pets {pets.read_text(encoding='utf-8')!r}"
+        ),
+        captured.err.rstrip(),
+        json.dumps({key: target[key] for key in ("readme", "entrypoint", "implementation")}, indent=2),
+    ))
+    (services / "pets").mkdir()
+    pets.rename(services / "pets" / "__init__.py")
+    run_main_with_args(arguments)
+    lines.extend((
+        f"generate over a pets package: services {sorted(path.name for path in services.iterdir())}",
+        capsys.readouterr().err.rstrip(),
+    ))
+    assert_output("\n".join(lines) + "\n", EXPECTED / "cli" / "implementation-stubs.txt")
+
+
+IMPLIED_MODEL_OPTIONS = ["--output-model-type", "pydantic_v2.BaseModel", *FORMATTERS, "--disable-timestamp"]
+IMPLIED_SERVER = ["--input", "pets.yaml", "--input-file-type", "openapi", "--output", "models.py", *SERVER]
+IMPLIED_TABLE = (
+    'input = "pets.yaml"\ninput-file-type = "openapi"\noutput = "models.py"\n'
+    'output-model-type = "pydantic_v2.BaseModel"\n'
+    'formatters = ["builtin"]\ndisable-timestamp = true\ngenerate-server = "fastapi"\nserver-output = "server"\n'
+    'server-package = "server"\nserver-model-package = "models"\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "pyproject", "given"),
+    [
+        ([*IMPLIED_SERVER, *IMPLIED_MODEL_OPTIONS], None, [*SCOPES, *PYTHON]),
+        ([*IMPLIED_SERVER, *IMPLIED_MODEL_OPTIONS, "--output-format", "json"], None, [*SCOPES, *PYTHON]),
+        ([*IMPLIED_SERVER, *IMPLIED_MODEL_OPTIONS, "--use-missing-sentinel"], None, [*SCOPES, *PYTHON, *MISSING]),
+        (
+            [*IMPLIED_SERVER, *FORMATTERS, "--disable-timestamp", "--output-model-type", "pydantic_v2.dataclass"],
+            None,
+            [*SCOPES, *PYTHON, *MISSING],
+        ),
+        ([], f"[tool.datamodel-codegen]\n{IMPLIED_TABLE}", [*SCOPES, *PYTHON]),
+        (["--all-jobs"], f"[tool.datamodel-codegen.jobs.api]\n{IMPLIED_TABLE}", [*SCOPES, *PYTHON]),
+        (
+            ["--all-jobs", "--output-format", "json"],
+            f"[tool.datamodel-codegen.jobs.api]\n{IMPLIED_TABLE}",
+            [*SCOPES, *PYTHON],
+        ),
+    ],
+    ids=["command", "json", "sentinel", "dataclass", "pyproject", "job", "job-json"],
+)
+def test_fastapi_cli_implied_settings(
+    arguments: list[str],
+    pyproject: str | None,
+    given: list[str],
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Set the model settings the server needs and the run left unset, and say how to set them, after the run.
+
+    The models are those of a model-only run given the same settings, and a check after the run names them too.
+    """
+    monkeypatch.chdir(tmp_path)
+    _copy(tmp_path)
+    if pyproject is not None:
+        (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    lines = [f"$ datamodel-codegen {' '.join(arguments)}".rstrip()]
+    run_main_with_args(arguments, use_builtin_default_formatter=False)
+    captured = capsys.readouterr()
+    lines.append(captured.err.rstrip())
+    if "json" in arguments:
+        payload = json.loads(captured.out)
+        result = payload["jobs"][0]["result"] if "--all-jobs" in arguments else payload
+        lines.append(f"target.implied {json.dumps(result['target']['implied'])}")
+    backend = arguments[arguments.index("--output-model-type") + 1] if "--output-model-type" in arguments else None
+    model_only = [
+        *("--input", "pets.yaml", "--input-file-type", "openapi", "--output", "given.py"),
+        *("--output-model-type", backend or "pydantic_v2.BaseModel", *FORMATTERS, "--disable-timestamp"),
+        *given,
+    ]
+    run_main_with_args([*arguments, "--check"], use_builtin_default_formatter=False)
+    lines.append(f"--check: {capsys.readouterr().err.rstrip()}")
+    (tmp_path / "pyproject.toml").unlink(missing_ok=True)
+    run_main_with_args(model_only, use_builtin_default_formatter=False)
+    same = (tmp_path / "given.py").read_text(encoding="utf-8") == (tmp_path / "models.py").read_text(encoding="utf-8")
+    lines.append(f"models equal those of a model-only run given {' '.join(given)}: {same}")
+    capsys.readouterr()
+    assert_output("\n".join(lines) + "\n", EXPECTED / "cli" / "implied" / f"{request.node.callspec.id}.txt")
+
+
+IMPLIED_TARGET = (
+    'generate-server = "fastapi"\nserver-output = "server"\nserver-package = "server"\n'
+    'server-model-package = "models"\n'
+)
+IMPLIED_MODELS = (
+    'input = "pets.yaml"\ninput-file-type = "openapi"\noutput = "models.py"\n'
+    'output-model-type = "pydantic_v2.BaseModel"\nformatters = ["builtin"]\ndisable-timestamp = true\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "pyproject", "work"),
+    [
+        (
+            ["--profile", "srv"],
+            f"[tool.datamodel-codegen]\n{IMPLIED_MODELS}[tool.datamodel-codegen.profiles.srv]\n{IMPLIED_TARGET}",
+            "",
+        ),
+        (["--all-jobs"], f'[tool.datamodel-codegen.jobs."v1.api"]\n{IMPLIED_MODELS}{IMPLIED_TARGET}', ""),
+        (["--all-jobs"], f'[tool.datamodel-codegen.jobs."my server"]\n{IMPLIED_MODELS}{IMPLIED_TARGET}', ""),
+        (SERVER, f"[tool.datamodel-codegen]\n{IMPLIED_MODELS}", ""),
+        ([], f"[tool.datamodel-codegen]\n{IMPLIED_MODELS}{IMPLIED_TARGET}", "work"),
+        ([*IMPLIED_SERVER, *IMPLIED_MODEL_OPTIONS, "--use-specialized-enum"], None, ""),
+        ([], f"[tool.datamodel-codegen]\n{IMPLIED_MODELS}use-specialized-enum = true\n{IMPLIED_TARGET}", ""),
+    ],
+    ids=[
+        "profile",
+        "dotted-job",
+        "spaced-job",
+        "command-target",
+        "parent-pyproject",
+        "specialized-enum",
+        "specialized-enum-pyproject",
+    ],
+)
+def test_fastapi_cli_implied_notice(
+    arguments: list[str],
+    pyproject: str | None,
+    work: str,
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Name the implied settings where they belong: the table in use, quoted as TOML needs, or the command.
+
+    A command that selects the target is repeated even when pyproject.toml holds other settings, a pyproject.toml
+    outside the working directory is named by its path. The model checks that depend
+    on an implied setting, such as --use-specialized-enum on the target Python version, see the implied value.
+    """
+    _copy(tmp_path)
+    if pyproject is not None:
+        (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    (cwd := tmp_path / work).mkdir(exist_ok=True)
+    monkeypatch.chdir(cwd)
+    run_main_with_args(arguments, use_builtin_default_formatter=False)
+    captured = capsys.readouterr().err
+    implied = captured.partition("Add the runtime dependencies")[0]
+    assert_output(implied, EXPECTED / "cli" / "implied" / f"notice-{request.node.callspec.id}.txt")
+
+
+def test_fastapi_cli_implied_notice_stdin(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Note that the command that sets the implied settings reads the same input on stdin."""
+    monkeypatch.chdir(tmp_path)
+    run_main_and_assert(
+        stdin_path=SOURCE / "pets.yaml",
+        monkeypatch=monkeypatch,
+        output_path=Path("models.py"),
+        input_file_type="openapi",
+        extra_args=[*FORMATTERS, "--disable-timestamp", *SERVER],
+    )
+    implied = capsys.readouterr().err.partition("Add the runtime dependencies")[0]
+    assert_output(implied, EXPECTED / "cli" / "implied" / "notice-stdin.txt")
+
+
+def test_fastapi_cli_implied_sentinel_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refuse a given target pydantic version older than the sentinel the target sets for dataclass models needs.
+
+    The message says that the target set the sentinel, which the command did not give.
+    """
+    monkeypatch.chdir(tmp_path)
+    run_main_and_assert(
+        input_path=Path("pets.yaml"),
+        output_path=Path("models.py"),
+        input_file_type="openapi",
+        extra_args=_server("--output-model-type", "pydantic_v2.dataclass", "--target-pydantic-version", "2.11"),
+        copy_files=_inputs(tmp_path),
+        expected_exit=Exit.ERROR,
+        capsys=capsys,
+        expected_stderr=(
+            "Error: The fastapi target needs --target-pydantic-version 2.14 for --use-missing-sentinel, which it sets "
+            "for 'pydantic_v2.dataclass' models, so that the models import MISSING from pydantic\n"
+        ),
         output_should_not_exist=True,
     )

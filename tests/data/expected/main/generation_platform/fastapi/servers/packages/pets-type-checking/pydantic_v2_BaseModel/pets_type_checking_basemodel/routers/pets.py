@@ -27,6 +27,7 @@ def _add_list_pets(
     list_pets_handler = checked(
         pets.list_pets,
         "The pets.list_pets method of GET /pets",
+        ("limit", "tags", "kind", "X_Request_Id", "since", "session"),
     )
 
     def list_pets(
@@ -80,6 +81,7 @@ def _add_create_pet(
     create_pet_handler = checked(
         pets.create_pet,
         "The pets.create_pet method of POST /pets",
+        ("body",),
     )
 
     def create_pet(
@@ -119,6 +121,7 @@ def _add_list_my_pets(
     list_my_pets_handler = checked(
         pets.list_my_pets,
         "The pets.list_my_pets method of GET /pets/mine",
+        (),
     )
 
     def list_my_pets() -> object:
@@ -150,6 +153,7 @@ def _add_get_pet(
     get_pet_handler = checked(
         pets.get_pet,
         "The pets.get_pet method of GET /pets/{petId}",
+        ("petId",),
     )
 
     def get_pet(
@@ -186,6 +190,7 @@ def _add_delete_pet(
     delete_pet_handler = checked(
         pets.delete_pet,
         "The pets.delete_pet method of DELETE /pets/{petId}",
+        ("petId",),
     )
 
     def delete_pet(

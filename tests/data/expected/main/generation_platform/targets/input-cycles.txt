@@ -5,6 +5,7 @@ check
   MISSING: server/_generated/contract.py (should be generated)
   MISSING: server/_generated/openapi.py (should be generated)
   MISSING: server/application.py (should be generated)
+  MISSING: server/main.py (should be generated)
   MISSING: server/routers/__init__.py (should be generated)
   MISSING: server/routers/default.py (should be generated)
   MISSING: server/services.py (should be generated)
@@ -15,6 +16,10 @@ check
   DocumentationAnnotationWarning: server: /x-cycle/self: The served document leaves out self, which has no JSON form
 tree
 generate
+  Next steps: implement the stubs in services/default.py, then run the server:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -23,10 +28,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-cycle/self: The served document leaves out self, which has no JSON form
 tree
@@ -37,10 +45,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 check
   --- server/README.md
@@ -53,12 +64,19 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 generate
+  Next steps: run the server with your services in services/default.py:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -67,10 +85,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-cycle/self: The served document leaves out self, which has no JSON form
 tree
@@ -81,10 +102,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 check
   --- server/__init__.py
@@ -92,6 +116,7 @@ check
   --- server/_generated/contract.py
   --- server/_generated/openapi.py
   --- server/application.py
+  --- server/main.py
   --- server/routers/__init__.py
   --- server/routers/default.py
   --- server/services.py
@@ -107,12 +132,19 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 generate
+  Next steps: run the server with your services in services/default.py:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -121,10 +153,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-cycle/0: The served document leaves out 0, which has no JSON form
 tree
@@ -135,10 +170,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 check
   --- server/README.md
@@ -151,12 +189,19 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 generate
+  Next steps: run the server with your services in services/default.py:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -165,10 +210,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-cycle/0: The served document leaves out 0, which has no JSON form
 tree
@@ -179,10 +227,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 check
   --- server/__init__.py
@@ -190,6 +241,7 @@ check
   --- server/_generated/contract.py
   --- server/_generated/openapi.py
   --- server/application.py
+  --- server/main.py
   --- server/routers/__init__.py
   --- server/routers/default.py
   --- server/services.py
@@ -205,12 +257,19 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 generate
+  Next steps: run the server with your services in services/default.py:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -219,10 +278,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-outer/nested/child/back~1to~0outer/0: The served document leaves out 0, which has no JSON form
 tree
@@ -233,10 +295,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 check
   --- server/README.md
@@ -249,12 +314,19 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
 generate
+  Next steps: run the server with your services in services/default.py:
+    uv add uvicorn && uv run uvicorn example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+  See server/README.md.
 tree
   server/README.md
   server/__init__.py
@@ -263,10 +335,13 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']
   DocumentationAnnotationWarning: server: /x-outer/nested/child/back~1to~0outer/0: The served document leaves out 0, which has no JSON form
 tree
@@ -277,8 +352,11 @@ tree
   server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
+  server/main.py
   server/py.typed
   server/routers/__init__.py
   server/routers/default.py
   server/services.py
+  services/__init__.py
+  services/default.py
   5 runtime modules ['present']

@@ -471,7 +471,7 @@ def api_overview_examples(page: str, path: Path) -> tuple[DocsExample, ...]:
                     ),
                 ),
             ),
-            ("app", lambda: fenced("python", read_text(TUTORIAL / "app.py"))),
+            ("app", lambda: fenced("python", read_text(TUTORIAL / "implementation" / "services" / "pets.py"))),
             ("call", lambda: fenced("python", read_text(TUTORIAL / "call.py"))),
             ("output", lambda: fenced("text", read_text(EXPECTED_TUTORIAL / "call.txt").removeprefix("exit 0\n"))),
         )
@@ -496,7 +496,7 @@ def fastapi_server_examples() -> tuple[DocsExample, ...]:
                 "tutorial.services",
                 lambda: fenced("python", read_python_output(EXPECTED_TUTORIAL / "server/services.py")),
             ),
-            ("tutorial.app", lambda: fenced("python", read_text(TUTORIAL / "app.py"))),
+            ("tutorial.app", lambda: fenced("python", read_text(TUTORIAL / "implementation" / "services" / "pets.py"))),
             ("tutorial.test", lambda: fenced("python", read_text(TUTORIAL / "test_app.py"))),
             (
                 "tutorial.inline-names",

@@ -26,12 +26,41 @@ class GeneratedFilePayload(BaseModel):
 
 
 _Absent: TypeAlias = SkipJsonSchema[None]
+_NEXT_STEPS = ("implied", "entrypoint", "implementation", "usage")
 _TARGET_DESCRIPTION = "The package and runtime dependencies of a server or client generation; absent for models only."
 
 
 def _absent_when_unset(schema: JsonDict) -> None:
     """Leave the default out of an optional key's schema: the payload omits the key rather than printing null."""
     schema.pop("default")
+
+
+def _implied(key: str, description: str) -> Any:
+    return Field(default=None, alias=key, description=description, json_schema_extra=_absent_when_unset)
+
+
+class ImpliedPayload(BaseModel):
+    """The model settings a server or client target set because the run left them unset, keyed as pyproject.toml keys.
+
+    Each key is absent unless the target set it.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    openapi_scopes: list[str] | _Absent = _implied("openapi-scopes", "The scopes, with api added to the default ones.")
+    target_python_version: str | _Absent = _implied("target-python-version", "The target Python version, 3.11.")
+    use_missing_sentinel: bool | _Absent = _implied(
+        "use-missing-sentinel", "The MISSING sentinel, on for pydantic_v2.dataclass models."
+    )
+    target_pydantic_version: str | _Absent = _implied(
+        "target-pydantic-version", "The target pydantic version, 2.14, for models with the MISSING sentinel."
+    )
+    use_msgspec_tagged_unions: bool | _Absent = _implied(
+        "use-msgspec-tagged-unions", "Tagged unions, on for msgspec.Struct models."
+    )
+    use_msgspec_nullable_enum_alias: bool | _Absent = _implied(
+        "use-msgspec-nullable-enum-alias", "Nullable enum aliases, on for msgspec.Struct models."
+    )
 
 
 class TargetPayload(BaseModel):
@@ -41,6 +70,58 @@ class TargetPayload(BaseModel):
 
     package: str
     dependencies: list[str]
+    implied: ImpliedPayload | _Absent = Field(
+        default=None,
+        description=(
+            "The settings the target needs that the run left unset and the values it gave them, keyed as "
+            "pyproject.toml keys them; absent when it implied none."
+        ),
+        json_schema_extra=_absent_when_unset,
+    )
+
+
+class EntrypointPayload(BaseModel):
+    """The entrypoint module of a generated server and the import string of the ASGI application it defines."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    app: str
+    path: str
+
+
+class ImplementationPayload(BaseModel):
+    """A module of the user's that a generated server's entrypoint imports, and the class or function it imports.
+
+    Generation writes the module with stubs only while it is missing; `created` says whether this run wrote it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    module: str
+    name: str
+    path: str
+    created: bool
+
+
+class GeneratedTargetPayload(TargetPayload):
+    """The package a server or client generation writes, its runtime requirements, and what to do with it next."""
+
+    readme: str = Field(description="The README of the package, which describes the next steps.")
+    entrypoint: EntrypointPayload | _Absent = Field(
+        default=None,
+        description="The module that serves a generated server's application; absent for a client.",
+        json_schema_extra=_absent_when_unset,
+    )
+    implementation: list[ImplementationPayload] | _Absent = Field(
+        default=None,
+        description="The modules of the user's that a generated server's entrypoint imports; absent for a client.",
+        json_schema_extra=_absent_when_unset,
+    )
+    usage: str | _Absent = Field(
+        default=None,
+        description="Code that calls the first operation of a generated client; absent for a server.",
+        json_schema_extra=_absent_when_unset,
+    )
 
 
 class GenerationPayload(BaseModel):
@@ -53,7 +134,7 @@ class GenerationPayload(BaseModel):
     kind: Literal["generation"]
     output: str | None
     files: list[GeneratedFilePayload]
-    target: TargetPayload | _Absent = Field(
+    target: GeneratedTargetPayload | _Absent = Field(
         default=None, description=_TARGET_DESCRIPTION, json_schema_extra=_absent_when_unset
     )
 
@@ -218,8 +299,23 @@ def _dump_json(value: Any) -> str:
 
 
 def _dump_payload(payload: GenerationPayload | CheckOutputPayload) -> str:
-    """Dump a payload, leaving out the target of a model-only run."""
-    return _dump_json(payload.model_dump(mode="json", exclude={"target"} if payload.target is None else None))
+    """Dump a payload, leaving out the target of a model-only run and the keys a server's or client's target lacks."""
+    return _dump_json(payload.model_dump(mode="json", by_alias=True, exclude=_absent(payload)))
+
+
+def _absent(payload: GenerationPayload | CheckOutputPayload) -> dict[str, Any] | set[str]:
+    """Return the keys a payload leaves out: its target for a model-only run, or the keys its target lacks."""
+    if (target := payload.target) is None:
+        return {"target"}
+    absent: dict[str, Any] = {name: True for name in _NEXT_STEPS if getattr(target, name, None) is None}
+    if (implied := target.implied) is not None:
+        absent["implied"] = {name for name in ImpliedPayload.model_fields if getattr(implied, name) is None}
+    return {"target": absent}
+
+
+def batch_job_json(job: BatchJobPayload) -> dict[str, Any]:
+    """Return a job's entry of the batch payload, leaving out what its payload leaves out."""
+    return job.model_dump(mode="json", by_alias=True, exclude={"result": _absent(job.result)})
 
 
 def _schema_with_metadata(schema: dict[str, Any], *, title: str, description: str) -> dict[str, Any]:
@@ -230,7 +326,7 @@ def _schema_with_metadata(schema: dict[str, Any], *, title: str, description: st
 
 
 def generation_output_json(
-    files: list[GeneratedFilePayload], *, output: str | None, target: TargetPayload | None = None
+    files: list[GeneratedFilePayload], *, output: str | None, target: GeneratedTargetPayload | None = None
 ) -> str:
     return _dump_payload(
         GenerationPayload(version=1, format="json", kind="generation", output=output, files=files, target=target)

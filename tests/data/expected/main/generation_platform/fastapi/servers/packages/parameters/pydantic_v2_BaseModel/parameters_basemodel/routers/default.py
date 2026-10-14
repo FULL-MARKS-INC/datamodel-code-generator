@@ -26,6 +26,7 @@ def _add_search(
     search_handler = checked(
         default.search,
         'The default.search method of GET /search',
+        ('session', 'code', 'filter', 'ids', 'X_Ids', 'blob', 'note'),
     )
 
     def search(
@@ -68,6 +69,7 @@ def _add_get_ratios(
     get_ratios_handler = checked(
         default.get_ratios,
         'The default.get_ratios method of GET /ratios',
+        ('ratios', 'limits'),
     )
 
     def get_ratios(
@@ -104,6 +106,7 @@ def _add_get_sizes(
     get_sizes_handler = checked(
         default.get_sizes,
         'The default.get_sizes method of GET /sizes',
+        ('size', 'words', 'one', 'least', 'cap'),
     )
 
     def get_sizes(
@@ -146,6 +149,7 @@ def _add_get_codes(
     get_codes_handler = checked(
         default.get_codes,
         'The default.get_codes method of GET /codes',
+        ('X_Codes',),
     )
 
     def get_codes(
@@ -180,6 +184,7 @@ def _add_repeat(
     repeat_handler = checked(
         default.repeat,
         'The default.repeat method of GET /repeat/{id}/again/{id}',
+        ('id',),
     )
 
     def repeat(
@@ -214,6 +219,7 @@ def _add_get_note(
     get_note_handler = checked(
         default.get_note,
         'The default.get_note method of GET /notes/{note.id}',
+        ('note_id',),
     )
 
     def get_note(
@@ -249,6 +255,7 @@ def _add_get_file(
     get_file_handler = checked(
         default.get_file,
         'The default.get_file method of GET /files/{file.name}',
+        ('file_name',),
     )
 
     def get_file(
@@ -284,6 +291,7 @@ def _add_get_pair(
     get_pair_handler = checked(
         default.get_pair,
         'The default.get_pair method of GET /pairs/{pair.id}/{class}/{part}/of/{part}',
+        ('pair', 'kind', 'part', 'X_Rank'),
     )
 
     def get_pair(
@@ -325,6 +333,7 @@ def _add_get_menu(
     get_menu_handler = checked(
         default.get_menu,
         'The default.get_menu method of GET /menü/{item}',
+        ('item',),
     )
 
     def get_menu(
@@ -359,6 +368,7 @@ def _add_get_item(
     get_item_handler = checked(
         default.get_item,
         'The default.get_item method of GET /items/{level}',
+        ('level', 'mode', 'ratio', 'X_Flag', 'kind', 'tier', 'levels'),
     )
 
     def get_item(
@@ -400,6 +410,7 @@ def _add_get_serving(
     get_serving_handler = checked(
         default.get_serving,
         'The default.get_serving method of GET /foods/{food_id}/servings/{serving}',
+        ('food_id', 'serving'),
     )
 
     def get_serving(

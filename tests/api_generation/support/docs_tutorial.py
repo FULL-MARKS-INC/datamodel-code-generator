@@ -54,7 +54,8 @@ def generate_project(
 ) -> Project:
     """Copy a documentation project, point its document at the server URL, and run `datamodel-codegen` in it.
 
-    The project's scripts get the newest standard preset its guide renders in place of the placeholder.
+    The project's scripts get the newest standard preset its guide renders in place of the placeholder. The files of
+    its `implementation` directory then replace the stubs generation wrote, as a user implements them.
     """
     shutil.copytree(source, root)
     for script in root.glob("*.py"):
@@ -66,7 +67,10 @@ def generate_project(
     monkeypatch.chdir(root)
     capsys.readouterr()
     run_main_with_args([], use_builtin_default_formatter=False)
-    return Project(root, capsys.readouterr().err, "".join(f"{name}\n" for name in sorted(_listing(root) - copied)))
+    files = "".join(f"{name}\n" for name in sorted(_listing(root) - copied))
+    if (implementation := root / "implementation").is_dir():
+        shutil.copytree(implementation, root, dirs_exist_ok=True)
+    return Project(root, capsys.readouterr().err, files)
 
 
 def _environment() -> dict[str, str]:
@@ -88,9 +92,9 @@ def run_tests(root: Path, *tests: str) -> str:
 
 @contextmanager
 def serve(root: Path) -> Iterator[str]:
-    """Serve a project's `app:app` with uvicorn on a free port, yielding its URL."""
+    """Serve a project's generated entrypoint, `server.main:app`, with uvicorn on a free port, yielding its URL."""
     with subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app:app", "--port", "0"],
+        [sys.executable, "-m", "uvicorn", "server.main:app", "--port", "0"],
         cwd=root,
         env=_environment(),
         stdout=subprocess.DEVNULL,

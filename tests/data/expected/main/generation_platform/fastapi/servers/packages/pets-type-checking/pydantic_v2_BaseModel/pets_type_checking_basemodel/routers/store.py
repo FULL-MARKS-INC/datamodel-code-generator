@@ -24,6 +24,7 @@ def _add_get_inventory(
     get_inventory_handler = checked(
         store.get_inventory,
         "The store.get_inventory method of GET /store/inventory",
+        (),
     )
 
     def get_inventory() -> object:

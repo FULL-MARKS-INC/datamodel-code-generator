@@ -11,6 +11,7 @@ render pydantic_v2.BaseModel
   server/_generated/openapi.json
   server/security.py
   server/services.py
+  server/main.py
   server/README.md
   server/_runtime/__init__.py (copied runtime)
   server/_runtime/server/__init__.py (copied runtime)

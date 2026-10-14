@@ -2,11 +2,23 @@
 
 The `server` package serves the Services API with FastAPI.
 datamodel-code-generator generated it from the OpenAPI document, together with the `models` models of the `pydantic_v2.BaseModel` backend.
-Generation overwrites every file of the package, as it does the models: keep your code in modules outside the package and regenerate the package instead of editing it; see [Regenerating](#regenerating).
+Generation overwrites every file of the package, as it does the models: keep your code outside the package and regenerate the package instead of editing it; see [Regenerating](#regenerating).
 
 FastAPI server generation is experimental.
 The server supports the `pydantic_v2.BaseModel` and `pydantic_v2.dataclass` model backends, while client generation supports all five.
 Custom templates, base classes, and Python types stay within these two backends.
+
+## Next steps
+
+`main.py` serves the application of `create_app`; run it with an ASGI server, from the directory that holds the top-level package (add `--app-dir src` for a `src` layout):
+
+```console
+uv add uvicorn
+uv run uvicorn server.main:app --reload
+```
+
+`fastapi dev` runs it too: `uv add "fastapi[standard]"`, then `uv run fastapi dev` with the path of `main.py`, beside this README.
+To pass other instances, such as fakes in tests, call `create_app` yourself; see [Implementing the services](#implementing-the-services).
 
 ## Operations
 
@@ -19,9 +31,9 @@ Custom templates, base classes, and Python types stay within these two backends.
 
 `services.py` declares a Protocol for each router group, with an abstract method for each operation of the group.
 A method takes the operation's arguments as keywords, with `None` for an optional parameter or body the request omits, and returns the value to send, an `HTTPResult` with another declared status, headers, or both, or a `Response` sent as it is.
-Implement each group in a module of your own and pass an instance to `create_app` under the group's name.
+`main.py` passes an instance of each group's class to `create_app` under the group's name; tests, and applications that build their services with arguments such as a database pool, call `create_app` themselves.
 Subclass the Protocol, so that type checkers report a missing or mismatched method and Python refuses to create an instance while a method is missing; any other object with the same methods is checked where you pass it.
-The package looks each method up when it registers the routes, and refuses a coroutine function where the operation's handler mode needs a plain method, or the reverse; it does not check a method's arguments, so one whose signature type checkers would reject fails when its operation is requested.
+The package looks each method up when it registers the routes, and refuses a coroutine function where the operation's handler mode needs a plain method, or the reverse, and a method that cannot take the keyword arguments of its operation; type checkers check their types.
 
 ```python
 from server import create_app

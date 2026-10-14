@@ -25,6 +25,7 @@ def _add_post_text(
     post_text_handler = checked(
         default.post_text,
         'The default.post_text method of POST /texts',
+        ('body',),
     )
 
     def post_text(
@@ -59,6 +60,7 @@ def _add_post_list(
     post_list_handler = checked(
         default.post_list,
         'The default.post_list method of POST /lists',
+        ('body',),
         asynchronous=True,
     )
 
@@ -94,6 +96,7 @@ def _add_post_choice(
     post_choice_handler = checked(
         default.post_choice,
         'The default.post_choice method of POST /choices',
+        ('body',),
     )
 
     def post_choice(
@@ -128,6 +131,7 @@ def _add_post_color(
     post_color_handler = checked(
         default.post_color,
         'The default.post_color method of POST /colors',
+        ('body',),
     )
 
     def post_color(
@@ -162,6 +166,7 @@ def _add_post_name(
     post_name_handler = checked(
         default.post_name,
         'The default.post_name method of POST /names',
+        ('body',),
     )
 
     def post_name(
@@ -196,6 +201,7 @@ def _add_post_pet(
     post_pet_handler = checked(
         default.post_pet,
         'The default.post_pet method of POST /pets',
+        ('body',),
     )
 
     def post_pet(
@@ -230,6 +236,7 @@ def _add_post_code(
     post_code_handler = checked(
         default.post_code,
         'The default.post_code method of POST /codes',
+        ('body',),
     )
 
     def post_code(
@@ -264,6 +271,7 @@ def _add_post_value(
     post_value_handler = checked(
         default.post_value,
         'The default.post_value method of POST /values',
+        ('body',),
     )
 
     def post_value(
@@ -298,6 +306,7 @@ def _add_post_anything(
     post_anything_handler = checked(
         default.post_anything,
         'The default.post_anything method of POST /anything',
+        ('body',),
     )
 
     def post_anything(
@@ -332,6 +341,7 @@ def _add_post_item(
     post_item_handler = checked(
         default.post_item,
         'The default.post_item method of POST /items',
+        ('body',),
     )
 
     def post_item(
@@ -366,6 +376,7 @@ def _add_post_id(
     post_id_handler = checked(
         default.post_id,
         'The default.post_id method of POST /ids',
+        ('body',),
     )
 
     def post_id(
@@ -400,6 +411,7 @@ def _add_post_draft(
     post_draft_handler = checked(
         default.post_draft,
         'The default.post_draft method of POST /drafts',
+        ('body',),
     )
 
     def post_draft(
@@ -434,6 +446,7 @@ def _add_post_note(
     post_note_handler = checked(
         default.post_note,
         'The default.post_note method of POST /notes',
+        ('body',),
     )
 
     def post_note(
@@ -468,6 +481,7 @@ def _add_post_form(
     post_form_handler = checked(
         default.post_form,
         'The default.post_form method of POST /forms',
+        ('body',),
     )
 
     def post_form(
@@ -502,6 +516,7 @@ def _add_upload(
     upload_handler = checked(
         default.upload,
         'The default.upload method of POST /uploads',
+        ('body',),
     )
 
     def upload(
@@ -536,6 +551,7 @@ def _add_post_extended(
     post_extended_handler = checked(
         default.post_extended,
         'The default.post_extended method of POST /extended',
+        ('body',),
     )
 
     def post_extended(

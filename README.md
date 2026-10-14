@@ -380,7 +380,8 @@ datamodel-codegen \
 <!-- END AUTO-GENERATED DOC EXAMPLE: readme.server-client.commands -->
 
 `--openapi-scopes` must include `api`, and both need Python 3.11 or later, to run and as the target version (the preset
-sets 3.12). Each run ends by printing the runtime dependencies of its package to stderr:
+sets 3.12); left unset, the run sets them and says how. Each run ends by printing the runtime dependencies of its
+package to stderr:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: readme.server-client.notice -->
 <!-- fmt: off -->
@@ -388,8 +389,18 @@ sets 3.12). Each run ends by printing the runtime dependencies of its package to
 ```text
 Add the runtime dependencies of server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
+Next steps: implement the stubs in services/pets.py, then run the server:
+  uv add uvicorn && uv run uvicorn server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+See server/README.md.
 Add the runtime dependencies of client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
+Next steps: call the API with the client:
+  from client import Client
+
+  with Client(base_url=...) as client:
+      client.pets.list_pets(...)
+See client/_generated_docs/README.md.
 ```
 
 <!-- fmt: on -->
@@ -408,9 +419,13 @@ server/
 ├── _generated/
 ├── _runtime/
 ├── application.py
+├── main.py
 ├── py.typed
 ├── routers/
 └── services.py
+services/
+├── __init__.py
+└── pets.py
 client/
 ├── __init__.py
 ├── _generated/
@@ -428,37 +443,35 @@ client/
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: readme.server-client.tree -->
 
-**Implement the server** in `app.py` by subclassing the generated service Protocol; type checkers report a
-missing method or a mismatched signature:
+**Implement the server** in `services/pets.py`, which generation wrote once with stubs, by replacing the stubs of the
+`Pets` class that subclasses the generated service Protocol; type checkers report a missing method or a mismatched
+signature:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: readme.server-client.app -->
 <!-- fmt: off -->
 
 ```python
-from models import Error, NewPet, Pet, Pets
-from server import HTTPResult, create_app
+import models
+from server import HTTPResult
 from server.services import PetsService
 
 
-class PetStore(PetsService):
+class Pets(PetsService):
     def __init__(self) -> None:
-        self.pets: dict[int, Pet] = {}
+        self.pets: dict[int, models.Pet] = {}
 
-    def list_pets(self, *, limit: int) -> Pets:
-        return Pets(list(self.pets.values())[:limit])
+    def list_pets(self, *, limit: int) -> models.Pets:
+        return models.Pets(list(self.pets.values())[:limit])
 
-    def create_pet(self, *, body: NewPet) -> Pet:
-        pet = Pet(id=len(self.pets) + 1, name=body.name, tag=body.tag)
+    def create_pet(self, *, body: models.NewPet) -> models.Pet:
+        pet = models.Pet(id=len(self.pets) + 1, name=body.name, tag=body.tag)
         self.pets[pet.id] = pet
         return pet
 
-    def get_pet(self, *, pet_id: int) -> Pet | HTTPResult[Error]:
+    def get_pet(self, *, pet_id: int) -> models.Pet | HTTPResult[models.Error]:
         if (pet := self.pets.get(pet_id)) is None:
-            return HTTPResult(404, Error(message=f"Pet {pet_id} not found"))
+            return HTTPResult(404, models.Error(message=f"Pet {pet_id} not found"))
         return pet
-
-
-app = create_app(pets=PetStore())
 ```
 
 <!-- fmt: on -->
@@ -466,7 +479,7 @@ app = create_app(pets=PetStore())
 
 ```bash
 uv add uvicorn
-uv run uvicorn app:app
+uv run uvicorn server.main:app
 ```
 
 **Call it with the client** in `call.py`, which sends to the document's server URL by default:

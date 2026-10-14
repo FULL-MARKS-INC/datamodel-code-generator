@@ -2,11 +2,147 @@
 
 The `server` package serves the Default names API with FastAPI.
 datamodel-code-generator generated it from the OpenAPI document, together with the `models` models of the `pydantic_v2.BaseModel` backend.
-Generation overwrites every file of the package, as it does the models: keep your code in modules outside the package and regenerate the package instead of editing it; see [Regenerating](#regenerating).
+Generation overwrites every file of the package, as it does the models: keep your code outside the package, in the `services` modules of [Next steps](#next-steps), and regenerate the package instead of editing it; see [Regenerating](#regenerating).
 
 FastAPI server generation is experimental.
 The server supports the `pydantic_v2.BaseModel` and `pydantic_v2.dataclass` model backends, while client generation supports all five.
 Custom templates, base classes, and Python types stay within these two backends.
+
+## Next steps
+
+`main.py` serves the application: it imports your implementation of each router group from the `services` package beside this package, and passes them to `create_app`.
+Generation writes each of these modules that is missing, with a stub for each method that raises `NotImplementedError`, and never overwrites or deletes one.
+The `services` package belongs to this server alone: put another server package under a parent package of its own.
+
+| Module | File | Defines |
+| --- | --- | --- |
+| `services.default` | `../services/default.py` | `class Default(DefaultService)` |
+| `services.default_1` | `../services/default_1.py` | `class Default1(Default1Service)` |
+| `services.default_2` | `../services/default_2.py` | `class Default2(Default2Service)` |
+| `services.untagged` | `../services/untagged.py` | `class Untagged(UntaggedService)` |
+
+The file paths are relative to this README.
+Replace each stub with your code, then run the application with an ASGI server, from the directory that holds the top-level package (add `--app-dir src` for a `src` layout):
+
+```console
+uv add uvicorn
+uv run uvicorn server.main:app --reload
+```
+
+`fastapi dev` runs it too: `uv add "fastapi[standard]"`, then `uv run fastapi dev` with the path of `main.py`, beside this README.
+To pass other instances, such as fakes in tests, call `create_app` yourself; see [Implementing the services](#implementing-the-services).
+
+### `services.default`
+
+```python
+"""Implement DefaultService of server.services; server.main imports Default from this module.
+
+datamodel-code-generator wrote this module once, with a stub for each method, and never overwrites it. Generating the
+server again updates the Protocol, so type checkers point at the methods to change.
+"""
+
+from __future__ import annotations
+
+from fastapi.responses import Response
+from server import HTTPResult
+from server.services import DefaultService
+
+
+class Default(DefaultService):
+    """Implement the default operations."""
+
+    def list_defaults(
+        self,
+    ) -> None | HTTPResult[None] | Response:
+        """
+        Handle GET /defaults.
+        """
+        raise NotImplementedError
+```
+
+### `services.default_1`
+
+```python
+"""Implement Default1Service of server.services; server.main imports Default1 from this module.
+
+datamodel-code-generator wrote this module once, with a stub for each method, and never overwrites it. Generating the
+server again updates the Protocol, so type checkers point at the methods to change.
+"""
+
+from __future__ import annotations
+
+from fastapi.responses import Response
+from server import HTTPResult
+from server.services import Default1Service
+
+
+class Default1(Default1Service):
+    """Implement the default_1 operations."""
+
+    def ping(
+        self,
+    ) -> None | HTTPResult[None] | Response:
+        """
+        Handle GET /ping.
+        """
+        raise NotImplementedError
+```
+
+### `services.default_2`
+
+```python
+"""Implement Default2Service of server.services; server.main imports Default2 from this module.
+
+datamodel-code-generator wrote this module once, with a stub for each method, and never overwrites it. Generating the
+server again updates the Protocol, so type checkers point at the methods to change.
+"""
+
+from __future__ import annotations
+
+from fastapi.responses import Response
+from server import HTTPResult
+from server.services import Default2Service
+
+
+class Default2(Default2Service):
+    """Implement the default_2 operations."""
+
+    def list_upper_defaults(
+        self,
+    ) -> None | HTTPResult[None] | Response:
+        """
+        Handle GET /defaults/upper.
+        """
+        raise NotImplementedError
+```
+
+### `services.untagged`
+
+```python
+"""Implement UntaggedService of server.services; server.main imports Untagged from this module.
+
+datamodel-code-generator wrote this module once, with a stub for each method, and never overwrites it. Generating the
+server again updates the Protocol, so type checkers point at the methods to change.
+"""
+
+from __future__ import annotations
+
+from fastapi.responses import Response
+from server import HTTPResult
+from server.services import UntaggedService
+
+
+class Untagged(UntaggedService):
+    """Implement the untagged operations."""
+
+    def list_untagged(
+        self,
+    ) -> None | HTTPResult[None] | Response:
+        """
+        Handle GET /untagged.
+        """
+        raise NotImplementedError
+```
 
 ## Operations
 
@@ -23,9 +159,9 @@ Custom templates, base classes, and Python types stay within these two backends.
 
 `services.py` declares a Protocol for each router group, with an abstract method for each operation of the group.
 A method takes the operation's arguments as keywords, with `None` for an optional parameter or body the request omits, and returns the value to send, an `HTTPResult` with another declared status, headers, or both, or a `Response` sent as it is.
-Implement each group in a module of your own and pass an instance to `create_app` under the group's name.
+`main.py` passes an instance of each group's class to `create_app` under the group's name; tests, and applications that build their services with arguments such as a database pool, call `create_app` themselves.
 Subclass the Protocol, so that type checkers report a missing or mismatched method and Python refuses to create an instance while a method is missing; any other object with the same methods is checked where you pass it.
-The package looks each method up when it registers the routes, and refuses a coroutine function where the operation's handler mode needs a plain method, or the reverse; it does not check a method's arguments, so one whose signature type checkers would reject fails when its operation is requested.
+The package looks each method up when it registers the routes, and refuses a coroutine function where the operation's handler mode needs a plain method, or the reverse, and a method that cannot take the keyword arguments of its operation; type checkers check their types.
 
 ```python
 from server import create_app
@@ -96,5 +232,6 @@ The `server` response header belongs to the ASGI server, not to the application:
 Run the same generation again whenever the OpenAPI document changes; the `--check` option reports the files it would change without writing them.
 Generation overwrites every generated file, restoring any you edited or deleted, and never deletes one: delete the modules of removed operations yourself, which `--check` lists as extra files.
 When an operation is added, removed, or changed, its method in `services.py` changes with it, so type checkers point at the implementations to update, and Python refuses to create an instance of a subclass that lacks a new method.
+Generation writes only the missing modules of `services`: a new router group gets its module with stubs, and the module of a renamed or removed group stays for you to move or delete.
 Each generation prints the `uv add` command that adds the runtime dependencies of the package to your project;
 run it again when a new version of datamodel-code-generator changes them.

@@ -26,6 +26,7 @@ def _add_get_values(
     get_values_handler = checked(
         default.get_values,
         'The default.get_values method of GET /values',
+        ('depth', 'size', 'bounded', 'page', 'words', 'X_Level', 'tags', 'labels', 'rows', 'marks', 'notes', 'extras', 'color', 'tone', 'shade', 'colors', 'sized', 'X_Colors'),
     )
 
     def get_values(

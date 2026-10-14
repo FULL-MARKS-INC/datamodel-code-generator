@@ -10,15 +10,15 @@ The package holds everything the document decides: the routes, a service Protoco
 implement, the code that reads requests and writes responses, authentication, and the OpenAPI document the server
 publishes.
 
-You write only the business logic, in modules of your own that the generator never touches. Type checkers and Python
-check that your code implements every operation, so when the document changes, you regenerate the package and fix
-what they report.
+You write only the business logic, in the `services` modules beside the package, which the generator writes once with
+stubs and never overwrites. Type checkers and Python check that your code implements every operation, so when the
+document changes, you regenerate the package and fix what they report.
 
 ```text
 openapi.yaml ──► datamodel-codegen ──► models.py, server/    generated, overwritten on every run
-                                            ▲
-                                            │ import, subclass the service Protocols
-                                       app.py, test_app.py    yours, never touched
+                         │                  ▲  server/main.py imports services/
+                         │ once, with stubs │ import, subclass the service Protocols
+                         └─────────────► services/            yours, never overwritten
 ```
 
 Coming from fastapi-code-generator? See [Migrating from fastapi-code-generator](fastapi-code-generator-migration.md).
@@ -188,7 +188,8 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
 The [preset](presets.md) supplies the model options, as in the model [quick start](getting-started.md), and
 `--openapi-scopes schemas api` makes models for the parameters, bodies, and responses of the operations too.
 
-Generation ends by printing the command that adds the package's runtime dependencies to your project:
+Generation ends by printing the command that adds the package's runtime dependencies to your project, and the
+next steps:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.notice -->
 <!-- fmt: off -->
@@ -196,18 +197,23 @@ Generation ends by printing the command that adds the package's runtime dependen
 ```text
 Add the runtime dependencies of server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
+Next steps: implement the stubs in services/pets.py, then run the server:
+  uv add uvicorn && uv run uvicorn server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+See server/README.md.
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.notice -->
 
-Run it. The command names only the minimum version of each package, so uv adds the latest release. It grows with
-what the document uses: `python-multipart` for forms, `email-validator` for `format: email`, and `python-ulid` for
-`format: ulid`. An explicit `--target-pydantic-version` older than the `pydantic` minimum (`2`, `2.11` or `2.12`) is
+Run the `uv add` command. It names only the minimum version of each package, so uv adds the latest release, and
+it grows with what the document uses: `python-multipart` for forms, `email-validator` for `format: email`, and
+`python-ulid` for `format: ulid`. An explicit `--target-pydantic-version` older than the `pydantic` minimum (`2`, `2.11` or `2.12`) is
 refused with `Error:` and exit code 2; leave it unset or use `2.14`, which `--use-missing-sentinel` requires (see
 [Requirements](#requirements)).
 
-The run wrote the models and the `server` package:
+The run wrote the models, the `server` package, and, once, the `services` package with a stub for you to
+implement:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.tree -->
 <!-- fmt: off -->
@@ -220,19 +226,25 @@ server/
 ├── _generated/
 ├── _runtime/
 ├── application.py
+├── main.py
 ├── py.typed
 ├── routers/
 │   ├── __init__.py
 │   └── pets.py
 └── services.py
+services/
+├── __init__.py
+└── pets.py
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.tree -->
 
-`models.py` holds the models, `server/services.py` the service Protocol you implement next, and `server/routers/`
-the routes. The rest is described in [The generated package](#the-generated-package). Every file here is overwritten
-on each run, so keep your own code outside `server/`.
+`models.py` holds the models, `server/services.py` the service Protocol you implement next, `server/routers/` the
+routes, and `server/main.py` the application. The rest is described in
+[The generated package](#the-generated-package). Every file of `models.py` and `server/` is overwritten on each run, so
+keep your own code outside `server/`: generation writes `services/pets.py` only while it is missing, and never
+overwrites or deletes it.
 
 ### 3. Read the service Protocol
 
@@ -306,53 +318,71 @@ A method returns one of three things:
 
 ### 4. Implement the operations
 
-Write the business logic in `app.py`, beside the package:
+Generation wrote `services/pets.py` with a class `Pets` that subclasses `PetsService` and a stub for each method,
+which raises `NotImplementedError`. Replace the stubs with the business logic:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.app -->
 <!-- fmt: off -->
 
 ```python
-from models import Error, NewPet, Pet, Pets
-from server import HTTPResult, create_app
+import models
+from server import HTTPResult
 from server.services import PetsService
 
 
-class PetStore(PetsService):
+class Pets(PetsService):
     def __init__(self) -> None:
-        self.pets: dict[int, Pet] = {}
+        self.pets: dict[int, models.Pet] = {}
 
-    def list_pets(self, *, limit: int) -> Pets:
-        return Pets(list(self.pets.values())[:limit])
+    def list_pets(self, *, limit: int) -> models.Pets:
+        return models.Pets(list(self.pets.values())[:limit])
 
-    def create_pet(self, *, body: NewPet) -> Pet:
-        pet = Pet(id=len(self.pets) + 1, name=body.name, tag=body.tag)
+    def create_pet(self, *, body: models.NewPet) -> models.Pet:
+        pet = models.Pet(id=len(self.pets) + 1, name=body.name, tag=body.tag)
         self.pets[pet.id] = pet
         return pet
 
-    def get_pet(self, *, pet_id: int) -> Pet | HTTPResult[Error]:
+    def get_pet(self, *, pet_id: int) -> models.Pet | HTTPResult[models.Error]:
         if (pet := self.pets.get(pet_id)) is None:
-            return HTTPResult(404, Error(message=f"Pet {pet_id} not found"))
+            return HTTPResult(404, models.Error(message=f"Pet {pet_id} not found"))
         return pet
-
-
-app = create_app(pets=PetStore())
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.app -->
 
-`PetStore` subclasses `PetsService`, so type checkers report a missing method or one whose arguments or result do not
-match its operation, and Python refuses to create `PetStore()` while a method is missing.
+`Pets` subclasses `PetsService`, so type checkers report a missing method or one whose arguments or result do not
+match its operation, and Python refuses to create `Pets()` while a method is missing.
+`HTTPResult(404, models.Error(...))` sends the `404` response that `get_pet` declares, validated by its `Error` model.
 
-`create_app` takes one service for each router group, under the group's name, and returns a FastAPI application.
-`HTTPResult(404, Error(...))` sends the `404` response that `get_pet` declares, validated by its `Error` model.
+Each router group has its module in `services`, named after the group's router module, with a class named after its
+Protocol without the `Service` suffix; a document with security schemes adds `services/authorize.py` with the
+`authorize` function. The package README lists them under *Next steps*. `server/main.py` imports them and calls
+`create_app`, which takes one service for each router group, under the group's name, and returns a FastAPI
+application. In short, it does this:
+
+```python
+from server import create_app
+from services.pets import Pets
+
+app = create_app(pets=Pets())
+```
 
 ### 5. Run it
 
 ```bash
 uv add uvicorn
-uv run uvicorn app:app
+uv run uvicorn server.main:app --reload
 ```
+
+Run it from the directory that holds the top-level package; for a `src` layout, add `--app-dir src`. FastAPI's own
+command runs it too, after `uv add "fastapi[standard]"`: `uv run fastapi dev server/main.py`.
+
+A missing `services` module or class stops the start with an `ImportError` that names the file to write where it
+belongs, a package's `__init__.py` for a group you implement as a package; an import error inside your module, such
+as a missing dependency, is raised as it is. A method whose signature cannot take the keyword arguments of its
+operation stops the start with a `TypeError` that names the class, the method, and the argument; the check reads the
+method's own signature, not that of a function a decorator wraps, and leaves its annotations unevaluated.
 
 Open <http://127.0.0.1:8000/docs>. The page shows your `openapi.yaml`, not a document FastAPI derives from the
 routes: the application serves the parts of the source document its operations use, the *served document*, at
@@ -368,7 +398,7 @@ FastAPI's `TestClient` calls the application without a server:
 ```python
 from fastapi.testclient import TestClient
 
-from app import app
+from server.main import app
 
 client = TestClient(app)
 
@@ -397,9 +427,10 @@ uv run pytest test_app.py
 
 - The OpenAPI document is the source: the models, the routes, and the service Protocols come from it.
 - `datamodel-codegen` regenerates every file of `models.py` and `server/` on each run.
-- Your code lives outside the package and subclasses the service Protocols, so type checkers keep it in step with
-  the document.
-- `create_app` builds the application from your services.
+- Your code lives in `services/`, outside the package, and subclasses the service Protocols, so type checkers keep it
+  in step with the document; generation writes a missing module once, with stubs.
+- `server/main.py` builds the application from your services with `create_app`, which tests and applications of your
+  own can call with other instances.
 - To call the server from Python, generate a client from the same document; see the
   [overview](index.md#generate-a-fastapi-server-or-an-http-client-experimental) and
   [Python Client Generation](python-client.md).
@@ -778,6 +809,10 @@ FastAPI reads forms with `python-multipart`, which the dependency notice adds fo
 ```text
 Add the runtime dependencies of server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16" "python-multipart>=0.0.32"
+Next steps: implement the stubs in services/photos.py, services/authorize.py, then run the server:
+  uv add uvicorn && uv run uvicorn server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+See server/README.md.
 ```
 
 <!-- fmt: on -->
@@ -844,7 +879,9 @@ that `create_app` does are then yours to add:
 
 Run the same command again after the OpenAPI document changes. The service Protocols change with the operations, so
 type checkers point at the implementations to update, and Python refuses to create an instance of a subclass that
-lacks a new method; modules outside the package are never touched.
+lacks a new method. Modules outside the package are never rewritten: generation writes a module of `services` only
+while it is missing, so a new router group gets its module with stubs, and the module of a renamed or removed group
+stays for you to move or delete.
 
 Generation renders every file first and then *publishes* them: it writes the changed files together and rolls back
 earlier changes if a write fails. A file that already holds its generated bytes is not rewritten. Like the models,
@@ -852,7 +889,8 @@ every file of the package is written as text with the line ending of the platfor
 
 Every generation overwrites every generated file of the package, restoring any you edited or deleted. A file that is
 no longer generated, such as the router module of a removed tag, stays until you delete it, and `--check` lists it as
-an extra file. A generation that leaves such `.py` files in place names them in one `LeftoverFilesWarning`, which Python
+an extra file. A generation that leaves such `.py` files in place names them in one `LeftoverFilesWarning`, which
+points code of your own at `services`; Python
 shows once per process for the same text, also under `--watch` and repeated `generate()` calls. Silence exactly this
 warning with `warnings.simplefilter("ignore", datamodel_code_generator.LeftoverFilesWarning)` around `generate()`, or
 with `ignore::datamodel_code_generator.LeftoverFilesWarning` in pytest's `filterwarnings`.
@@ -865,8 +903,10 @@ Python, compare the files `generate()` returns without an `output`.
 
 `--check` uses the model output comparison: it prints unified diffs and missing or extra file messages to stdout.
 It compares the rendered model and server text, including the README and `py.typed`, plus extra `.py` files under
-the model and server output directories. CRLF and LF compare equally. Unrelated text files are outside this scope.
-`--check --output-format json` uses the same check payload as model generation. Checking publishes nothing.
+the model and server output directories. CRLF and LF compare equally. Unrelated text files are outside this scope, and
+so are the modules of `services`: a check neither reports one that is missing nor lists one as extra, even inside a
+model directory. `--check --output-format json` uses the same check payload as model generation. Checking publishes
+nothing, and neither does `--diff-against`.
 
 The models and the server files keep the generation timestamp unless `--disable-timestamp` or a preset that sets it
 leaves it out, as for model generation; one run heads every file with the same timestamp. Without the timestamp, a
@@ -893,18 +933,24 @@ and its parent for a single model file, so `output` and the path give the file o
 directory, such as a server package beside a model directory, has an absolute path. Paths use forward slashes.
 `--check --output-format json` names the files the same way in `differences[].path`, while the diff labels stay
 relative to the working directory. Model metadata and the remote lock are outside the payload, as for model
-generation. The dependency notice goes to stderr, along with errors and Python warnings; the generation, check, and
-input-diff payloads carry the same requirements in `target`, next to the package's import path, so a tool can read
-them without parsing stderr:
+generation. The dependency notice and the next steps go to stderr, along with errors and Python warnings; the
+generation, check, and input-diff payloads carry the same requirements in `target`, next to the package's import
+path, so a tool can read them without parsing stderr. The generation payload adds the next steps: the package
+`readme`, the `entrypoint` module and the import string of its application, and the `implementation` modules it
+imports, with `created` true for each module this run wrote with stubs. Their paths are relative like those of `files`:
 
 ```json
 "target": {
   "package": "server",
-  "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"]
+  "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"],
+  "readme": "server/README.md",
+  "entrypoint": {"app": "server.main:app", "path": "server/main.py"},
+  "implementation": [{"module": "services.pets", "name": "Pets", "path": "services/pets.py", "created": true}]
 }
 ```
 
-A check or an input diff lists the requirements of the current input; payloads of model-only jobs have no `target`.
+`files` holds the generated files only, not the stubs of `services`. A check or an input diff lists the requirements
+of the current input; payloads of model-only jobs have no `target`.
 
 The remote lock file takes part as it does for model generation, when `--lockfile` names it, `--update-lock` or
 `--locked` uses it, or the default `datamodel-codegen.lock` exists. As for model generation, it must not overlap the
@@ -919,29 +965,45 @@ bytes, and `--check` reports a module that differs.
 
 ### Requirements
 
-- Server generation needs Python 3.11 or later, both to run `datamodel-codegen` and as the target Python version.
-  Set the target with `--target-python-version` or a preset that sets it, as the quick start does; the default
-  target, 3.10, and running on Python 3.10 are both refused with `Error:` and exit code 2.
+Server generation needs some model settings. A setting you leave unset, on the command line, in
+`[tool.datamodel-codegen]` or a job's table, in the arguments of `generate()`, and in the preset, takes the value
+the server needs; a value you set yourself that the server cannot use stops the run with `Error:` and exit code 2,
+or an `Error` from `generate()`. The model options that depend on these settings, such as `--use-specialized-enum`
+on the target Python version, see the values the server sets. The models are those of a model-only run given the same
+settings. After a command line run that set any, stderr shows how to set them yourself, before the `uv add` notice:
+the command as you ran it with the options appended, when the command line selected the target or no
+`pyproject.toml` was read (noting an input read from stdin), or else the lines to add to the table that held the
+settings: the job's table for a job, the profile's for `--profile`, quoted as TOML needs, in the `pyproject.toml`
+named by its path from the working directory. `--watch` shows them once, after its first generation.
+`--output-format json` names them in `target.implied`, an object whose keys are those of `pyproject.toml`:
+`openapi-scopes`, `target-python-version`, `use-missing-sentinel`, `target-pydantic-version`,
+`use-msgspec-tagged-unions`, and `use-msgspec-nullable-enum-alias`, each present only when the target set it.
+`generate()` prints nothing. Presets stay as they are, without these settings.
+
+- Python 3.11 or later, both to run `datamodel-codegen` and as the target Python version: an unset
+  `--target-python-version` is `3.11`. An older one, set yourself or by a preset for Python 3.10, is refused; the
+  message names the preset, so that you pick one for Python 3.11 or later. Running on Python 3.10 is refused too.
+- `--openapi-scopes` includes `api`, so that the models cover the parameters, bodies, and responses of the
+  operations: unset, it is `schemas api`. Scopes you give without `api` stop the run with
+  `Error: --generate-server requires --openapi-scopes to include api`.
+- `--use-missing-sentinel` needs `--target-pydantic-version 2.14`, with which the models import `MISSING` from
+  `pydantic` (`from pydantic import MISSING`): with the sentinel, an unset target is `2.14`. Model generation alone
+  imports it from `pydantic.experimental.missing_sentinel`, which pydantic 2.14 deprecates, when the target is unset
+  or `2.12`, and refuses the option for `2` and `2.11`. With a target of `2`, `2.11`, or `2.12` that you set, server
+  generation stops with `Error: The fastapi target needs --target-pydantic-version 2.14 for --use-missing-sentinel,
+  so that the models import MISSING from pydantic`.
+- `pydantic_v2.dataclass` models need `--use-missing-sentinel`, and with it `--target-pydantic-version 2.14`, since a
+  dataclass field cannot tell an unset member from one set to `None`: unset, the sentinel is on and the target is
+  `2.14`; a target pydantic version older than `2.14` that you set is refused with a message that says the server
+set the sentinel. With `use-missing-sentinel = false` in `pyproject.toml`, generation stops with
+  `Error: The fastapi target needs --use-missing-sentinel with --target-pydantic-version 2.14 for
+  'pydantic_v2.dataclass' models, whose fields cannot tell an unset member from None`. With both, an optional field
+  without a default holds `MISSING`: a member a request leaves out reaches the method as `MISSING`, and a field the
+  method leaves unset is left out of the response.
 - The input is one OpenAPI 3.0, 3.1, or 3.2 document, from a file, a URL, or stdin; a directory or a list of
   files is refused.
 - `--output-model-type` is `pydantic_v2.BaseModel` or `pydantic_v2.dataclass`; the other backends are
   refused. Custom templates, base classes, and types do not add backends.
-- `--use-missing-sentinel` needs `--target-pydantic-version 2.14`, with which the models import `MISSING` from
-  `pydantic` (`from pydantic import MISSING`). Model generation alone imports it from
-  `pydantic.experimental.missing_sentinel`, which pydantic 2.14 deprecates, when the target is unset or `2.12`, and
-  refuses the option for `2` and `2.11`. With the target unset, `2`, `2.11`, or `2.12`, server generation stops with
-  `Error: The fastapi target needs --target-pydantic-version 2.14 for --use-missing-sentinel, so that the models
-  import MISSING from pydantic` and exit code 2.
-- `pydantic_v2.dataclass` models need `--use-missing-sentinel`, and with it `--target-pydantic-version 2.14`, since a
-  dataclass field cannot tell an unset member from one set to `None`. Without the sentinel, generation stops with
-  `Error: The fastapi target needs --use-missing-sentinel with --target-pydantic-version 2.14 for
-  'pydantic_v2.dataclass' models, whose fields cannot tell an unset member from None` and exit code 2. With both, an
-  optional field without a default holds `MISSING`: a member a request leaves out reaches the method as `MISSING`,
-  and a field the method leaves unset is left out of the response.
-- `--openapi-scopes` includes `api`, so that the models cover the parameters, bodies, and responses of the
-  operations: `--openapi-scopes schemas api`. Without it, generation stops with
-  `Error: --generate-server requires --openapi-scopes to include api` and exit code 2, and the Python API raises
-  `datamodel_code_generator.Error` with the same message.
 - The model options apply as they do without `--generate-server`, so the same options write the same model files
   (only the command `--enable-command-header` records differs), and a model option the model generation refuses,
   such as `--collapse-root-models-name-strategy` without `--collapse-root-models`, is refused before anything is
@@ -1090,10 +1152,12 @@ It publishes the models and the package together and returns `None`, like model 
 needs no `server_output`, returns every model and server file as `GeneratedModules`, under the paths their import paths
 imply, such as `("models.py",)` and `("server", "application.py")`, and writes nothing but the model metadata and a
 remote lock update; see [Generating a Server or Client Package](using_as_module.md#generating-a-server-or-client-package).
+With an `output`, it writes the missing modules of `services` with stubs, as the command line does; without one, it
+writes and returns none.
 
 `load_pyproject_config()` reads the server keys of `pyproject.toml`, whose paths and operation documents resolve
 against its directory. Invalid settings, bindings, and template failures raise `datamodel_code_generator.Error` with
-the message the command line prints. The `uv add` notice is a command-line message only.
+the message the command line prints. The `uv add` notice and the next steps are command-line messages only.
 
 ### Batch jobs
 
@@ -1148,9 +1212,11 @@ job cannot share its `output`. The server jobs of a batch write one generation t
 `--disable-timestamp` leaves it out, as it does here so that `--check` compares equal.
 
 The batch publishes the server packages together with the models of every job once all jobs succeed, and publishes
-nothing when a job fails or when jobs generate different models for a shared `output`; the `uv add` notice of each
-package follows the publication on stderr. `--check` compares every job as a single run does and exits with 1 when
-any of them would change. With `--output-format json`, a server job adds the generation or check payload of a single
+nothing when a job fails or when jobs generate different models for a shared `output`; the `uv add` notice and the
+next steps of each package follow the publication on stderr. A parent package holds one server: two server jobs
+whose packages share a directory would import their implementations from one `services` module, so the batch refuses
+them and writes nothing. `--check` compares every job as a single run does and exits with 1 when any of them would
+change. With `--output-format json`, a server job adds the generation or check payload of a single
 server run to the batch document, with file paths relative to that job's model output directory. `--all-jobs
 --watch` regenerates the batch, server jobs included, whenever an input any job read changes.
 
@@ -1159,15 +1225,22 @@ server run to the batch document, with file paths relative to that job's model o
 | Path | Contents |
 | --- | --- |
 | `__init__.py`, `application.py` | `create_app`, `build_router`, `HTTPResult`, and the other public types |
+| `main.py` | The application: `create_app` with an instance of each implementation of `services`; the package initializer does not import it |
 | `services.py` | One service Protocol per router group, with an abstract method per operation |
 | `routers/` or `routes.py` | Route registrations |
 | `security.py` | One FastAPI security dependency for each scheme, only when a selected operation uses a security scheme |
 | `_generated/`, `_runtime/` | Plans and the runtime the package imports |
 | `README.md`, `py.typed` | Documentation and typing marker |
 
-Keep the service implementations, the `authorize` callback, and the application in modules outside the package:
-`--check` treats every `.py` file under `--server-output` as generated, lists a file that is no longer generated as
-an extra file, and a file at a path the package needs is overwritten.
+Keep the service implementations and the `authorize` callback in the `services` package beside the server package,
+which `main.py` imports: `services` beside `server`, `app/services` for `--server-package app.server`, written by
+generation only while a module is missing. Each stub names the server package it was written for. The `services`
+package belongs to one server: give each server package a parent package of its own. Generation refuses a module
+named `services.py` beside the server package, a module of yours or the models, since Python would import only one
+of it and the `services` package. An application of your own, such as one with a `lifespan`, also belongs
+outside the package and calls `create_app` itself. `--check` treats every `.py` file under `--server-output` as
+generated, lists a file that is no longer generated as an extra file, and a file at a path the package needs is
+overwritten.
 
 The models can be part of the package. Name a model file or directory inside `--server-output` and its import path:
 
@@ -1340,8 +1413,10 @@ methods works, and type checkers check it where you pass it. Registration stops 
 otherwise go wrong without one: a missing method (`AttributeError`), a coroutine function for an operation in the
 `sync` handler mode or a plain method for one in the `async` mode, a secured operation without a callable
 `authorize`, and an `operation_dependencies` entry that is not a sequence of `Depends(...)` (`TypeError`) or that
-names no method of the router (`ValueError`). The package does not check the arguments of a method: one whose
-signature a type checker would reject fails with Python's own error when its operation is requested.
+names no method of the router (`ValueError`). It also binds the keyword arguments each route passes to its method's
+signature, as a call would, and stops with a `TypeError` that names the class, the method, and the argument when they
+do not fit; a wider signature, with defaults or `**kwargs`, fits. Type checkers check the types of the arguments and
+results. A stub's `NotImplementedError` answers `500`, as any other exception does.
 
 A method's docstring names its route, such as `Handle GET /pets/{petId}.`, or, with `--use-schema-description`, the
 operation's summary and description, formatted as model docstrings are, on one line with
@@ -1459,7 +1534,8 @@ The server templates come from [`--custom-template-dir`](cli-reference/template-
 as model templates do: the files of its `fastapi` directory replace the builtin roles of the same name:
 `facade.jinja2` (the package initializers), `application.jinja2`, `router.jinja2` (the routes module or each router
 module), `services.jinja2`, `contract.jinja2` (`_generated/contract.py`), `security.jinja2`, `openapi.jinja2`
-(`_generated/openapi.py`), and `readme.jinja2`. A role the directory does not hold,
+(`_generated/openapi.py`), `main.jinja2`, `readme.jinja2`, and `implementation.jinja2` and `authorize.jinja2`, the
+stubs of the `services` modules generation writes once. A role the directory does not hold,
 or a custom template directory without a `fastapi` directory, keeps its builtin template. The builtin templates are
 in the `_fastapi/templates` directory of the installed package; copy one to start from it. An override may include
 or import the other builtin templates.
@@ -1521,16 +1597,20 @@ module's import block:
 | Role | Values |
 | --- | --- |
 | `application.jinja2` | `imports`, `exports`, `final`, `options`, `routes`, `info`, `build_router`, `build`, `services`, `settings`, `create_app`, `arguments`, `fastapi`, `error_handlers`, `serve_source_openapi` |
+| `authorize.jinja2` | `imports`, `package`, `entrypoint`, `requirement_sets`, `credentials` |
 | `contract.jinja2` | `imports`, `typed_dict`, `dependencies`, `plans`, `final`, `dataclass`, `parameter_adapter`, `body_adapter`, `operation_responses` |
 | `facade.jinja2` | `module`, `docstring`, `imports`, `exports` |
+| `implementation.jinja2` | `imports`, `protocol`, `services`, `entrypoint`, `name`, `base`, `methods`, `protocol_methods` |
+| `main.jinja2` | `imports`, `app`, `services`, `implementations`, `missing`, `table`, `create_app`, `arguments` |
 | `openapi.jinja2` | none |
-| `readme.jinja2` | `title`, `package`, `model_package`, `backend`, `operations`, `services`, `protocols`, `arguments`, `schemes`, `forms`, `raw_request` |
+| `readme.jinja2` | `title`, `package`, `model_package`, `backend`, `operations`, `services`, `protocols`, `services_package`, `owned`, `app`, `arguments`, `schemes`, `forms`, `raw_request` |
 | `router.jinja2` | `imports`, `docstring`, `routes`, `api_router`, `wiring`, `final`, `literal`, `templated`, `builder`, `group`, `build`, `services`, `settings` |
 | `security.jinja2` | `imports`, `schemes`, `exports` |
 | `services.jinja2` | `imports`, `typevar`, `abstract`, `protocol_type`, `protocols` |
 
 `router.jinja2` receives one `route` for each operation, with its local names (`adder`, `router`, `wiring`,
-`service`, `handler`), its `lookup` of the service method, its `principal` dependency or none, its `endpoint` with
+`service`, `handler`), its `lookup` of the service method, whose `keywords` name the arguments the route passes for
+the startup check, which an override without them leaves out, its `principal` dependency or none, its `endpoint` with
 the endpoint's `parameters` (`name`, `annotation`, `default`), the service method `call` with its `arguments`, and
 its `registration`, whose `keywords` hold the optional `add_api_route` arguments. A builtin template writes each
 parameter, argument, and route entry on its own line, and leaves the type annotations and plan values on one line for
@@ -1551,6 +1631,6 @@ template errors stop the run before publication.
 
 Warnings are Python `UserWarning` subclasses from `datamodel_code_generator`: `DocumentationAnnotationWarning` reports
 a source value the served document cannot carry, and `LeftoverFilesWarning` names the `.py` files under the output
-that the generation left in place and does not generate. Each message starts with the output path, spelled relative
+that the generation left in place and does not generate, and points code of your own at `services`. Each message starts with the output path, spelled relative
 to the working directory when it lies inside it, so every generated package reports its own files. They respect
 `--disable-warnings` and Python warning filters, and are not returned as diagnostic records.

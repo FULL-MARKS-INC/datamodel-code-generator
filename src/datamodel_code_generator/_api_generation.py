@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unicodedata
 from contextlib import ExitStack, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from io import BytesIO, TextIOWrapper
 from pathlib import Path, PurePosixPath
@@ -19,6 +19,8 @@ from datamodel_code_generator._api_types import (
     Diagnostic,
     GeneratedArtifact,
     GeneratedProject,
+    Implementation,
+    NextSteps,
     OperationRef,
 )
 from datamodel_code_generator._target_documents import (
@@ -29,6 +31,7 @@ from datamodel_code_generator._target_documents import (
     document_identity,
     shown,
 )
+from datamodel_code_generator.base_config import implied_target_settings as implied_settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -64,6 +67,15 @@ class RenderedFile:
     kind: str
     text: str
     verbatim: bool = False
+
+
+def implementation_text(path: PurePosixPath) -> str:
+    """Return the text a rendered file holds where the finished text of an implementation module goes.
+
+    `path` is the module's path among the implementations of a `TargetRender`, which are finished like the other
+    modules first, so a README shows a stub as generation writes it.
+    """
+    return f"\x1fimplementation:{path.as_posix()}\x1f"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -103,13 +115,18 @@ class TargetRequest:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TargetRender:
-    """A target's rendered files and the runtime dependencies of its package.
+    """A target's rendered files, the runtime dependencies of its package, and what to do with it next.
 
-    A target raises `APIGenerationError` for its failures instead of returning error diagnostics.
+    `implementations` are the modules of the user's that the package imports, with stubs, under the directory that
+    holds the package; generation writes each only while it is missing. The paths of `next_steps` are relative to the
+    package, and those of its implementations to the directory that holds it. A target raises `APIGenerationError` for
+    its failures instead of returning error diagnostics.
     """
 
     files: tuple[RenderedFile, ...]
     dependencies: tuple[str, ...] = ()
+    implementations: tuple[RenderedFile, ...] = ()
+    next_steps: NextSteps
 
 
 class TargetGenerator(Protocol):
@@ -155,8 +172,9 @@ def prepare_target(
 ) -> GenerateConfig:
     """Validate target settings in the contract order and return the effective model settings.
 
-    The model settings stay as given, so a target writes the models a model-only run writes; a setting the target
-    needs but the settings lack is an `Error` that names the missing option.
+    A setting the target needs that no option, configuration key, `generate()` argument, or preset set takes the value
+    the target needs, as `implied_settings` says, so a target writes the models a model-only run writes with those
+    settings given; a setting given a value the target cannot use is an `Error` that names the option.
     """
     from datamodel_code_generator import (  # noqa: PLC0415
         Error,
@@ -180,9 +198,13 @@ def prepare_target(
             option_path="model_config.output",
             message=f"The {generator.kind} target needs model_config.output",
         )
+    if implied := implied_settings(model_config, _given_fields(model_config)):
+        model_config = model_config.model_copy(update=implied)
     target = model_config.target_pydantic_version
     if (sentinel := model_config.use_missing_sentinel) and (
-        needed := pydantic_target_problem(model_config.output_model_type.value, target, sentinel=True)
+        needed := pydantic_target_problem(
+            model_config.output_model_type.value, target, sentinel=True, implied="use_missing_sentinel" in implied
+        )
     ) is not None:
         raise _target_pydantic_error(generator, needed)
     effective = _prepare_generate_facade_config(model_config)
@@ -195,12 +217,8 @@ def prepare_target(
             option_path="model_config.output_model_type",
             message=f"The {generator.kind} target does not support {backend.value!r}; use {allowed}",
         )
-    if effective.target_python_version.version_key < _PYTHON_MINIMUM:
-        raise config_error(
-            code="E_CONFIG_VALUE",
-            option_path="model_config.target_python_version",
-            message=f"The {generator.kind} target needs a target Python version of {_PYTHON_MINIMUM_TEXT} or later",
-        )
+    if (problem := python_problem(effective, generator.kind)) is not None:
+        raise config_error(code="E_CONFIG_VALUE", option_path="model_config.target_python_version", message=problem)
     if backend is DataModelType.PydanticV2Dataclass and not sentinel:
         raise config_error(
             code="E_CONFIG_VALUE",
@@ -243,6 +261,55 @@ def prepare_target(
     raise APIGenerationError((
         Diagnostic(code="E_INPUT_ROOT", severity="error", stage="input", message=message, option_path=option_path),
     ))
+
+
+def implied_conflict(config: Any, implied: dict[str, Any], generator: TargetGenerator) -> None:
+    """Refuse a given target pydantic version older than the MISSING sentinel the target implied needs, saying so."""
+    from datamodel_code_generator._target_render import pydantic_target_problem  # noqa: PLC0415
+    from datamodel_code_generator.enums import DataModelType  # noqa: PLC0415
+
+    backend = DataModelType(config.output_model_type).value
+    if "use_missing_sentinel" in implied and (
+        needed := pydantic_target_problem(backend, config.target_pydantic_version, sentinel=True, implied=True)
+    ):
+        raise _target_pydantic_error(generator, needed)
+
+
+def _given_fields(config: GenerateConfig) -> set[str]:
+    """Return the fields a config sets: the ones it was given, and the ones its preset sets, applied later."""
+    if config.preset is None:
+        return set(config.model_fields_set)
+    from datamodel_code_generator.preset import PresetContext, resolve_preset_config_updates  # noqa: PLC0415
+
+    preset = resolve_preset_config_updates(
+        config.preset,
+        context=PresetContext(
+            input_file_type=config.input_file_type,
+            output_model_type=config.output_model_type,
+            target_python_version=config.target_python_version,
+        ),
+        use_annotated=config.use_annotated,
+        explicit_fields=config.model_fields_set,
+    )
+    fixed = () if preset.target_python_version is None else ("target_python_version",)
+    return {*config.model_fields_set, *fixed, *(item.field_name for item in preset.items)}
+
+
+def python_problem(config: Any, kind: str) -> str | None:
+    """Say why a target cannot use a config's target Python version, naming the preset that set it, or None.
+
+    A preset refuses a target Python version given beside it that differs from its own, so with a preset the version
+    is the preset's. The command line drops the preset from the settings it generates with, so it asks before the run.
+    """
+    if (version := config.target_python_version).version_key >= _PYTHON_MINIMUM:
+        return None
+    message = f"The {kind} target needs a target Python version of {_PYTHON_MINIMUM_TEXT} or later"
+    if config.preset is None:
+        return message
+    from datamodel_code_generator.preset import _coerce_preset_name  # noqa: PLC0415  # pyright: ignore[reportPrivateUsage]
+
+    name = _coerce_preset_name(config.preset).value
+    return f"{message}, which the preset {name} sets to {version.value}: use a preset for Python 3.11 or later"
 
 
 def _target_pydantic_error(generator: TargetGenerator, needed: str) -> APIGenerationError:
@@ -448,6 +515,32 @@ def _collision_key(path: Path) -> str:
     return unicodedata.normalize("NFC", str(path)).casefold()
 
 
+def _present(location: Path) -> bool:
+    """Return whether a user module exists, as its file or as a package directory that Python imports instead."""
+    return location.exists() or (location.name != "__init__.py" and location.with_suffix("").is_dir())
+
+
+def _located(steps: NextSteps, package: Path, kept: frozenset[Path], cwd: Path) -> NextSteps:
+    """Return a target's next steps with the paths of the files it names, saying which implementations it creates.
+
+    An implementation that is a package names its initializer.
+    """
+    home = package.parent
+    return replace(
+        steps,
+        readme=package / steps.readme,
+        entrypoint=None if steps.entrypoint is None else package / steps.entrypoint,
+        implementations=tuple(_implementation(item, home / item.path, kept, cwd) for item in steps.implementations),
+    )
+
+
+def _implementation(item: Implementation, path: Path, kept: frozenset[Path], cwd: Path) -> Implementation:
+    """Return a user module at its path, created unless kept: its module file, or a package's initializer instead."""
+    if not (cwd / path).exists() and (cwd / (directory := path.with_suffix(""))).is_dir():
+        return replace(item, path=directory / "__init__.py", created=False)
+    return replace(item, path=path, created=path not in kept)
+
+
 class _Planner:
     def __init__(  # noqa: PLR0913
         self,
@@ -563,7 +656,14 @@ class _Planner:
                 shown_root=self.shown_root,
             )
         )
-        finished = _Finisher(self).finish(rendered)
+        home = config.output.parent
+        kept = {
+            file.path: home.joinpath(*file.path.parts)
+            for file in rendered.implementations
+            if _present(self.cwd / home.joinpath(*file.path.parts))
+        }
+        finished, stubs = _Finisher(self).finish(rendered)
+        written = [file for file in stubs if file.path not in kept]
         artifacts = (
             *(self.artifact(self.model_path(artifact), "model", artifact.content) for artifact in models.artifacts),
             *(self.artifact(config.output.joinpath(*file.path.parts), "target", file.content) for file in finished),
@@ -573,9 +673,59 @@ class _Planner:
                 else (self.artifact(models.metadata[0], "model_metadata", models.metadata[1]),)
             ),
             *self.lock_artifacts(),
+            *(
+                GeneratedArtifact(
+                    path=home.joinpath(*file.path.parts), kind="implementation", action="write", content=file.content
+                )
+                for file in written
+            ),
+            *(
+                GeneratedArtifact(path=path, kind="implementation", action="keep", content=b"")
+                for path in kept.values()
+            ),
         )
+        self.check_services(artifacts)
         self.check_collisions(artifacts)
-        return GeneratedProject(target=generator.kind, artifacts=artifacts, dependencies=rendered.dependencies)
+        return GeneratedProject(
+            target=generator.kind,
+            artifacts=artifacts,
+            dependencies=rendered.dependencies,
+            next_steps=_located(rendered.next_steps, config.output, frozenset(kept.values()), self.cwd),
+        )
+
+    def check_services(self, artifacts: tuple[GeneratedArtifact, ...]) -> None:
+        """Refuse models or a module beside the server package with the name of the package of its implementations.
+
+        Python would import one of a module and the package instead of the other, and a models package would be the
+        package itself.
+        """
+        if not (paths := [artifact.path for artifact in artifacts if artifact.kind == "implementation"]):
+            return
+        module = (package := paths[0].parent).with_suffix(".py")
+        models = [artifact.path for artifact in artifacts if artifact.kind == "model"]
+        clash = "has the name of"
+        if found := next((path for path in models if path in {module, package}), None):
+            subject, remedy, module = "The models module", "name the models otherwise", found
+        elif any(package in path.parents for path in models):
+            subject, remedy, module, clash = "The models package", "name the models otherwise", package, "would be"
+        elif (self.cwd / module).is_file():
+            subject, remedy = "This module of yours", "rename the module"
+        else:
+            return
+        parent = self.config.package.rpartition(".")[0]
+        services = f"{parent}.services" if parent else "services"
+        raise APIGenerationError((
+            Diagnostic(
+                code="E_PATH_COLLISION",
+                severity="error",
+                stage="publication",
+                message=(
+                    f"{subject} {clash} the {services} package, from which {self.config.package}.main imports your "
+                    f"implementations: {remedy}, or put the server package under a parent package of its own"
+                ),
+                artifact_path=shown(module, self.cwd).as_posix(),
+            ),
+        ))
 
     def planned(self) -> PlannedTarget:
         models, output = self.models, self.effective.output
@@ -671,6 +821,8 @@ def _warn_leftover(target: PlannedTarget) -> None:
 
     root = (cwd / package).resolve()
     paths = [artifact.path for artifact in artifacts if artifact.kind == "model"]
+    steps = target.project.next_steps
+    home = next((shown(item.path.parent, cwd) for item in steps.implementations), None)
     if (models := target.models) is None:
         generated.update(
             location.relative_to(root) for path in paths if (location := (cwd / path).resolve()).is_relative_to(root)
@@ -678,7 +830,7 @@ def _warn_leftover(target: PlannedTarget) -> None:
     elif (location := (cwd / models).resolve()).is_relative_to(root):
         inner = location.relative_to(root)
         generated.update(inner / path.relative_to(models) for path in paths)
-    warn_leftover_files(root, generated, shown(package, cwd))
+    warn_leftover_files(root, generated, shown(package, cwd), home)
 
 
 def publish_target(target: PlannedTarget) -> None:
@@ -687,21 +839,39 @@ def publish_target(target: PlannedTarget) -> None:
 
 
 def _unshared(
-    job: str, target: PlannedTarget, models: dict[Path, tuple[str, GeneratedArtifact]]
+    job: str, target: PlannedTarget, models: dict[Path, tuple[str, GeneratedArtifact, Path]]
 ) -> Iterator[GeneratedArtifact]:
     """Yield the artifacts of a job's target that no earlier job plans.
 
-    Jobs that share a models output plan each of its files once, and must plan the same content for it.
+    Jobs that share a models output plan each of its files once, and must plan the same content for it. Server packages
+    in one directory would import their implementations from one `services` package, so two of them refuse the run;
+    they share only its initializer, which the first job writes.
     """
     for artifact in target.project.artifacts:
-        if artifact.kind != "model":
+        if artifact.kind not in {"model", "implementation"}:
             yield artifact
             continue
         location = target.cwd / artifact.path
-        owner, planned = models.setdefault(location.parent.resolve(strict=False) / location.name, (job, artifact))
+        owner, planned, package = models.setdefault(
+            location.parent.resolve(strict=False) / location.name, (job, artifact, target.package)
+        )
         if planned is artifact:
             yield artifact
-        elif planned.content != artifact.content:
+        elif artifact.kind == "implementation" and location.name != "__init__.py":
+            raise APIGenerationError((
+                Diagnostic(
+                    code="E_PATH_COLLISION",
+                    severity="error",
+                    stage="publication",
+                    message=(
+                        f"The server packages {shown(package, target.cwd).as_posix()} of job '{owner}' and "
+                        f"{shown(target.package, target.cwd).as_posix()} of job '{job}' would both import their "
+                        "implementation from this module: put each server package under a parent package of its own"
+                    ),
+                    artifact_path=shown(artifact.path, target.cwd).as_posix(),
+                ),
+            ))
+        elif artifact.kind == "model" and planned.content != artifact.content:
             raise APIGenerationError((
                 Diagnostic(
                     code="E_PATH_COLLISION",
@@ -723,7 +893,7 @@ def publish_planned(files: Iterable[StagedFile], targets: Sequence[tuple[str, Pl
     with ExitStack() as stack:
         try:
             staged = list(files)
-            models: dict[Path, tuple[str, GeneratedArtifact]] = {}
+            models: dict[Path, tuple[str, GeneratedArtifact, Path]] = {}
             for job, target in targets:
                 staged.extend(_stage(target, _unshared(job, target, models), stack))
             if staged:
@@ -751,11 +921,13 @@ class _Finisher:
         self.models = planner.models
         self.root = planner.root
 
-    def finish(self, rendered: TargetRender) -> tuple[PlannedFile, ...]:
+    def finish(self, rendered: TargetRender) -> tuple[tuple[PlannedFile, ...], tuple[PlannedFile, ...]]:
         """Format, head, and encode every file like a model file, from the model output settings.
 
         Imports used only for type checking move into `TYPE_CHECKING` blocks as they do in the models' modules: a target
-        package is a multi-module output of the model backend, so the backend decides the default.
+        package is a multi-module output of the model backend, so the backend decides the default. The implementations
+        are formatted the same way, without the generated header, returned second, and put where a text file holds
+        their `implementation_text`.
         """
         from datamodel_code_generator import (  # noqa: PLC0415
             _build_file_header_parts,  # pyright: ignore[reportPrivateUsage]
@@ -779,6 +951,7 @@ class _Finisher:
             effective.wrap_string_literal,
             skip_string_normalization=not effective.use_double_quotes,
             model_package=self.config.model_package,
+            package=self.config.package,
             custom_formatters=effective.custom_formatters,
             custom_formatters_kwargs=effective.custom_formatters_kwargs,
             encoding=effective.encoding,
@@ -804,17 +977,34 @@ class _Finisher:
                 if _is_python(file.path)
                 else body
             )
-        self.defer(formatter, texts, formatted)
-        texts = {path: _normalized(text) for path, text in texts.items()}
+        own = {file.path: formatter.format_code(file.text) for file in rendered.implementations}
+        self.defer(formatter, texts, formatted, own)
+        for key, value in list(texts.items()):
+            if not _is_python(key):
+                for path, text in own.items():
+                    value = value.replace(implementation_text(path), text.rstrip("\n"))  # noqa: PLW2901
+                texts[key] = value
+        return self.planned(texts), self.planned(own)
+
+    def planned(self, texts: dict[PurePosixPath, str]) -> tuple[PlannedFile, ...]:
+        """Encode formatted texts as their files hold them: Python files in the model encoding, other text as UTF-8."""
+        encoding = self.effective.encoding
         return tuple(
-            PlannedFile(path=path, content=_written(text, effective.encoding if _is_python(path) else "utf-8"))
+            PlannedFile(path=path, content=_written(_normalized(text), encoding if _is_python(path) else "utf-8"))
             for path, text in texts.items()
         )
 
-    def defer(self, formatter: TargetCodeFormatter, texts: dict[PurePosixPath, str], paths: set[PurePosixPath]) -> None:
+    def defer(
+        self,
+        formatter: TargetCodeFormatter,
+        texts: dict[PurePosixPath, str],
+        paths: set[PurePosixPath],
+        own: dict[PurePosixPath, str],
+    ) -> None:
         """Run the Ruff formatters once over the formatted files, staged beside the target like a model directory.
 
-        The staged package keeps the target directory's name, which Ruff reads as the package name.
+        The staged package keeps the target directory's name, which Ruff reads as the package name, and the user
+        modules, `own`, are staged beside it as they lie beside the package.
         """
         from datamodel_code_generator._format_types import Formatter  # noqa: PLC0415
 
@@ -823,11 +1013,14 @@ class _Finisher:
         encoding = self.effective.encoding
         with ExitStack() as stack:
             staged = _staging(stack, self.config.output, self.cwd) / self.root.name
-            for path in paths:
-                (location := staged.joinpath(*path.parts)).parent.mkdir(parents=True, exist_ok=True)
-                location.write_text(texts[path], encoding=encoding)
-            formatter.format_directory(staged)
-            texts.update((path, staged.joinpath(*path.parts).read_text(encoding=encoding)) for path in paths)
+            files = [*((staged, path, texts) for path in paths), *((staged.parent, path, own) for path in own)]
+            for base, path, held in files:
+                (location := base.joinpath(*path.parts)).parent.mkdir(parents=True, exist_ok=True)
+                location.write_text(held[path], encoding=encoding)
+            for directory in dict.fromkeys((staged, *(staged.parent / path.parts[0] for path in own))):
+                formatter.format_directory(directory)
+            for base, path, held in files:
+                held[path] = base.joinpath(*path.parts).read_text(encoding=encoding)
 
 
 def _run_models(input_: _GenerationInput, effective: GenerateConfig, config: TargetConfig) -> _Models:

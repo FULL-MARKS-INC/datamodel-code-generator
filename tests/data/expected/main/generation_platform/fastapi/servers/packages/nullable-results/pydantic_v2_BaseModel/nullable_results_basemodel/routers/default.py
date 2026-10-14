@@ -25,6 +25,7 @@ def _add_get_text(
     get_text_handler = checked(
         default.get_text,
         'The default.get_text method of GET /texts',
+        ('case',),
     )
 
     def get_text(
@@ -60,6 +61,7 @@ def _add_head_text(
     head_text_handler = checked(
         default.head_text,
         'The default.head_text method of HEAD /texts',
+        ('case',),
     )
 
     def head_text(
@@ -94,6 +96,7 @@ def _add_get_list(
     get_list_handler = checked(
         default.get_list,
         'The default.get_list method of GET /lists',
+        ('case',),
         asynchronous=True,
     )
 
@@ -130,6 +133,7 @@ def _add_get_name(
     get_name_handler = checked(
         default.get_name,
         'The default.get_name method of GET /names',
+        ('case',),
     )
 
     def get_name(
@@ -165,6 +169,7 @@ def _add_get_value(
     get_value_handler = checked(
         default.get_value,
         'The default.get_value method of GET /values',
+        ('case',),
     )
 
     def get_value(
@@ -200,6 +205,7 @@ def _add_get_anything(
     get_anything_handler = checked(
         default.get_anything,
         'The default.get_anything method of GET /anything',
+        ('case',),
     )
 
     def get_anything(
@@ -234,6 +240,7 @@ def _add_get_pet(
     get_pet_handler = checked(
         default.get_pet,
         'The default.get_pet method of GET /pets',
+        ('case',),
     )
 
     def get_pet(
@@ -268,6 +275,7 @@ def _add_get_thing(
     get_thing_handler = checked(
         default.get_thing,
         'The default.get_thing method of GET /things',
+        ('case',),
     )
 
     def get_thing(
@@ -303,6 +311,7 @@ def _add_get_note(
     get_note_handler = checked(
         default.get_note,
         'The default.get_note method of GET /notes',
+        ('case',),
     )
 
     def get_note(
@@ -337,6 +346,7 @@ def _add_post_memo(
     post_memo_handler = checked(
         default.post_memo,
         'The default.post_memo method of POST /memos',
+        ('case', 'body'),
     )
 
     def post_memo(
