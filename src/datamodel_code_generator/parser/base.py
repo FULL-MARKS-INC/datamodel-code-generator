@@ -2818,6 +2818,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._decimal_default_warning_examples: list[str] | None = None
         self._data_model_field_common_kwargs_cache: dict[str, Any] = {"use_missing_sentinel": self.use_missing_sentinel}
         self.reuse_model: bool = config.reuse_model
+        self._typed_map_value_reference_ids: set[int] = set()
         self.reuse_scope: ReuseScope | None = config.reuse_scope
         self.shared_module_name: str = config.shared_module_name
         self.encoding: str = self._source_context.encoding
@@ -3445,8 +3446,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Make class names unique within a module.
 
         Renames change the rendered type hints of referencing models, so cached dedup keys of the
-        module are dropped whenever a model is renamed.
+        module are dropped whenever a model is renamed. Models of typed map values come last, so the other
+        models keep the names they had before values were typed.
         """
+        if typed_map_values := self._typed_map_value_reference_ids:
+            models = sorted(models, key=lambda model: id(model.reference) in typed_map_values)
         scoped_model_resolver = ModelResolver(
             exclude_names={i.alias or i.import_ for m in models for i in m.imports},
             duplicate_name_suffix="Model",
@@ -7577,6 +7581,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 self.parse_raw()
         finally:
             self._close_http_fetch_session()
+        self._typed_map_value_reference_ids = self.model_resolver.settle_yielding_names()
         if suppress_parse_warnings:
             self._run_with_suppressed_warnings(self._report_parse_diagnostics)
         else:

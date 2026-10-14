@@ -2955,11 +2955,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             if class_name_suffix and base_name_without_index.endswith(class_name_suffix)
             else f"{base_reference.name}{suffix}"
         )
+        yields = {"yields": True} if self.model_resolver.is_yielding(base_reference) else {}
         unique_name = self.model_resolver.get_class_name(
             variant_name,
             unique=True,
             skip_affix=True,
             preserve_name=True,
+            **yields,
         ).name
         reference = self.model_resolver.add(
             get_special_path(f"read-write-{suffix.lower()}", base_reference.path.split("/")),
@@ -2967,6 +2969,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             class_name=False,
             unique=False,
             loaded=loaded,
+            **yields,
         )
         source_reference_path = _get_unique_rw_model_variant_source_path(
             source_variant_ref,
@@ -10112,11 +10115,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _parse_nullable_map(
         self, name: str, obj: JsonSchemaObject, path: list[str], additional_properties: JsonSchemaObject
     ) -> DataType:
-        """Parse a type array of object and null, keeping the value type of the map."""
-        return self.data_type(
-            data_types=[self._parse_additional_properties_map(name, obj, path, additional_properties)],
-            is_optional=obj.type_has_null,
-        )
+        """Parse a type array of object and null, keeping the value type of the map.
+
+        Models created for the values give way to every other model, so the names other models had before
+        typed values stay theirs.
+        """
+        with self.model_resolver.yielding_new_references():
+            map_type = self._parse_additional_properties_map(name, obj, path, additional_properties)
+        return self.data_type(data_types=[map_type], is_optional=obj.type_has_null)
 
     def _parse_constrained_additional_properties_value_item(
         self,
