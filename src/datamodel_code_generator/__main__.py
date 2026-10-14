@@ -181,6 +181,7 @@ if TYPE_CHECKING:
         CheckDifferencePayload,
         CommandOutputKind,
         GeneratedFilePayload,
+        TargetPayload,
     )
     from datamodel_code_generator.config import GenerateConfig
     from datamodel_code_generator.validators import ModelValidators
@@ -1501,10 +1502,11 @@ def _check_output_json(
     content: str,
     differences: list[CheckDifferencePayload],
     kind: Literal["check", "input-diff"] = "check",
+    target: TargetPayload | None = None,
 ) -> str:
     from datamodel_code_generator._structured_output import check_output_json  # noqa: PLC0415
 
-    return check_output_json(success=success, content=content, differences=differences, kind=kind)
+    return check_output_json(success=success, content=content, differences=differences, kind=kind, target=target)
 
 
 def _write_comparison_output(
@@ -1512,8 +1514,9 @@ def _write_comparison_output(
     output_format: str | None,
     *,
     kind: Literal["check", "input-diff"] = "check",
+    target: TargetPayload | None = None,
 ) -> None:
-    """Write a common comparison report in text or structured JSON."""
+    """Write a common comparison report in text or structured JSON, with the target of a server or client run."""
     if output_format == "json":
         sys.stdout.write(
             _check_output_json(
@@ -1521,6 +1524,7 @@ def _write_comparison_output(
                 content=comparison.content,
                 differences=comparison.differences,
                 kind=kind,
+                target=target,
             )
             + "\n"
         )
@@ -2264,7 +2268,12 @@ def _run_jobs_json(
                         )
                         return Exit.ERROR
                     json.dump(
-                        job_payload.model_dump(mode="json"), batch_spool, ensure_ascii=False, separators=(",", ":")
+                        job_payload.model_dump(
+                            mode="json", exclude={"result": {"target"}} if job_payload.result.target is None else None
+                        ),
+                        batch_spool,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
                     )
                     batch_spool.write("\n")
 

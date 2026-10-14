@@ -1,5 +1,6 @@
 $ datamodel-codegen --generate-client httpx2 --output-format json
 kind generation; output <root>/models.py
+target {"package": "client", "dependencies": ["httpx2>=2.13.0", "typing-extensions>=4.16", "pydantic>=2.14.0"]}
 file client/__init__.py; matches published True
 file client/_async_client.py; matches published True
 file client/_client.py; matches published True
@@ -25,6 +26,7 @@ runtime files match published True
 $ datamodel-codegen --all-jobs --output-format json
 job server
 kind generation; output <root>/models.py
+target {"package": "server", "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"]}
 file models.py; matches published True
 file server/README.md; matches published True
 file server/__init__.py; matches published True
@@ -39,6 +41,7 @@ file server/services.py; matches published True
 runtime files match published True
 job client
 kind generation; output <root>/models.py
+target {"package": "client", "dependencies": ["httpx2>=2.13.0", "typing-extensions>=4.16", "pydantic>=2.14.0"]}
 file client/__init__.py; matches published True
 file client/_async_client.py; matches published True
 file client/_client.py; matches published True

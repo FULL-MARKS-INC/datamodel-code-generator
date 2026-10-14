@@ -34,6 +34,7 @@
     "notice": "dependencies-models-server.txt",
     "unvalidated": true,
     "payload": "package-in-models",
+    "unchanged": "unchanged-models-server.json",
     "remove": ["models/pets.py", "models/server/README.md", "models/server/services.py"],
     "check": "package-in-models"
   }

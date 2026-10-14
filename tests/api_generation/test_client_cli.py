@@ -535,7 +535,7 @@ def test_client_cli_invalid_pyproject(
 
 
 def _payload(result: dict[str, Any], root: Path) -> list[str]:
-    """Describe a generation payload and whether each file it reports matches the published file.
+    """Describe a generation payload, its target, and whether each file it reports matches the published file.
 
     The copied runtime modules are reported together.
     """
@@ -543,6 +543,7 @@ def _payload(result: dict[str, Any], root: Path) -> list[str]:
     runtime = [matched for path, matched in matches.items() if "_runtime" in Path(path).parts]
     return [
         f"kind {result['kind']}; output {result['output']}",
+        f"target {json.dumps(result['target'])}",
         *(
             f"file {path}; matches published {matched}"
             for path, matched in matches.items()

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic.json_schema import SkipJsonSchema
 
 from datamodel_code_generator.prompt import PromptPayload
+
+if TYPE_CHECKING:
+    from pydantic.json_schema import JsonDict
 
 JSON_SCHEMA_DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
@@ -21,6 +25,24 @@ class GeneratedFilePayload(BaseModel):
     content: str
 
 
+_Absent: TypeAlias = SkipJsonSchema[None]
+_TARGET_DESCRIPTION = "The package and runtime dependencies of a server or client generation; absent for models only."
+
+
+def _absent_when_unset(schema: JsonDict) -> None:
+    """Leave the default out of an optional key's schema: the payload omits the key rather than printing null."""
+    schema.pop("default")
+
+
+class TargetPayload(BaseModel):
+    """The package a server or client generation renders and the requirements it needs at run time."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    package: str
+    dependencies: list[str]
+
+
 class GenerationPayload(BaseModel):
     """Structured JSON payload emitted by generation mode --output-format json."""
 
@@ -31,6 +53,9 @@ class GenerationPayload(BaseModel):
     kind: Literal["generation"]
     output: str | None
     files: list[GeneratedFilePayload]
+    target: TargetPayload | _Absent = Field(
+        default=None, description=_TARGET_DESCRIPTION, json_schema_extra=_absent_when_unset
+    )
 
 
 CommandOutputKind: TypeAlias = Literal[
@@ -143,6 +168,9 @@ class CheckOutputPayload(BaseModel):
     success: bool
     content: str
     differences: list[CheckDifferencePayload]
+    target: TargetPayload | _Absent = Field(
+        default=None, description=_TARGET_DESCRIPTION, json_schema_extra=_absent_when_unset
+    )
 
 
 class BatchJobPayload(BaseModel):
@@ -189,6 +217,11 @@ def _dump_json(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False)
 
 
+def _dump_payload(payload: GenerationPayload | CheckOutputPayload) -> str:
+    """Dump a payload, leaving out the target of a model-only run."""
+    return _dump_json(payload.model_dump(mode="json", exclude={"target"} if payload.target is None else None))
+
+
 def _schema_with_metadata(schema: dict[str, Any], *, title: str, description: str) -> dict[str, Any]:
     schema = dict(schema)
     schema.setdefault("title", title)
@@ -196,9 +229,12 @@ def _schema_with_metadata(schema: dict[str, Any], *, title: str, description: st
     return {"$schema": JSON_SCHEMA_DRAFT_2020_12, **schema}
 
 
-def generation_output_json(files: list[GeneratedFilePayload], *, output: str | None) -> str:
-    payload = GenerationPayload(version=1, format="json", kind="generation", output=output, files=files)
-    return _dump_json(payload.model_dump(mode="json"))
+def generation_output_json(
+    files: list[GeneratedFilePayload], *, output: str | None, target: TargetPayload | None = None
+) -> str:
+    return _dump_payload(
+        GenerationPayload(version=1, format="json", kind="generation", output=output, files=files, target=target)
+    )
 
 
 def command_output_json(
@@ -252,16 +288,19 @@ def check_output_json(
     content: str,
     differences: list[CheckDifferencePayload],
     kind: Literal["check", "input-diff"] = "check",
+    target: TargetPayload | None = None,
 ) -> str:
-    payload = CheckOutputPayload(
-        version=1,
-        format="json",
-        kind=kind,
-        success=success,
-        content=content,
-        differences=differences,
+    return _dump_payload(
+        CheckOutputPayload(
+            version=1,
+            format="json",
+            kind=kind,
+            success=success,
+            content=content,
+            differences=differences,
+            target=target,
+        )
     )
-    return _dump_json(payload.model_dump(mode="json"))
 
 
 def generation_output_json_schema() -> str:

@@ -1,6 +1,8 @@
 job schemas; kind generation; output <root>/schemas.py
+target null
 file schemas.py; matches published True
 job server; kind generation; output <root>/models.py
+target {"package": "server", "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"]}
 file models.py; matches published True
 file server/README.md; matches published True
 file server/__init__.py; matches published True

@@ -12706,7 +12706,18 @@ and its parent for a single model file, so `output` and the path give the file o
 directory, such as a server package beside a model directory, has an absolute path. Paths use forward slashes.
 `--check --output-format json` names the files the same way in `differences[].path`, while the diff labels stay
 relative to the working directory. Model metadata and the remote lock are outside the payload, as for model
-generation. The dependency notice goes to stderr, along with errors and Python warnings.
+generation. The dependency notice goes to stderr, along with errors and Python warnings; the generation, check, and
+input-diff payloads carry the same requirements in `target`, next to the package's import path, so a tool can read
+them without parsing stderr:
+
+```json
+"target": {
+  "package": "server",
+  "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"]
+}
+```
+
+A check or an input diff lists the requirements of the current input; payloads of model-only jobs have no `target`.
 
 The remote lock file takes part as it does for model generation, when `--lockfile` names it, `--update-lock` or
 `--locked` uses it, or the default `datamodel-codegen.lock` exists. As for model generation, it must not overlap the
@@ -14715,7 +14726,9 @@ the package, because `--check` treats every `.py` file under `--client-output` a
 `--client-model-package client.models`, as for the [server package](fastapi-server.md#the-generated-package).
 
 `--check` compares without writing and prints the differences as for models, and `--output-format json`
-emits the model generation and check payloads, as with `--generate-server`. `--diff-against` and `--watch` also work
+emits the model generation and check payloads, as with `--generate-server`; their `target` names the package and
+the runtime dependencies of the `uv add` notice, such as `{"package": "client", "dependencies": ["httpx2>=2.13.0",
+"typing-extensions>=4.16", "pydantic>=2.14.0"]}`. `--diff-against` and `--watch` also work
 as they do with `--generate-server`. Use `--check` in CI to fail when the package is out of date; see
 [Check in CI](fastapi-server.md#check-in-ci), which applies to the client as well.
 
@@ -53943,6 +53956,13 @@ path relative to the output directory for directory output. For stdout-only
 single-file generation it is `null`, and for multi-module stdout generation it
 is the generated module path.
 
+With `--generate-server` or `--generate-client`, the generation, check, and
+input-diff payloads also have a `target` object: `package` is the import path
+of the generated package, and `dependencies` lists its runtime requirements as
+PEP 508 strings, the ones the `uv add` command on stderr names. A check or input
+diff lists those of the current input. Payloads of model-only generation leave
+`target` out.
+
 Use `--output-format json` with `--generate-prompt` to emit structured option
 metadata instead of Markdown. Use `--output-format-json-schema` when an LLM
 agent or tool needs the schema for a JSON payload.
@@ -55411,6 +55431,13 @@ Generation JSON includes the normalized requested output path in top-level
 path relative to the output directory for directory output. For stdout-only
 single-file generation it is `null`, and for multi-module stdout generation it
 is the generated module path.
+
+With `--generate-server` or `--generate-client`, the generation, check, and
+input-diff payloads also have a `target` object: `package` is the import path
+of the generated package, and `dependencies` lists its runtime requirements as
+PEP 508 strings, the ones the `uv add` command on stderr names. A check or input
+diff lists those of the current input. Payloads of model-only generation leave
+`target` out.
 
 Use `--output-format json` with `--generate-prompt` to emit structured option
 metadata instead of Markdown. Use `--output-format-json-schema` when an LLM

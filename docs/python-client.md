@@ -1355,7 +1355,9 @@ the package, because `--check` treats every `.py` file under `--client-output` a
 `--client-model-package client.models`, as for the [server package](fastapi-server.md#the-generated-package).
 
 `--check` compares without writing and prints the differences as for models, and `--output-format json`
-emits the model generation and check payloads, as with `--generate-server`. `--diff-against` and `--watch` also work
+emits the model generation and check payloads, as with `--generate-server`; their `target` names the package and
+the runtime dependencies of the `uv add` notice, such as `{"package": "client", "dependencies": ["httpx2>=2.13.0",
+"typing-extensions>=4.16", "pydantic>=2.14.0"]}`. `--diff-against` and `--watch` also work
 as they do with `--generate-server`. Use `--check` in CI to fail when the package is out of date; see
 [Check in CI](fastapi-server.md#check-in-ci), which applies to the client as well.
 

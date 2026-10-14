@@ -151,6 +151,11 @@
           },
           "title": "Differences",
           "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/TargetPayload",
+          "description": "The package and runtime dependencies of a server or client generation; absent for models only.",
+          "title": "Target"
         }
       },
       "required": [
@@ -528,6 +533,11 @@
           },
           "title": "Files",
           "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/TargetPayload",
+          "description": "The package and runtime dependencies of a server or client generation; absent for models only.",
+          "title": "Target"
         }
       },
       "required": [
@@ -749,6 +759,29 @@
         "config"
       ],
       "title": "PyprojectConfigOutputPayload",
+      "type": "object"
+    },
+    "TargetPayload": {
+      "additionalProperties": false,
+      "description": "The package a server or client generation renders and the requirements it needs at run time.",
+      "properties": {
+        "package": {
+          "title": "Package",
+          "type": "string"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "package",
+        "dependencies"
+      ],
+      "title": "TargetPayload",
       "type": "object"
     }
   },

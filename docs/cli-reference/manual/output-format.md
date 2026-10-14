@@ -29,6 +29,13 @@ path relative to the output directory for directory output. For stdout-only
 single-file generation it is `null`, and for multi-module stdout generation it
 is the generated module path.
 
+With `--generate-server` or `--generate-client`, the generation, check, and
+input-diff payloads also have a `target` object: `package` is the import path
+of the generated package, and `dependencies` lists its runtime requirements as
+PEP 508 strings, the ones the `uv add` command on stderr names. A check or input
+diff lists those of the current input. Payloads of model-only generation leave
+`target` out.
+
 Use `--output-format json` with `--generate-prompt` to emit structured option
 metadata instead of Markdown. Use `--output-format-json-schema` when an LLM
 agent or tool needs the schema for a JSON payload.

@@ -223,6 +223,7 @@ def test_fastapi_cli_check_read_only(
     server = case.get("server", "server")
     arguments = case.get("arguments", ())
     nested_package = bool(case.get("modular")) and bool({"model", "server"} & case.keys())
+    unchanged = case.get("unchanged", "unchanged.json")
     run_main_and_assert(
         input_path=source,
         input_file_type="openapi",
@@ -246,7 +247,7 @@ def test_fastapi_cli_check_read_only(
             ),
             capsys=capsys,
             assert_no_stderr=True,
-            expected_stdout_path=EXPECTED / "cli" / "check" / f"unchanged.{'json' if structured else 'txt'}",
+            expected_stdout_path=EXPECTED / "cli" / "check" / (unchanged if structured else "unchanged.txt"),
             skip_code_validation=nested_package,
         )
     finally:
@@ -424,6 +425,7 @@ def test_fastapi_cli_generation_json(
     for name in case.get("published", ()):
         assert_file_content(tmp_path / name, EXPECTED / "cli" / "json" / "published" / f"{name}.txt")
     stale = case.get("stale")
+    unchanged = case.get("unchanged", "unchanged.json")
     with warnings.catch_warnings(record=True) as checked:
         warnings.simplefilter("always", UserWarning)
         run_main_and_assert(
@@ -436,7 +438,7 @@ def test_fastapi_cli_generation_json(
             expected_exit=Exit.DIFF if stale else Exit.OK,
             expected_stdout_path=EXPECTED
             / "cli"
-            / (Path("json", "check", f"{stale}.txt") if stale else Path("check", "unchanged.json")),
+            / (Path("json", "check", f"{stale}.txt") if stale else Path("check", unchanged)),
             skip_code_validation=unvalidated,
         )
     assert_output(
@@ -1252,8 +1254,12 @@ def test_fastapi_cli_conflicts(
 
 @pytest.mark.parametrize(
     ("case", "baseline", "expected_exit"),
-    [("unchanged", "pets.yaml", Exit.OK), ("changed", "pets-baseline.yaml", Exit.DIFF)],
-    ids=["unchanged", "changed"],
+    [
+        ("unchanged", "pets.yaml", Exit.OK),
+        ("changed", "pets-baseline.yaml", Exit.DIFF),
+        ("form-baseline", "pets-form-baseline.yaml", Exit.DIFF),
+    ],
+    ids=["unchanged", "changed", "form-baseline"],
 )
 @pytest.mark.parametrize("structured", [False, True], ids=["text", "json"])
 def test_fastapi_cli_input_diff(
@@ -1267,12 +1273,14 @@ def test_fastapi_cli_input_diff(
 ) -> None:
     """Compare the models and the server two inputs render through the model input diff, writing nothing.
 
-    The baseline changes a model, a parameter description, and the operation tags, so files change, and a router
-    is generated only from each input.
+    The changed baseline changes a model, a parameter description, and the operation tags, so files change, and a
+    router is generated only from each input. The form baseline takes a form body, which needs python-multipart, while
+    the current input takes JSON, so the JSON target lists the dependencies of the current input alone.
     """
     monkeypatch.chdir(tmp_path)
     _copy(tmp_path)
-    shutil.copy2(CLI / "pets-baseline.yaml", tmp_path / "pets-baseline.yaml")
+    for name in ("pets-baseline.yaml", "pets-form-baseline.yaml"):
+        shutil.copy2(CLI / name, tmp_path / name)
     run_main_and_assert(
         input_path=Path("pets.yaml"),
         output_path=Path("models.py"),
@@ -1547,11 +1555,15 @@ def test_fastapi_cli_jobs_json(
     lines = []
     for job in json.loads(generated.out)["jobs"]:
         result = job["result"]
-        lines.append(f"job {job['name']}; kind {result['kind']}; output {result['output']}")
-        lines.extend(
-            f"file {item['path']}; matches published {item['content'] == (tmp_path / item['path']).read_text('utf-8')}"
-            for item in result["files"]
-        )
+        lines.extend((
+            f"job {job['name']}; kind {result['kind']}; output {result['output']}",
+            f"target {json.dumps(result.get('target'))}",
+            *(
+                f"file {item['path']}; matches published "
+                f"{item['content'] == (tmp_path / item['path']).read_text('utf-8')}"
+                for item in result["files"]
+            ),
+        ))
     with (tmp_path / "server" / "services.py").open("a", encoding="utf-8") as services:
         services.write("# edited\n")
     (tmp_path / "server" / "README.md").unlink()

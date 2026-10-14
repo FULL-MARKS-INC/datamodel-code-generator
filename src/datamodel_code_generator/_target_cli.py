@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._api_generation import PlannedTarget
     from datamodel_code_generator._api_types import GeneratedProject
     from datamodel_code_generator._publication import StagedFile
-    from datamodel_code_generator._structured_output import CheckDifferencePayload
+    from datamodel_code_generator._structured_output import CheckDifferencePayload, TargetPayload
     from datamodel_code_generator._target_config import TargetConfig
 
 _OK: Final = 0
@@ -93,7 +93,7 @@ def _run(  # noqa: PLR0913, PLR0917
     if config.check:
         project = render_target(source, model_config=effective, config=target, generator=generator)
         comparison = _compare_target(project, config.output, target.output, config.encoding)
-        _write_comparison_output(comparison, namespace.output_format)
+        _write_comparison_output(comparison, namespace.output_format, target=_target_payload(target, project))
         return _DIFF if comparison.differences else _OK
     if config.diff_against is not None:
         effective = effective.model_copy(update={"input_filename": "<input>"})
@@ -104,19 +104,21 @@ def _run(  # noqa: PLR0913, PLR0917
         comparison = _compare_target(
             current.project, config.output, target.output, config.encoding, baseline=baseline.project
         )
-        _write_comparison_output(comparison, namespace.output_format, kind="input-diff")
+        _write_comparison_output(
+            comparison, namespace.output_format, kind="input-diff", target=_target_payload(target, current.project)
+        )
         return _DIFF if comparison.differences else _OK
     json_output = namespace.output_format == "json"
     if batch is not None:
         timestamp = next((earlier.timestamp for _, earlier, _ in batch if earlier.timestamp is not None), None)
         planned = plan_target(source, model_config=effective, config=target, generator=generator, timestamp=timestamp)
         if json_output:
-            print(_target_json(planned.project, config.output, config.encoding))  # noqa: T201
+            print(_target_json(planned.project, config.output, config.encoding, target))  # noqa: T201
         batch.append((job, planned, _next_step(target, planned.project.dependencies)))
         return _OK
     planned = plan_target(source, model_config=effective, config=target, generator=generator, publish=True)
     project = planned.project
-    output = _target_json(project, config.output, config.encoding) if json_output else None
+    output = _target_json(project, config.output, config.encoding, target) if json_output else None
     (staged,) = _stage_job_plans((_single_job_plan(config, pyproject_path),))
     cast("list[Any]", staged.targets).append((job, planned, _next_step(target, project.dependencies)))
     if (failure := _publish_or_error((staged,))) is not None:
@@ -149,10 +151,18 @@ def _payload_base(project: GeneratedProject, models: Path) -> Path:
     return models.parent if models in rendered or (not rendered and models.suffix) else models
 
 
-def _target_json(project: GeneratedProject, models: Path, encoding: str) -> str:
+def _target_payload(target: TargetConfig, project: GeneratedProject) -> TargetPayload:
+    """Name the generated package and the requirements it needs at run time, as the uv add notice does."""
+    from datamodel_code_generator._structured_output import TargetPayload  # noqa: PLC0415
+
+    return TargetPayload(package=target.package, dependencies=list(project.dependencies))
+
+
+def _target_json(project: GeneratedProject, models: Path, encoding: str, target: TargetConfig) -> str:
     """Emit rendered model and target text, read like their published files, with the existing generation payload.
 
     As in the model payload, a path is relative to the model output directory; a file outside it has an absolute path.
+    The payload's target names the package and its runtime dependencies.
     """
     from io import BytesIO, TextIOWrapper  # noqa: PLC0415
 
@@ -175,7 +185,7 @@ def _target_json(project: GeneratedProject, models: Path, encoding: str) -> str:
         )
         for path, content, codec in sorted(artifacts, key=lambda artifact: artifact[0].parts)
     ]
-    return generation_output_json(files, output=models.as_posix())
+    return generation_output_json(files, output=models.as_posix(), target=_target_payload(target, project))
 
 
 def _nested(models: Path, target: Path) -> dict[str, tuple[Path, Path]]:

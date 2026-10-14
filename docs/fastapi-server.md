@@ -893,7 +893,18 @@ and its parent for a single model file, so `output` and the path give the file o
 directory, such as a server package beside a model directory, has an absolute path. Paths use forward slashes.
 `--check --output-format json` names the files the same way in `differences[].path`, while the diff labels stay
 relative to the working directory. Model metadata and the remote lock are outside the payload, as for model
-generation. The dependency notice goes to stderr, along with errors and Python warnings.
+generation. The dependency notice goes to stderr, along with errors and Python warnings; the generation, check, and
+input-diff payloads carry the same requirements in `target`, next to the package's import path, so a tool can read
+them without parsing stderr:
+
+```json
+"target": {
+  "package": "server",
+  "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"]
+}
+```
+
+A check or an input diff lists the requirements of the current input; payloads of model-only jobs have no `target`.
 
 The remote lock file takes part as it does for model generation, when `--lockfile` names it, `--update-lock` or
 `--locked` uses it, or the default `datamodel-codegen.lock` exists. As for model generation, it must not overlap the

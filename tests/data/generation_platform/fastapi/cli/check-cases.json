@@ -57,6 +57,7 @@
     "modular": true,
     "server": "models/server",
     "notice": "dependencies-models-server.txt",
+    "unchanged": "unchanged-models-server.json",
     "arguments": ["--server-package", "models.server", "--server-model-package", "models"]
   },
   "package-in-models-changed": {

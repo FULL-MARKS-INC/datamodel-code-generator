@@ -72,5 +72,13 @@
       "path": "server/services.py",
       "content": "# first\n# second\n\n\"\"\"Service interfaces of this package's router groups; regenerate them instead of editing.\"\"\"\n\nfrom __future__ import annotations\n\nfrom abc import abstractmethod\nfrom typing import Protocol\n\nimport models\nfrom fastapi.responses import Response\n\nfrom ._runtime.server.responses import HTTPResult\n\n\nclass ItemsService(Protocol):\n    \"\"\"Implement the items operations: subclass this Protocol, or give an object its methods.\"\"\"\n\n    @abstractmethod\n    def list_items(\n        self,\n    ) -> models.FieldItemsGetResponse | HTTPResult[models.FieldItemsGetResponse] | Response:\n        \"\"\"\n        Handle GET /items.\n        \"\"\"\n\n\nclass UsersService(Protocol):\n    \"\"\"Implement the users operations: subclass this Protocol, or give an object its methods.\"\"\"\n\n    @abstractmethod\n    def list_users(\n        self,\n    ) -> None | HTTPResult[None] | Response:\n        \"\"\"\n        Handle GET /users.\n        \"\"\"\n"
     }
-  ]
+  ],
+  "target": {
+    "package": "server",
+    "dependencies": [
+      "fastapi>=0.141.1",
+      "pydantic>=2.14.0",
+      "typing-extensions>=4.16"
+    ]
+  }
 }
