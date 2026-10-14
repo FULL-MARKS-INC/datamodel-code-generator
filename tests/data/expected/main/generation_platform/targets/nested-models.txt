@@ -11,6 +11,7 @@ check
   MISSING: server/routers/pets.py (should be generated)
   MISSING: server/routers/store.py (should be generated)
   MISSING: server/services.py (should be generated)
+  MISSING: server/_generated/openapi.json (file does not exist but should be generated)
   MISSING: server/README.md (file does not exist but should be generated)
   MISSING: server/py.typed (file does not exist but should be generated)
   5 runtime modules ['MISSING']
@@ -21,6 +22,7 @@ tree
   server/__init__.py
   server/_generated/__init__.py
   server/_generated/contract.py
+  server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
   server/models.py
@@ -40,6 +42,7 @@ tree
   server/__init__.py
   server/_generated/__init__.py
   server/_generated/contract.py
+  server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
   server/models.py

@@ -63,7 +63,8 @@ app.include_router(build_router(users=Users(), field_2024_files=Field2024Files()
 
 ## Served OpenAPI document
 
-`create_app` serves the part of the source document the selected operations use, which generation writes into `_generated/openapi.py`; the application reads it on the first request for it.
+`create_app` serves the part of the source document the selected operations use, which generation writes into `_generated/openapi.json`; the application reads it on the first request for it.
+`_generated/openapi.json` is package data, so a distribution that holds the package must include it: Hatchling, uv_build, poetry-core, pdm-backend, and flit_core include it by default, while setuptools needs it in `package-data` or `MANIFEST.in`.
 `create_app(..., source_openapi=False)` serves FastAPI's own document instead, built from the routes and the models they declare, in which an optional parameter or request body is `anyOf` of its type and `null`.
 An application of your own that includes `build_router(...)` serves FastAPI's document unless it calls `serve_source_openapi(app)`, imported from `server`.
 

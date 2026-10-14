@@ -7,6 +7,7 @@ import json
 import typing
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
 from fastapi import APIRouter, FastAPI
@@ -16,8 +17,6 @@ from tests.api_generation.support.fastapi_server import _generate, _import
 from tests.api_generation.support.generated_packages import forget_generated
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
 PACKAGES: Final[dict[str, dict[str, Any]]] = {
@@ -37,6 +36,7 @@ PACKAGES: Final[dict[str, dict[str, Any]]] = {
     "hooks": {"input": "served-hooks.yaml", "files": ["served-event.yaml", "served-library.yaml"]},
     "streams": {"input": "served-items.yaml", "files": ["served-items-library.yaml", "events/stamp.yaml"]},
     "resources": {"input": "served-resources.yaml"},
+    "text": {"input": "served-text.yaml"},
     "local": {
         "input": "served-local.yaml",
         "files": ["served-local/parts/library.yaml", "served-local/shared/pet.yaml"],
@@ -228,6 +228,12 @@ def document_resources(packages: dict[str, Any]) -> list[str]:
     ]
 
 
+@_scenario("text")
+def document_text(packages: dict[str, Any]) -> list[str]:
+    """Serve quotes, backslashes, and non-ASCII characters of the source's text as it declares them."""
+    return [json.dumps(_connected(packages["text"].create_app).openapi(), indent=2, ensure_ascii=False)]
+
+
 @_scenario("bodies")
 def fastapi_document(packages: dict[str, Any]) -> list[str]:
     """Serve FastAPI's own document instead of the source document."""
@@ -236,7 +242,10 @@ def fastapi_document(packages: dict[str, Any]) -> list[str]:
 
 @_scenario("items")
 def own_applications(packages: dict[str, Any]) -> list[str]:
-    """Serve FastAPI's document in an application of your own, then the source document behind a root path."""
+    """Serve FastAPI's document in an application of your own, then the source document behind a root path.
+
+    Applications of one package with different titles each serve a document of their own.
+    """
     items = packages["items"]
     app = FastAPI()
     app.include_router(_connected(items.build_router))
@@ -256,7 +265,22 @@ def own_applications(packages: dict[str, Any]) -> list[str]:
         items.create_app, title="Mine", version="2", servers=[{"url": "https://prod.example.com"}]
     ).openapi()
     lines.append(f"metadata {described['info']} {described['servers']}")
+    titled = [TestClient(_connected(items.create_app, title=title)) for title in ("A", "B")]
+    lines.append(f"titles {[client.get('/openapi.json').json()['info']['title'] for client in (*titled, titled[0])]}")
     return lines
+
+
+@_scenario("pets")
+def missing_document(packages: dict[str, Any]) -> list[str]:
+    """Answer the document's first request with what to do when a build left `openapi.json` out of the package."""
+    pets = packages["pets"]
+    (Path(pets.__file__).parent / "_generated" / "openapi.json").unlink()
+    client = TestClient(_connected(pets.create_app))
+    try:
+        client.get("/openapi.json")
+    except FileNotFoundError as error:
+        return [f"openapi.json {type(error).__name__}: {error}"]
+    return ["openapi.json served"]
 
 
 def fastapi_openapi_report(case_name: str, root: Path, monkeypatch: pytest.MonkeyPatch) -> str:

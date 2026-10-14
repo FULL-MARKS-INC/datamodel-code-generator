@@ -8,6 +8,7 @@ file server/README.md; matches published True
 file server/__init__.py; matches published True
 file server/_generated/__init__.py; matches published True
 file server/_generated/contract.py; matches published True
+file server/_generated/openapi.json; matches published True
 file server/_generated/openapi.py; matches published True
 file server/_runtime/__init__.py; matches published True
 file server/_runtime/server/__init__.py; matches published True

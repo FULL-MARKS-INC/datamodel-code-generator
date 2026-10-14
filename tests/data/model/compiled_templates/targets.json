@@ -2359,14 +2359,8 @@
     ],
     "openapi.jinja2": [
       {
-        "name": "populated",
-        "context": {
-          "lines": [
-            "'{\\n'",
-            "'  \"title\": \"日本 {braces} \\\\\\\\\"\\n'",
-            "'}'"
-          ]
-        }
+        "name": "module",
+        "context": {}
       }
     ],
     "readme.jinja2": [

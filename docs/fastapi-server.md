@@ -1378,10 +1378,13 @@ operation as a separate alternative, since FastAPI cannot document a requirement
 ### Served OpenAPI document
 
 `create_app` serves the source document, not one FastAPI builds: generation writes the part of it the selected
-paths use into `server/_generated/openapi.py`, and the application reads it on the first request for
-`/openapi.json` and keeps it. The document keeps the source's OpenAPI version, `info`, `servers`, `tags`, security
-schemes, webhooks, and the selected paths with all their operations as they are declared, callbacks included; the
-callbacks and webhooks are documentation only, with no routes or service methods.
+paths use into `server/_generated/openapi.json`, and the application reads it on the first request for
+`/openapi.json` and keeps it. The file is package data: Hatchling, uv_build, poetry-core, pdm-backend, and
+flit_core include it in a distribution by default, while setuptools needs it in `package-data` or `MANIFEST.in`; a
+distribution without it answers the document's first request with an error that says so. The document keeps the
+source's OpenAPI version, `info`, `servers`, `tags`, security schemes, webhooks, and the selected paths with all
+their operations as they are declared, callbacks included; the callbacks and webhooks are documentation only, with
+no routes or service methods.
 
 Components stay when something kept references them, and so do the `allOf` subtypes of a kept discriminator base.
 What a reference names in another loaded document, or in a path that is left out, joins the components of the
@@ -1520,7 +1523,7 @@ module's import block:
 | `application.jinja2` | `imports`, `exports`, `final`, `options`, `routes`, `info`, `build_router`, `build`, `services`, `settings`, `create_app`, `arguments`, `fastapi`, `error_handlers`, `serve_source_openapi` |
 | `contract.jinja2` | `imports`, `typed_dict`, `dependencies`, `plans`, `final`, `dataclass`, `parameter_adapter`, `body_adapter`, `operation_responses` |
 | `facade.jinja2` | `module`, `docstring`, `imports`, `exports` |
-| `openapi.jinja2` | `lines` |
+| `openapi.jinja2` | none |
 | `readme.jinja2` | `title`, `package`, `model_package`, `backend`, `operations`, `services`, `protocols`, `arguments`, `schemes`, `forms`, `raw_request` |
 | `router.jinja2` | `imports`, `docstring`, `routes`, `api_router`, `wiring`, `final`, `literal`, `templated`, `builder`, `group`, `build`, `services`, `settings` |
 | `security.jinja2` | `imports`, `schemes`, `exports` |

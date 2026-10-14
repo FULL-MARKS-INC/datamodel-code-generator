@@ -1,14 +1,3 @@
---- server/_generated/openapi.py (baseline input)
-+++ server/_generated/openapi.py (current input)
-@@ -121,7 +121,7 @@
-     '    "requestBody": {\n'
-     '     "required": true,\n'
-     '     "content": {\n'
--    '      "application/x-www-form-urlencoded": {\n'
-+    '      "application/json": {\n'
-     '       "schema": {\n'
-     '        "$ref": "#/components/schemas/NewPet"\n'
-     '       }\n'
 --- server/routers/pets.py (baseline input)
 +++ server/routers/pets.py (current input)
 @@ -8,7 +8,7 @@
@@ -29,9 +18,20 @@
      ) -> object:
          return dispatch(
              create_pet_handler(
+--- server/_generated/openapi.json (baseline input)
++++ server/_generated/openapi.json (current input)
+@@ -103,7 +103,7 @@
+     "requestBody": {
+      "required": true,
+      "content": {
+-      "application/x-www-form-urlencoded": {
++      "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NewPet"
+        }
 --- server/README.md (baseline input)
 +++ server/README.md (current input)
-@@ -72,7 +72,6 @@
+@@ -73,7 +73,6 @@
  A repeated single value is taken as FastAPI takes it, by adapters too: the last query value, cookie, form field, and object member, and the first header.
  A cookie parameter with a single value arrives as the request sent it, without percent-decoding.
  Adapters accept integers and numbers as JSON writes them and booleans as `true` or `false`, which is fewer spellings than FastAPI accepts for the parameters it reads.

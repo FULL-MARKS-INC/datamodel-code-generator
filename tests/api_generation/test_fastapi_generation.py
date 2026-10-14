@@ -81,7 +81,8 @@ def test_fastapi_render(case: str, tmp_path: Path) -> None:
     for backend, modules in rendered.items():
         assert_generated_modules_output(modules, EXPECTED / "packages" / case / backend)
     write_generated_modules(tmp_path / "documents", documented)
-    assert_exact_directory_content(tmp_path / "documents", EXPECTED / "packages" / case, "*.md")
+    for pattern in ("*.md", "*.json"):
+        assert_exact_directory_content(tmp_path / "documents", EXPECTED / "packages" / case, pattern)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +113,8 @@ def test_fastapi_template_fallback(case: str, *, builtin_sources: bool, tmp_path
     for backend, modules in rendered.items():
         assert_generated_modules_output(modules, EXPECTED / "packages" / expected / backend)
     write_generated_modules(tmp_path / "documents", documented)
-    assert_exact_directory_content(tmp_path / "documents", EXPECTED / "packages" / expected, "*.md")
+    for pattern in ("*.md", "*.json"):
+        assert_exact_directory_content(tmp_path / "documents", EXPECTED / "packages" / expected, pattern)
 
 
 def test_fastapi_api(tmp_path: Path) -> None:

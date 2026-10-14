@@ -29,7 +29,13 @@ from tests.api_generation.support.fastapi_openapi import SCENARIOS, fastapi_open
 from tests.api_generation.support.fastapi_server import fastapi_server_report
 from tests.api_generation.support.fastapi_upstream import fastapi_upstream_report
 from tests.api_generation.support.model_codec_builtin import builtin_codec_report, builtin_codec_startup_report
-from tests.conftest import assert_generated_modules_output, assert_output, create_assert_file_content
+from tests.conftest import (
+    assert_exact_directory_content,
+    assert_generated_modules_output,
+    assert_output,
+    create_assert_file_content,
+    write_generated_modules,
+)
 
 DATA = Path(__file__).parents[1] / "data"
 CODECS = DATA / "generation_platform/codecs/pydantic"
@@ -93,11 +99,16 @@ assert_docs_file = create_assert_file_content(EXPECTED_DOCS_PROJECTS)
     ],
 )
 def test_fastapi_server(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Generate each server, then build its router from handwritten services and exchange requests with it."""
-    report, packages = fastapi_server_report(case, tmp_path, monkeypatch)
+    """Generate each server, then build its router from handwritten services and exchange requests with it.
+
+    The snapshotted packages pin their Python modules and the served OpenAPI document.
+    """
+    report, packages, documents = fastapi_server_report(case, tmp_path, monkeypatch)
     assert_output(report, EXPECTED / f"{case}.txt")
     for backend, modules in packages.items():
         assert_generated_modules_output(modules, EXPECTED / "packages" / case / backend)
+    write_generated_modules(tmp_path / "documents", documents)
+    assert_exact_directory_content(tmp_path / "documents", EXPECTED / "packages" / case, "*.json")
 
 
 @pytest.mark.parametrize(

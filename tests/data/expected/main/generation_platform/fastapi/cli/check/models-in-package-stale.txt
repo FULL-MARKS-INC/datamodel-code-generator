@@ -48,126 +48,6 @@
 -    RESPONSES: Final = OperationResponses(
 -        responses={'200': Declared(media_type='application/json', model=models.FieldStoreInventoryGetResponse)},
 -    )
---- server/_generated/openapi.py
-+++ server/_generated/openapi.py (expected)
-@@ -141,117 +141,6 @@
-     '     }\n'
-     '    }\n'
-     '   }\n'
--    '  },\n'
--    '  "/pets/mine": {\n'
--    '   "get": {\n'
--    '    "operationId": "listMyPets",\n'
--    '    "tags": [\n'
--    '     "pets"\n'
--    '    ],\n'
--    '    "responses": {\n'
--    '     "200": {\n'
--    '      "description": "The caller\'s pets.",\n'
--    '      "content": {\n'
--    '       "application/json": {\n'
--    '        "schema": {\n'
--    '         "type": "array",\n'
--    '         "items": {\n'
--    '          "$ref": "#/components/schemas/Pet"\n'
--    '         }\n'
--    '        }\n'
--    '       }\n'
--    '      }\n'
--    '     }\n'
--    '    }\n'
--    '   }\n'
--    '  },\n'
--    '  "/pets/{petId}": {\n'
--    '   "get": {\n'
--    '    "operationId": "getPet",\n'
--    '    "tags": [\n'
--    '     "pets"\n'
--    '    ],\n'
--    '    "parameters": [\n'
--    '     {\n'
--    '      "name": "petId",\n'
--    '      "in": "path",\n'
--    '      "required": true,\n'
--    '      "schema": {\n'
--    '       "type": "integer",\n'
--    '       "format": "int64",\n'
--    '       "minimum": 1\n'
--    '      }\n'
--    '     }\n'
--    '    ],\n'
--    '    "responses": {\n'
--    '     "200": {\n'
--    '      "description": "The pet.",\n'
--    '      "content": {\n'
--    '       "application/json": {\n'
--    '        "schema": {\n'
--    '         "$ref": "#/components/schemas/Pet"\n'
--    '        }\n'
--    '       }\n'
--    '      }\n'
--    '     },\n'
--    '     "404": {\n'
--    '      "description": "Missing.",\n'
--    '      "content": {\n'
--    '       "application/json": {\n'
--    '        "schema": {\n'
--    '         "$ref": "#/components/schemas/Error"\n'
--    '        }\n'
--    '       }\n'
--    '      }\n'
--    '     }\n'
--    '    }\n'
--    '   },\n'
--    '   "delete": {\n'
--    '    "operationId": "deletePet",\n'
--    '    "tags": [\n'
--    '     "pets"\n'
--    '    ],\n'
--    '    "parameters": [\n'
--    '     {\n'
--    '      "name": "petId",\n'
--    '      "in": "path",\n'
--    '      "required": true,\n'
--    '      "schema": {\n'
--    '       "type": "integer",\n'
--    '       "format": "int64",\n'
--    '       "minimum": 1\n'
--    '      }\n'
--    '     }\n'
--    '    ],\n'
--    '    "responses": {\n'
--    '     "204": {\n'
--    '      "description": "Deleted."\n'
--    '     }\n'
--    '    }\n'
--    '   }\n'
--    '  },\n'
--    '  "/store/inventory": {\n'
--    '   "get": {\n'
--    '    "operationId": "getInventory",\n'
--    '    "tags": [\n'
--    '     "store"\n'
--    '    ],\n'
--    '    "responses": {\n'
--    '     "200": {\n'
--    '      "description": "Counts by status.",\n'
--    '      "content": {\n'
--    '       "application/json": {\n'
--    '        "schema": {\n'
--    '         "type": "object",\n'
--    '         "additionalProperties": {\n'
--    '          "type": "integer"\n'
--    '         }\n'
--    '        }\n'
--    '       }\n'
--    '      }\n'
--    '     }\n'
--    '    }\n'
--    '   }\n'
-     '  }\n'
-     ' },\n'
-     ' "components": {\n'
 --- server/application.py
 +++ server/application.py (expected)
 @@ -11,14 +11,12 @@
@@ -422,6 +302,126 @@
 -        Handle GET /store/inventory.
 -        """
 EXTRA: server/routers/store.py (no longer generated)
+--- server/_generated/openapi.json
++++ server/_generated/openapi.json (expected)
+@@ -123,117 +123,6 @@
+      }
+     }
+    }
+-  },
+-  "/pets/mine": {
+-   "get": {
+-    "operationId": "listMyPets",
+-    "tags": [
+-     "pets"
+-    ],
+-    "responses": {
+-     "200": {
+-      "description": "The caller's pets.",
+-      "content": {
+-       "application/json": {
+-        "schema": {
+-         "type": "array",
+-         "items": {
+-          "$ref": "#/components/schemas/Pet"
+-         }
+-        }
+-       }
+-      }
+-     }
+-    }
+-   }
+-  },
+-  "/pets/{petId}": {
+-   "get": {
+-    "operationId": "getPet",
+-    "tags": [
+-     "pets"
+-    ],
+-    "parameters": [
+-     {
+-      "name": "petId",
+-      "in": "path",
+-      "required": true,
+-      "schema": {
+-       "type": "integer",
+-       "format": "int64",
+-       "minimum": 1
+-      }
+-     }
+-    ],
+-    "responses": {
+-     "200": {
+-      "description": "The pet.",
+-      "content": {
+-       "application/json": {
+-        "schema": {
+-         "$ref": "#/components/schemas/Pet"
+-        }
+-       }
+-      }
+-     },
+-     "404": {
+-      "description": "Missing.",
+-      "content": {
+-       "application/json": {
+-        "schema": {
+-         "$ref": "#/components/schemas/Error"
+-        }
+-       }
+-      }
+-     }
+-    }
+-   },
+-   "delete": {
+-    "operationId": "deletePet",
+-    "tags": [
+-     "pets"
+-    ],
+-    "parameters": [
+-     {
+-      "name": "petId",
+-      "in": "path",
+-      "required": true,
+-      "schema": {
+-       "type": "integer",
+-       "format": "int64",
+-       "minimum": 1
+-      }
+-     }
+-    ],
+-    "responses": {
+-     "204": {
+-      "description": "Deleted."
+-     }
+-    }
+-   }
+-  },
+-  "/store/inventory": {
+-   "get": {
+-    "operationId": "getInventory",
+-    "tags": [
+-     "store"
+-    ],
+-    "responses": {
+-     "200": {
+-      "description": "Counts by status.",
+-      "content": {
+-       "application/json": {
+-        "schema": {
+-         "type": "object",
+-         "additionalProperties": {
+-          "type": "integer"
+-         }
+-        }
+-       }
+-      }
+-     }
+-    }
+-   }
+   }
+  },
+  "components": {
 --- server/README.md
 +++ server/README.md (expected)
 @@ -14,10 +14,6 @@

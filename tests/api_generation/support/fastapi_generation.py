@@ -84,6 +84,8 @@ def _render(
     except Error as error:
         return [f"  Error: {error}"]
     lines: list[str] = []
+    snapshots = backend in case.get("package_snapshots", case.get("backends", ["pydantic_v2.BaseModel"]))
+    readme = backend in case.get("readme", ())
     for parts, text in files.items():
         line = f"  {'/'.join(parts)}"
         match Path(*parts).suffix, parts:
@@ -92,12 +94,11 @@ def _render(
                 line += f" ({'copied' if text.endswith(source) else 'changed'} runtime)"
                 if backend in case.get("runtime", ()):
                     modules[parts] = text
-            case ".py", parts:
-                if parts[0] != PACKAGE or backend in case.get(
-                    "package_snapshots", case.get("backends", ["pydantic_v2.BaseModel"])
-                ):
-                    modules[parts] = text
-            case ".md", parts if backend in case.get("readme", ()):
+            case ".py", parts if parts[0] != PACKAGE or snapshots:
+                modules[parts] = text
+            case ".json", parts if snapshots or readme:
+                documents[parts] = text
+            case ".md", parts if readme:
                 documents[parts] = text
             case _:
                 pass
@@ -108,12 +109,13 @@ def _render(
 def fastapi_render(
     case_name: str, root: Path, *, builtin_sources: bool = False
 ) -> tuple[str, dict[str, Modules], Modules]:
-    """Render one fixture for each of its backends, returning a report, every backend's Python modules, and READMEs.
+    """Render one fixture for each of its backends, returning a report, every backend's Python modules, and documents.
 
-    The report lists every file a render returns. The READMEs, under their backend's directory, are those of the
-    backends the case's `readme` names. The report is headed by the case's `expected` name, or its own. With
-    builtin_sources, a custom template directory holds a copy of the builtin server templates, so that every role
-    renders from its Jinja source instead of its compiled renderer.
+    The report lists every file a render returns. The documents, under their backend's directory, are the READMEs of
+    the backends the case's `readme` names and the served OpenAPI documents of those and of the packages it
+    snapshots. The report is headed by the case's `expected` name, or its own. With builtin_sources, a custom template
+    directory holds a copy of the builtin server templates, so that every role renders from its Jinja source instead
+    of its compiled renderer.
     """
     case = json.loads((SOURCE / "cases.json").read_text(encoding="utf-8"))[case_name]
     lines = [f"# {case.get('expected', case_name)}"]

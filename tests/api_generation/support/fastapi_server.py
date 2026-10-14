@@ -73,6 +73,16 @@ def _generated(root: Path, package: str, package_snapshots: set[str]) -> dict[tu
     }
 
 
+def _documents(root: Path, package: str, package_snapshots: set[str]) -> dict[tuple[str, ...], str]:
+    """Return the served OpenAPI document of a snapshotted package."""
+    if package not in package_snapshots:
+        return {}
+    return {
+        path.relative_to(root).parts: path.read_text(encoding="utf-8")
+        for path in sorted((root / package).rglob("*.json"))
+    }
+
+
 def _import(package: str, models: str | None = None) -> tuple[ModuleType, ModuleType]:
     """Import a generated package and its models, a module beside the package unless they are named."""
     return import_generated(package), importlib.import_module(models or f"{package}_models")
@@ -193,17 +203,19 @@ def _serve(
 
 def fastapi_server_report(
     case_name: str, root: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[str, dict[str, dict[tuple[str, ...], str]]]:
+) -> tuple[str, dict[str, dict[tuple[str, ...], str]], dict[tuple[str, ...], str]]:
     """Generate one server per backend, replay the case's builds, applications, and requests.
 
     A case with a `previous` document first generates the package from it, so that the generation the case serves
     leaves the modules only that document needs in place and warns about them; the report says whether each `stale`
-    module is still a file and whether serving imported it. Return the report and each backend's generated modules.
+    module is still a file and whether serving imported it. Return the report, each backend's generated modules, and
+    the served OpenAPI documents of the snapshotted packages under their backend's directory.
     """
     case = json.loads((SOURCE / "servers.json").read_text(encoding="utf-8"))[case_name]
     services = importlib.import_module(f"tests.data.python.fastapi_handlers.{case['services']}")
     lines = [f"# {case_name}"]
     packages: dict[str, dict[tuple[str, ...], str]] = {}
+    documents: dict[tuple[str, ...], str] = {}
     monkeypatch.syspath_prepend(str(root))
     package_snapshots = {
         f"{case_name.replace('-', '_')}_{backend.rpartition('.')[2].lower()}"
@@ -222,7 +234,8 @@ def fastapi_server_report(
             lines.append(f"  {formatter_refusal(error)}")
             continue
         lines.extend(f"{item.category.__name__}: {item.message}" for item in recorded)
-        packages[backend.replace(".", "_")] = _generated(root, package, package_snapshots)
+        packages[name := backend.replace(".", "_")] = _generated(root, package, package_snapshots)
+        documents.update(((name, *parts), text) for parts, text in _documents(root, package, package_snapshots).items())
         try:
             server, models = _import(package, _models(case, package))
             calls: list[str] = []
@@ -247,4 +260,4 @@ def fastapi_server_report(
             )
         finally:
             forget_generated(package)
-    return "\n".join(lines).replace(root.resolve().as_posix(), "<root>") + "\n", packages
+    return "\n".join(lines).replace(root.resolve().as_posix(), "<root>") + "\n", packages, documents

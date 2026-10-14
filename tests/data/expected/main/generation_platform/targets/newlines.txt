@@ -6,6 +6,7 @@ tree
   server/__init__.py
   server/_generated/__init__.py
   server/_generated/contract.py
+  server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
   server/py.typed
@@ -32,6 +33,7 @@ tree
   server/__init__.py
   server/_generated/__init__.py
   server/_generated/contract.py
+  server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
   server/py.typed
@@ -56,6 +58,7 @@ tree
   server/__init__.py
   server/_generated/__init__.py
   server/_generated/contract.py
+  server/_generated/openapi.json
   server/_generated/openapi.py
   server/application.py
   server/py.typed

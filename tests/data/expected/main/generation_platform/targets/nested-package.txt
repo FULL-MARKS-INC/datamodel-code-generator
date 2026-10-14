@@ -7,6 +7,7 @@ tree
   models/server/__init__.py
   models/server/_generated/__init__.py
   models/server/_generated/contract.py
+  models/server/_generated/openapi.json
   models/server/_generated/openapi.py
   models/server/application.py
   models/server/py.typed
