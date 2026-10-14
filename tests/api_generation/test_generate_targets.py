@@ -244,7 +244,15 @@ def test_generate_server_options_without_selector(tmp_path: Path, monkeypatch: p
             {**CLIENT, "output_model_type": "msgspec.Struct"},
             (
                 "The client target needs --use-msgspec-tagged-unions for 'msgspec.Struct' models, so that their "
-                "discriminated unions can be decoded"
+                "discriminated unions can be decoded; The client target needs --use-msgspec-nullable-enum-alias for "
+                "'msgspec.Struct' models, so that their enums that list null can be decoded"
+            ),
+        ),
+        (
+            {**CLIENT, "output_model_type": "msgspec.Struct", "use_msgspec_tagged_unions": True},
+            (
+                "The client target needs --use-msgspec-nullable-enum-alias for 'msgspec.Struct' models, so that their "
+                "enums that list null can be decoded"
             ),
         ),
         (
@@ -282,7 +290,8 @@ def test_generate_server_options_without_selector(tmp_path: Path, monkeypatch: p
         "sentinel-target",
         "sentinel-target-2.11",
         "client-dataclass-sentinel-target",
-        "client-msgspec-tagged-unions",
+        "client-msgspec-options",
+        "client-msgspec-nullable-enum-alias",
         "json-value",
         "package",
         "keyed",
