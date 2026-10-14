@@ -2580,6 +2580,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     _config_class_name: ClassVar[str] = "ParserConfig"
     _cache_local_sources_during_parse: ClassVar[bool] = False
     _cache_parsed_sources_from_path: ClassVar[bool] = False
+    _collapses_list_item_root_models: ClassVar[bool] = True
     _http_fetch_session: _HTTPFetchSession | None = None
 
     @property
@@ -4239,6 +4240,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         generation_index = generation_store.index
         circular_root_model_paths = getattr(self, "_circular_root_model_paths", ())
         is_root_model = self._is_root_model
+        collapses_list_item_root_models = self._collapses_list_item_root_models
 
         for model in models:  # noqa: PLR1702
             for model_field in model.fields:
@@ -4331,6 +4333,13 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                         if not has_remaining_root_references:
                             unused_models.append(root_type_model)
 
+                        continue
+
+                    if (
+                        not collapses_list_item_root_models
+                        and isinstance(list_data_type := data_type.parent, DataType)
+                        and list_data_type.is_list
+                    ):
                         continue
 
                     # set copied data_type

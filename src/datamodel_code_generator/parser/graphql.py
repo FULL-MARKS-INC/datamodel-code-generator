@@ -79,7 +79,10 @@ def build_graphql_schema(schema_str: str, *, source: str | None = None) -> graph
 
 @snooper_to_methods()
 class GraphQLParser(Parser["GraphQLParserConfig", "JsonSchemaFeatures"]):
-    """Parser for GraphQL schema files."""
+    """Parser for GraphQL schema files.
+
+    ``--collapse-root-models`` keeps the named types of list items, which link to their list only to quote names.
+    """
 
     # raw graphql schema as `graphql-core` object
     raw_obj: graphql.GraphQLSchema
@@ -116,6 +119,7 @@ class GraphQLParser(Parser["GraphQLParserConfig", "JsonSchemaFeatures"]):
     ]
 
     _config_class_name: ClassVar[str] = "GraphQLParserConfig"
+    _collapses_list_item_root_models: ClassVar[bool] = False
 
     def __init__(
         self,

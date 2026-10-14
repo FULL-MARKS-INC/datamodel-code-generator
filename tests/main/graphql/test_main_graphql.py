@@ -196,6 +196,45 @@ def test_main_graphql_field_enum_default(output_file: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("input_file", "extra_args", "expected_name", "enum_name"),
+    [
+        (
+            "field-default-enum.graphql",
+            ["--output-model-type", "typing.TypedDict"],
+            "list_item_enum_typed_dict",
+            "Color",
+        ),
+        (
+            "field-default-enum.graphql",
+            ["--output-model-type", "pydantic_v2.BaseModel", "--enum-field-as-literal", "all"],
+            "list_item_enum_literal_pydantic_v2",
+            "Color",
+        ),
+        (
+            "github-api-issue-states.graphql",
+            ["--output-model-type", "typing.TypedDict"],
+            "github_api_issue_states",
+            "IssueState",
+        ),
+    ],
+)
+def test_main_graphql_collapse_root_models_keeps_list_item_enums(
+    output_file: Path, input_file: str, extra_args: list[str], expected_name: str, enum_name: str
+) -> None:
+    """Keep the enum alias that GraphQL list items name when collapsing root models."""
+    run_main_and_assert(
+        input_path=GRAPHQL_DATA_PATH / input_file,
+        output_path=output_file,
+        input_file_type="graphql",
+        assert_func=assert_file_content,
+        expected_file=f"collapse_root_models_{expected_name}.py",
+        extra_args=[*extra_args, "--collapse-root-models", "--disable-timestamp", "--formatters", "builtin"],
+        importable_module_name=f"generated_graphql_collapse_{expected_name}",
+        importable_module_attribute=enum_name,
+    )
+
+
 @pytest.mark.skipif(
     black.__version__.split(".")[0] == "19",
     reason="Installed black doesn't support the old style",
