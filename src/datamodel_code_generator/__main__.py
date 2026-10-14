@@ -143,6 +143,7 @@ from datamodel_code_generator._cli_config import (
 from datamodel_code_generator._format_types import Formatter, PythonVersion
 from datamodel_code_generator._project_config import (
     _PYPROJECT_JSON_CONFIG_FIELDS,
+    _PYPROJECT_MODEL_JSON_CONFIG_FIELDS,
     _find_datamodel_codegen_project_config_with_path,
     _get_pyproject_toml_config_with_path,
     _normalize_pyproject_config,
@@ -963,16 +964,23 @@ def _record_raw_profile_dependencies(
 def _record_raw_job_config_dependencies(
     config: Mapping[Any, Any], base_path: Path, dependencies: WatchDependencies
 ) -> None:
-    """Register raw local inputs and JSON option files for failed-plan recovery."""
+    """Register raw local inputs and JSON option files for failed-plan recovery.
+
+    As in a planned job, the JSON files of model options stay relative to the working directory.
+    """
     from datamodel_code_generator.watch_dependencies import _JSON_CONFIG_FIELDS  # noqa: PLC0415
 
     for raw_name, raw_value in config.items():
-        if not isinstance(raw_name, str) or raw_name.replace("-", "_") not in (_JSON_CONFIG_FIELDS | {"input"}):
+        if not isinstance(raw_name, str) or (name := raw_name.replace("-", "_")) not in (
+            _JSON_CONFIG_FIELDS | {"input"}
+        ):
             continue
         if not isinstance(raw_value, str | Path):
             continue
         path = Path(raw_value)
-        dependencies.add_recovery_file(path if path.is_absolute() else base_path / path)
+        dependencies.add_recovery_file(
+            path if path.is_absolute() or name in _PYPROJECT_MODEL_JSON_CONFIG_FIELDS else base_path / path
+        )
 
 
 def _plan_jobs_unchecked(args: Namespace) -> BatchPlan:

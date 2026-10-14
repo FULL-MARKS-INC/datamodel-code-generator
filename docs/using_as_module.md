@@ -110,8 +110,9 @@ The precedence is API defaults, project settings, profile settings, then
 overrides. Only explicitly set fields of a `GenerateConfig` override are merged;
 explicit `False`, `None`, and empty lists also replace project values. Paths
 loaded from TOML are relative to its directory, including JSON configuration
-files such as `aliases`. Override paths remain relative to the caller's working
-directory. The project directory supplies formatter settings unless
+files such as `aliases`, unlike the command line, which reads those JSON files
+from the working directory. Override paths remain relative to the caller's
+working directory. The project directory supplies formatter settings unless
 `settings_path` is explicitly overridden. CLI-only settings such as `input`,
 `check`, and batch jobs are ignored: pass the schema to `generate()` yourself.
 The loader validates the merged settings and preserves the existing rule that

@@ -2414,6 +2414,46 @@ input = "{input_file.as_posix()}"
     assert dependencies.accepts_event(input_file)
 
 
+@pytest.mark.allow_direct_assert("checks which paths the failed plan's recovery graph accepts")
+def test_batch_watch_records_raw_json_option_files_from_their_bases(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed plan below the project root watches model JSON files in the working directory, as jobs read them.
+
+    The JSON files of target options stay relative to pyproject.toml.
+    """
+    from datamodel_code_generator import __main__ as main_module
+    from datamodel_code_generator.arguments import arg_parser
+    from datamodel_code_generator.watch_dependencies import WatchDependencies
+
+    (tmp_path / "pyproject.toml").write_text(
+        """[tool.datamodel-codegen.jobs.invalid]
+input = "input.json"
+aliases = "aliases.json"
+client-operations = "operations.json"
+""",
+        encoding="utf-8",
+    )
+    working_directory = tmp_path / "child"
+    working_directory.mkdir()
+    dependencies = WatchDependencies()
+    monkeypatch.chdir(working_directory)
+    arg_parser.parse_args(["--all-jobs"], namespace=main_module.namespace)
+
+    assert main_module._main(["--all-jobs"], start_watch=False, dependencies=dependencies) is Exit.ERROR
+    assert [
+        dependencies.accepts_event(path)
+        for path in (
+            tmp_path / "input.json",
+            working_directory / "aliases.json",
+            tmp_path / "aliases.json",
+            tmp_path / "operations.json",
+            working_directory / "operations.json",
+        )
+    ] == [True, True, False, True, False]
+
+
 @pytest.mark.allow_direct_assert
 def test_batch_watch_excludes_a_shared_update_lock_from_events(
     monkeypatch: pytest.MonkeyPatch,
