@@ -13228,7 +13228,10 @@ constraints and `discriminator` apply and a tag no member of the union has answe
 for a member that repeats, of its items' type. A part that is not JSON, or that the type rejects, answers `422` with
 its records at `["body", name]`, or at `["body", name, index]` for a member that repeats, before the rest of the body
 is validated. A member without a type takes any value, so it keeps a part that is not JSON as it arrives instead: text
-for a field, bytes for a file.
+for a field, bytes for a file. An `encoding` can also name one text media type in UTF-8 or US-ASCII, or in no
+charset, for a member of one scalar kind, such as `contentType: text/plain; charset=utf-8`, and any media types for a
+member holding files, such as `image/png`: the parts are read as they are without one, since Starlette reads every
+field part as UTF-8 text and keeps the bytes of a file, whatever media type the part names.
 
 Starlette limits what it reads from a multipart form, and the generated client sends a JSON part as a field: a field
 part of more than 1 MiB (`max_part_size`) answers `400` with `Part exceeded maximum size of 1024KB.`, and so do more
@@ -13258,9 +13261,9 @@ and the model keeps each value as the type returns it, as an attribute beside it
 A URL-encoded form carries text alone. For a member without one scalar kind, such as an object, an array of objects,
 or `type: [integer, boolean]`, declared by the schema or by a schema it combines with `allOf`, generation stops with
 `A parameter value needs one unambiguous scalar kind`, as it does for the generated client and for a parameter,
-unless an `encoding` gives the member a style. It stops the same way, at the `additionalProperties` that types them,
-for other properties of such a type, with either backend. The generated client stops for these members and other
-properties with the same message at the same place. Both also refuse a URL-encoded body whose schema has
+unless an `encoding` gives the member a style or content. It stops the same way, at the `additionalProperties` that
+types them, for other properties of such a type, with either backend. The generated client stops for these members
+and other properties with the same message at the same place. Both also refuse a URL-encoded body whose schema has
 `patternProperties` (`Pattern properties have no builtin parameter encoding`) or is not an object, such as an array,
 a string, or `properties` without `type: object` (`A URL-encoded value must be an object`), unless the request body
 mode reads it.
@@ -13271,10 +13274,29 @@ other properties by the rules above, and the model that holds it receives the ob
 is a union of several schemas declares no members its parts could be read by: generation stops with
 `needs body_mode='request'`, as the generated client stops with `needs an object schema to be sent as parts`.
 
-The adapters read no `encoding` that names another media type, part headers, `allowReserved`, or a style other than
-the default `form` with `explode: true`, and none that gives any style to a member without one scalar kind, which
-the client spreads over several pairs or parts: generation stops with an error that names the encoding.
-`--server-body-mode request` passes any such body to the method unread.
+An adapter reads a form member whose `encoding` names a `style`, `explode`, or `allowReserved` as the generated
+client writes it: as the query parameter that encoding describes, the way a query reads one. OpenAPI 3.0 applies these
+fields to a URL-encoded body alone and ignores them for `multipart/form-data`, whose member is then read as one without
+them, in its `contentType`; OpenAPI 3.1 and 3.2 apply them to both. An object with `style: form` and `explode: true`,
+the default of an encoding that names only `explode`, comes as the pairs or parts of its own members, which it takes
+back: the names its schema declares and, when it allows other properties, any name that no other member of the form
+has. A `deepObject` comes as `name[key]` pairs or parts, and `form` without explode, `spaceDelimited`, and
+`pipeDelimited` as one delimited pair or part. A URL-encoded pair is percent-encoded; a part carries the style's text
+without percent-encoding, as OpenAPI 3.2 requires, so `allowReserved` changes no part, and the client refuses a
+delimited value that holds its style's delimiter (`,`, a space, or `|`) before it sends it. A URL-encoded member's
+`contentType` without a style sends it as one pair of text, or of JSON that is parsed as a JSON part is, with records at
+`["body", name]`. The other pairs and parts are read as in a form without such members, and the model validates the
+result; an operation with such a member is an adapter's, not FastAPI's form model. An encoding that the client has no
+form for, such as `deepObject` for an array or `contentType: application/xml` in a URL-encoded body, stops generation
+with the message the client stops with. So does a form whose exploded object that allows other properties shares the
+form with another such member or a `deepObject` member, since both would take the same names, as an operation's query
+parameters are refused.
+
+The adapters read no part headers, no multipart `encoding` that names another media type, such as one in another
+charset or `application/xml` for a member without files, and no style for a member holding files, which the client
+refuses too: generation stops with an error that names the encoding. A style leaves a multipart member's
+`contentType` unused, as it does for the client. `--server-body-mode request` passes any such body to the method
+unread.
 
 The router splits a request path at the slashes the request sends, so a percent-encoded slash (`%2F`) stays inside
 its path parameter, whose value receives `/`, of whatever style; FastAPI alone routes by the decoded path, where
@@ -18429,7 +18451,13 @@ failure while a file or iterable is read during sending raises `APIConnectionErr
 A `MultipartBody` is sent through HTTPX2's `files=` encoding, its parts in their order: each `FieldPart` and
 `FilePart` keeps its name, filename, media type and extra headers, and parts may repeat a name. A field's value goes
 through its member's model codec, a repeated member sends a part for each item, a styled member the parts its style
-gives, and a media type the member's encoding declares must cover the one a part names. The SDK does not check parts
+gives, and a media type the member's encoding declares must cover the one a part names. A member's `style`,
+`explode`, and `allowReserved` apply in OpenAPI 3.1 and 3.2 documents, whose parts carry the style's text without
+percent-encoding, so a delimited value that holds its style's delimiter (`,`, a space, or `|`) raises a request
+`DecodeError` with the reason `unencodable` before sending; OpenAPI 3.0 ignores them for `multipart/form-data`, and the
+member is written as one without them, in its `contentType`. Generation stops for a form whose exploded object that
+allows other properties shares the form with another such member or a `deepObject` member, which would write the same
+names, as it does for query parameters. The SDK does not check parts
 against the schema. A part header HTTPX2 refuses, and a part that is not a `FieldPart` or a `FilePart` with a string
 name, raises a request `DecodeError` with the reason `unencodable` before sending. A body whose parts are all bytes is
 encoded once, with `Content-Length`; a body without parts is sent as its closing boundary alone, with the

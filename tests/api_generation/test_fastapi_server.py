@@ -139,6 +139,8 @@ def test_fastapi_server(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPat
         "raw_strict",
         "extras",
         "reused_forms",
+        "forms",
+        "forms_30",
     ],
 )
 def test_generated_client(case: str, tmp_path: Path) -> None:

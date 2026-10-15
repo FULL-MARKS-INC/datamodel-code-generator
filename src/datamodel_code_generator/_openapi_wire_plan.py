@@ -300,7 +300,7 @@ def _form(
         additional = _additional(planner, bound)
         members = {name: schema for name, schema, _ in property_members(use)}
         encoded = tuple(_encoding(planner, bound, members, declaration) for declaration in styled.values())
-        _distinct(_located(bound), [field.name for field in fields], encoded)
+        encoded = _distinct(_located(bound), [field.name for field in fields], encoded)
     except _PlanError as error:
         _refused(planner, use, error)
         return None
@@ -316,7 +316,7 @@ def _styles(
         members = {name: schema for name, schema, _ in property_members(use)}
         encoded = tuple(_encoding(planner, bound, members, declaration) for declaration in encodings)
         styled = {plan.name for plan in encoded}
-        _distinct(_located(bound), [name for name in members if name not in styled], encoded)
+        encoded = _distinct(_located(bound), [name for name in members if name not in styled], encoded)
     except _PlanError as error:
         _refused(planner, use, error)
         return None
@@ -413,8 +413,15 @@ def _refused(planner: _WirePlanner, use: TypeUseBinding, error: _PlanError) -> N
     )
 
 
-def _distinct(location: SourceLocation, names: list[str], encoded: tuple[ParameterPlan, ...]) -> None:
-    """Refuse a form whose members, an exploded member's own included, write a name twice."""
+def _distinct(
+    location: SourceLocation, names: list[str], encoded: tuple[ParameterPlan, ...]
+) -> tuple[ParameterPlan, ...]:
+    """Refuse a form whose members write a name twice, or whose other names more than one member would take back.
+
+    An exploded member's own names count, and an exploded object that allows other properties takes every name no
+    other member writes, so the form may have one such member and no deepObject member then, as an operation's query
+    parameters may. Return the plans with the other exploded members' names reserved from the one that takes the rest.
+    """
     claimed = [
         *(item.name for plan in encoded if _spread(plan) for item in plan.fields),
         *names,
@@ -422,6 +429,15 @@ def _distinct(location: SourceLocation, names: list[str], encoded: tuple[Paramet
     ]
     if len(set(claimed)) != len(claimed):
         raise _PlanError(code="MC_PARAMETER_ENCODING", source=location, message="Expanded form member names collide")
+    absorbing = [plan.name for plan in encoded if plan.additional is not None and _spread(plan)]
+    if len(absorbing) > 1 or (absorbing and any(plan.style == "deepObject" for plan in encoded)):
+        message = (
+            f"The exploded form member {absorbing[0]!r} allows other properties and takes every name no other member "
+            "writes, so the form cannot have another such member or a deepObject member"
+        )
+        raise _PlanError(code="MC_PARAMETER_ENCODING", source=location, message=message)
+    plans = list(encoded)
+    return tuple(_reserving(plan, plans) if plan.name in absorbing else plan for plan in plans)
 
 
 def _styled(encoding: WireDeclaration) -> bool:
@@ -483,6 +499,18 @@ def _encoding(
 def parameter_plans(wire: WirePlan) -> dict[OperationId, dict[tuple[ParameterLocation, str], ParameterPlan]]:
     """Index each operation's parameter plans by location and name."""
     return {operation: {(plan.location, plan.name): plan for plan in planned} for operation, planned in wire.parameters}
+
+
+def form_styled(encoding: WireDeclaration, version: str, *, multipart: bool) -> bool:
+    """Return whether an encoding gives its form member a query parameter's style, explode, or allowReserved.
+
+    OpenAPI 3.0 applies them to application/x-www-form-urlencoded alone and ignores them for multipart/form-data,
+    whose member is then written as its contentType says; 3.1 and later apply them to both, and write the parts they
+    give without percent-encoding.
+    """
+    if multipart and (version == "3.0" or version.startswith("3.0.")):
+        return False
+    return any(_fact(encoding, key) is not None for key in STYLED)
 
 
 def _allow_reserved(version: str, location: ParameterLocation, declaration: WireDeclaration) -> bool:
