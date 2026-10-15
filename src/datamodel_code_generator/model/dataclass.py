@@ -5,6 +5,7 @@ Generates Python dataclasses using the @dataclass decorator.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
 from datamodel_code_generator._format_types import (
@@ -145,6 +146,8 @@ def _build_nested_dataclass_default_factory(data_type: DataType, default: dict[A
 
 
 _REQUIRED_INHERITED_INIT_KEY = "_required_inherited_init"
+_UNBOUND_FIELD_KEY = "_unbound_field"
+_PSEUDO_FIELD_TYPE = re.compile(r"(?:\w+\.)*(?:ClassVar|InitVar)\b")
 
 
 class _DataclassReuseMixin:
@@ -195,6 +198,31 @@ class DataClass(_DataclassReuseMixin, DataModel):
     def field_name_hides_types(self, field: DataModelFieldBase) -> bool:
         """Return whether the class body binds the field's name, which its annotation is evaluated after."""
         return self.field_binds_class_attribute(field)
+
+    def unbind_fields(self, names: Collection[str | None]) -> bool:
+        """Write the defaults of the fields of these names through ``default_factory``.
+
+        ``dataclasses`` then removes their class attributes, so a resolver that looks the class up before the module,
+        like Pydantic or a native deferred annotation, finds the type of that name instead of the default. A
+        ``ClassVar`` or ``InitVar`` takes no default factory and stays bound.
+        """
+        fields = [
+            field
+            for field in self.fields
+            if field.name in names
+            and not any(_PSEUDO_FIELD_TYPE.match(data_type.type or "") for data_type in field.data_type.all_data_types)
+        ]
+        for field in fields:
+            field.__dict__[_UNBOUND_FIELD_KEY] = True
+        return bool(fields)
+
+    def resolves_hidden_types_from_strings(self) -> bool:
+        """Return whether the class needs string annotations to resolve a type that a field hides.
+
+        ``dataclasses`` evaluates native deferred annotations while the class still binds the field's name. A class
+        with slots is built anew once the name is unbound, and a string would find the slot of that name instead.
+        """
+        return not self.dataclass_arguments.get("slots")
 
     @classmethod
     def prepare_required_inherited_field(
@@ -364,6 +392,11 @@ class DataModelField(DataModelFieldBase):
                     f"lambda: {represent_python_value(default)}" if default else type(default).__name__
                 )
 
+        if self.__dict__.get(_UNBOUND_FIELD_KEY) and (
+            "default" in data
+            or not (data or (self.required and not self.use_default_with_required) or self.should_strip_default_none())
+        ):
+            data["default_factory"] = f"lambda: {represent_python_value(data.pop('default', self.default))}"
         return data
 
     def _get_constructor_default_info(self) -> tuple[bool, bool]:

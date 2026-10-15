@@ -2755,6 +2755,13 @@ def test_main_jsonschema_same_name_reference_fields(output_file: Path) -> None:
     )
 
 
+_FIELD_TYPE_COLLISION_PAYLOADS = {
+    "defaults.json": "valid_defaults.json",
+    "other.json": "valid_other.json",
+    "other_before.json": "valid_other.json",
+}
+
+
 @pytest.mark.parametrize(
     ("backend", "schema", "target_python_version", "options", "expected_file", "field_name"),
     [
@@ -2948,6 +2955,78 @@ def test_main_jsonschema_same_name_reference_fields(output_file: Path) -> None:
             id="pydantic-dataclass-required-rename-type",
         ),
         pytest.param(
+            DataModelType.PydanticV2Dataclass,
+            "other.json",
+            "3.10",
+            [],
+            "field_type_collision_runtime/pydantic_dataclass_other.py",
+            "Zed",
+            id="pydantic-dataclass-other",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2Dataclass,
+            "other.json",
+            "3.14",
+            [],
+            "field_type_collision_runtime/pydantic_dataclass_other_py314.py",
+            "Zed",
+            id="pydantic-dataclass-other-py314",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2Dataclass,
+            "other.json",
+            "3.10",
+            ["--disable-future-imports"],
+            "field_type_collision_runtime/pydantic_dataclass_other_no_future_imports.py",
+            "Zed",
+            id="pydantic-dataclass-other-no-future-imports",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2BaseModel,
+            "other.json",
+            "3.10",
+            [],
+            "field_type_collision_runtime/base_model_other.py",
+            "Zed",
+            id="base-model-other",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2BaseModel,
+            "other.json",
+            "3.14",
+            [],
+            "field_type_collision_runtime/base_model_other_py314.py",
+            "Zed",
+            id="base-model-other-py314",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2BaseModel,
+            "other.json",
+            "3.10",
+            ["--field-type-collision-strategy", "rename-type"],
+            "field_type_collision_runtime/base_model_other_rename_type.py",
+            "Zed",
+            id="base-model-other-rename-type",
+        ),
+        pytest.param(
+            DataModelType.PydanticV2BaseModel,
+            "other_before.json",
+            "3.10",
+            ["--disable-future-imports"],
+            "field_type_collision_runtime/base_model_other_before_no_future_imports.py",
+            "Zed",
+            id="base-model-other-before-no-future-imports",
+        ),
+        pytest.param(
+            DataModelType.MsgspecStruct,
+            "other.json",
+            "3.10",
+            ["--disable-future-imports"],
+            "field_type_collision_runtime/msgspec_other_no_future_imports.py",
+            "Zed",
+            id="msgspec-other-no-future-imports",
+        ),
+        pytest.param(
             DataModelType.MsgspecStruct,
             "speed.json",
             "3.10",
@@ -3102,7 +3181,7 @@ def test_main_jsonschema_field_type_collision_runtime(
     expected_file: str,
     field_name: str,
 ) -> None:
-    """Keep a field named like its type unless the class would hide the type, on every Python from the target on.
+    """Keep a field named like a type of its class unless the class hides the type, on every Python from the target.
 
     The output runs as an imported module, where its own annotation mode applies.
     """
@@ -3133,10 +3212,10 @@ def test_main_jsonschema_field_type_collision_runtime(
         validator = partial(msgspec.json.decode, type=model)
         error_type = msgspec.ValidationError
         match backend:
-            case DataModelType.PydanticV2Dataclass:
+            case DataModelType.PydanticV2Dataclass | DataModelType.PydanticV2BaseModel:
                 validator = _model_json_validator(model)
                 error_type = ValidationError
-        valid_payload = "valid_defaults.json" if schema == "defaults.json" else "valid.json"
+        valid_payload = _FIELD_TYPE_COLLISION_PAYLOADS.get(schema, "valid.json")
         parsed = validator((payload_path / valid_payload).read_text(encoding="utf-8"))
         with pytest.raises(error_type):
             validator((payload_path / "invalid.json").read_text(encoding="utf-8"))
@@ -3177,14 +3256,44 @@ def _annotation_type_names(annotation: Any) -> set[str]:
             "dataclass_later_default_factory",
             id="later-default-factory",
         ),
+        pytest.param(
+            "defaults.json",
+            "3.14",
+            ["--dataclass-arguments", '{"slots": true}'],
+            "dataclass_defaults_slots_py314",
+            id="defaults-slots-py314",
+        ),
+        pytest.param(
+            "speed.json",
+            "3.14",
+            ["--dataclass-arguments", '{"slots": true}'],
+            "dataclass_slots_py314",
+            id="slots-py314",
+        ),
+        pytest.param("speed.json", "3.14", [], "dataclass_py314", id="py314"),
+        pytest.param("later.json", "3.14", [], "dataclass_later_py314", id="later-py314"),
+        pytest.param("defaults.json", "3.14", [], "dataclass_defaults_py314", id="defaults-py314-future-imports"),
+        pytest.param("other.json", "3.10", [], "dataclass_other", id="other"),
+        pytest.param("other.json", "3.14", [], "dataclass_other_py314", id="other-py314"),
+        pytest.param(
+            "other.json",
+            "3.10",
+            ["--disable-future-imports"],
+            "dataclass_other_no_future_imports",
+            id="other-no-future",
+        ),
     ],
 )
 def test_main_jsonschema_field_type_collision_dataclass(
     output_file: Path, schema: str, target_python_version: str, options: list[str], expected_name: str
 ) -> None:
-    """Keep a dataclass field named like its type, which has no alias, and resolve the type from the module.
+    """Keep a dataclass field named like a type of its class, which has no alias, and resolve the type from the module.
 
-    Without future imports the type is written as a string, which ``typing`` resolves from the module first.
+    Without future imports the type is written as a string, which ``typing`` resolves from the module first. The field's
+    default goes through ``default_factory``, so Pydantic and native deferred annotations, which look the class up
+    first, find no class attribute of that name. Pydantic resolves a string against the slots of a class with slots,
+    and Python 3.14 patch releases differ in how a native annotation of such a class sees them, so only classes without
+    slots are validated by Pydantic.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "same_name_reference_fields" / schema,
@@ -3214,10 +3323,45 @@ def test_main_jsonschema_field_type_collision_dataclass(
             name: {field: sorted(_annotation_type_names(hint)) for field, hint in get_type_hints(cls).items()}
             for name, cls in classes.items()
         }
+        record = {"hints": hints, "defaults": repr(leaf())}
+        if not hasattr(leaf, "__slots__"):
+            payload = (
+                DATA_PATH
+                / "payloads"
+                / "field_type_collision_runtime"
+                / _FIELD_TYPE_COLLISION_PAYLOADS.get(schema, "valid.json")
+            )
+            record["validated"] = repr(
+                TypeAdapter(classes["Payload"]).validate_json(payload.read_text(encoding="utf-8"))
+            )
         assert_output(
-            f"{json.dumps({'hints': hints, 'defaults': repr(leaf())}, indent=2)}\n",
+            f"{json.dumps(record, indent=2)}\n",
             EXPECTED_JSON_SCHEMA_PATH / "field_type_collision_runtime" / f"{expected_name}.txt",
         )
+
+
+def test_main_jsonschema_field_type_collision_dataclass_class_var(output_file: Path) -> None:
+    """Keep the default of a ``ClassVar`` named like a type of its class, as ``dataclasses`` takes no factory for it."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "same_name_reference_fields" / "class_var.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file="field_type_collision_runtime/dataclass_class_var.py",
+        extra_args=[
+            "--output-model-type",
+            DataModelType.DataclassesDataclass.value,
+            "--target-python-version",
+            "3.10",
+            "--class-name",
+            "Payload",
+            "--use-default",
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+        ],
+        force_exec_validation=True,
+    )
 
 
 @pytest.mark.parametrize(
@@ -3282,30 +3426,111 @@ def test_main_jsonschema_field_type_collision_cross_module(
         assert_output(f"{parsed.Bar.x}\n", payload_path / "runtime.txt")
 
 
-def test_main_jsonschema_field_type_collision_inherited_modules(output_dir: Path) -> None:
-    """Rename an inherited field named like its type under one name in every module of its family."""
+@pytest.mark.parametrize(
+    ("input_name", "backend", "options", "expected_name", "child_module", "field_name"),
+    [
+        pytest.param(
+            "field_type_collision_inherited_modules",
+            DataModelType.PydanticV2Dataclass,
+            [],
+            "field_type_collision_inherited_modules",
+            "b",
+            "Bar_1",
+            id="base-module-first",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules_child_first",
+            DataModelType.PydanticV2Dataclass,
+            [],
+            "field_type_collision_inherited_modules_child_first/dataclass",
+            "a",
+            "Bar_1",
+            id="child-module-first",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules_child_first",
+            DataModelType.PydanticV2BaseModel,
+            [],
+            "field_type_collision_inherited_modules_child_first/base_model",
+            "a",
+            "Bar_1",
+            id="child-module-first-base-model",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules",
+            DataModelType.PydanticV2Dataclass,
+            ["--field-type-collision-strategy", "rename-type"],
+            "field_type_collision_inherited_modules_rename_type/dataclass",
+            "b",
+            "Bar",
+            id="base-module-first-rename-type",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules",
+            DataModelType.PydanticV2BaseModel,
+            ["--field-type-collision-strategy", "rename-type"],
+            "field_type_collision_inherited_modules_rename_type/base_model",
+            "b",
+            "Bar",
+            id="base-module-first-rename-type-base-model",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules",
+            DataModelType.PydanticV2BaseModel,
+            ["--field-type-collision-strategy", "rename-type", "--use-exact-imports"],
+            "field_type_collision_inherited_modules_rename_type/base_model_exact",
+            "b",
+            "Bar",
+            id="base-module-first-rename-type-base-model-exact-import",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules_child_first",
+            DataModelType.PydanticV2BaseModel,
+            ["--field-type-collision-strategy", "rename-type", "--use-exact-imports"],
+            "field_type_collision_inherited_modules_child_first/base_model_rename_type_exact",
+            "a",
+            "Bar",
+            id="child-module-first-rename-type-base-model-exact-import",
+        ),
+    ],
+)
+def test_main_jsonschema_field_type_collision_inherited_modules(
+    output_dir: Path,
+    input_name: str,
+    backend: DataModelType,
+    options: list[str],
+    expected_name: str,
+    child_module: str,
+    field_name: str,
+) -> None:
+    """Rename an inherited field named like its type, or the type, under one name in every module of its family.
+
+    The child keeps the alias of a renamed field, and imports a renamed type by its new name, whichever of the
+    modules comes first.
+    """
     run_main_and_assert(
-        input_path=JSON_SCHEMA_DATA_PATH / "field_type_collision_inherited_modules",
+        input_path=JSON_SCHEMA_DATA_PATH / input_name,
         output_path=output_dir,
         input_file_type="jsonschema",
-        expected_directory=EXPECTED_JSON_SCHEMA_PATH / "field_type_collision_inherited_modules",
+        expected_directory=EXPECTED_JSON_SCHEMA_PATH / expected_name,
         extra_args=[
             "--output-model-type",
-            DataModelType.PydanticV2Dataclass.value,
+            backend.value,
             "--target-python-version",
             "3.11",
             "--disable-timestamp",
             "--formatters",
             "builtin",
+            *options,
         ],
     )
     payload_path = DATA_PATH / "payloads" / "field_type_collision_cross_module"
-    with _generated_package_module(output_dir, "b") as module:
+    with _generated_package_module(output_dir, child_module) as module:
         validator = _model_json_validator(module.Child)
         parsed = validator((payload_path / "valid.json").read_text(encoding="utf-8"))
         with pytest.raises(ValidationError):
             validator((payload_path / "invalid.json").read_text(encoding="utf-8"))
-        assert_output(f"{parsed.Bar_1.x}\n", payload_path / "runtime.txt")
+        assert_output(f"{getattr(parsed, field_name).x}\n", payload_path / "runtime.txt")
 
 
 def test_main_reuse_model_discriminator_literal(output_file: Path) -> None:
