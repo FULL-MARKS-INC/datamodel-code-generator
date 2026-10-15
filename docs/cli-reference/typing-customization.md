@@ -36,6 +36,7 @@
 | [`--use-tuple-for-fixed-length-arrays`](#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-type-alias`](#use-type-alias) | Use TypeAlias instead of root models for type definitions (e... |
 | [`--use-type-alias-type`](#use-type-alias-type) | Use runtime TypeAliasType objects for aliases before Python ... |
+| [`--use-typed-nullable-map-values`](#use-typed-nullable-map-values) | Type the values of nullable maps as their schemas say instea... |
 | [`--use-union-operator`](#use-union-operator) | Use | operator for Union types (PEP 604). |
 | [`--use-unique-items-as-set`](#use-unique-items-as-set) | Generate set types for arrays with uniqueItems constraint. |
 
@@ -5460,6 +5461,304 @@ continues to use native `type` statements.
             union_field: NotRequired[UnionType]
             array_field: NotRequired[ArrayType]
             annotated_field: NotRequired[AnnotatedType]
+        ```
+
+        <!-- fmt: on -->
+
+---
+
+## `--use-typed-nullable-map-values` {#use-typed-nullable-map-values}
+
+Type the values of nullable maps as their schemas say instead of Any.
+
+A nullable map here is a schema whose type array lists `object` alone or with `null`, such as
+`type: [object, "null"]` or `type: [object]`, and that declares its values with `additionalProperties`. Without the
+`--use-typed-nullable-map-values` flag the output keeps the 0.83.0 form, `dict[str, Any] | None`, or
+`dict[str, Any]` when the type array has no `null`, whatever the values are. A map made nullable by `nullable: true`
+and a map typed `type: object` keep their typed values either way.
+
+With the flag the values follow their schema, such as `dict[str, int] | None` or `dict[str, Player] | None`, and an
+object value gets a model named after the map, such as `Teams1` for the values of `Teams`. Those value models take
+the names left free, so the other models keep their 0.83.0 names, and options keyed by class name, such as
+`--base-class-map` or `--aliases`, apply to the final names. Typed values change more than the maps themselves:
+`--reuse-model` makes a value model and the models equal to it one model, which can leave out a schema's class, and
+no longer makes nullable maps with different values subclasses of each other, and `--collapse-root-models` collapses
+the root models that the values use. When typing the values would change the modules written, the values of the
+whole run stay untyped.
+
+!!! tip "Usage"
+
+    ```bash
+    datamodel-codegen --input nullable_map_value_types.yaml --use-typed-nullable-map-values --output-model-type pydantic_v2.BaseModel # (1)!
+    ```
+
+    1. :material-arrow-left: `--use-typed-nullable-map-values` - the option documented here
+
+??? example "Examples"
+
+    **Input Schema:**
+
+    ```yaml
+    openapi: 3.1.0
+    info:
+      title: Nullable map value types
+      version: "1.0"
+    paths:
+      /scores:
+        get:
+          operationId: listScores
+          parameters:
+            - name: players
+              in: query
+              schema:
+                type: [object, "null"]
+                additionalProperties:
+                  $ref: "#/components/schemas/Player"
+          responses:
+            "200":
+              description: The scores.
+        post:
+          operationId: replaceScores
+          requestBody:
+            content:
+              application/json:
+                schema:
+                  type: [object, "null"]
+                  additionalProperties:
+                    type: integer
+          responses:
+            "200":
+              description: The stored scores.
+              content:
+                application/json:
+                  schema:
+                    $ref: "#/components/schemas/Scores"
+    components:
+      schemas:
+        Player:
+          type: object
+          properties:
+            name:
+              type: string
+        Scores:
+          type: [object, "null"]
+          additionalProperties:
+            type: integer
+        NullFirstScores:
+          type: ["null", object]
+          additionalProperties:
+            type: integer
+        ObjectOnlyScores:
+          type: [object]
+          additionalProperties:
+            type: integer
+        Players:
+          type: [object, "null"]
+          additionalProperties:
+            $ref: "#/components/schemas/Player"
+        Teams:
+          type: [object, "null"]
+          additionalProperties:
+            type: object
+            properties:
+              captain:
+                $ref: "#/components/schemas/Player"
+        Rounds:
+          type: [object, "null"]
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+        Seasons:
+          type: [object, "null"]
+          additionalProperties:
+            type: [object, "null"]
+            additionalProperties:
+              type: number
+        Labels:
+          type: [object, "null"]
+          additionalProperties:
+            type: string
+            minLength: 1
+        Board:
+          type: object
+          required:
+            - scores
+          properties:
+            scores:
+              type: [object, "null"]
+              additionalProperties:
+                type: integer
+            players:
+              type: [object, "null"]
+              additionalProperties:
+                $ref: "#/components/schemas/Player"
+            teams:
+              type: [object, "null"]
+              additionalProperties:
+                type: object
+                properties:
+                  captain:
+                    $ref: "#/components/schemas/Player"
+            history:
+              type: array
+              items:
+                type: [object, "null"]
+                additionalProperties:
+                  type: integer
+            plain:
+              type: object
+              additionalProperties:
+                type: integer
+            nullable_array:
+              type: [array, "null"]
+              items:
+                type: integer
+            untyped:
+              type: [object, "null"]
+              additionalProperties: true
+            fixed:
+              type: [object, "null"]
+              additionalProperties:
+                type: integer
+              const:
+                x: 1
+    ```
+
+    **Output:**
+
+    === "With Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  nullable_map_value_types.yaml
+
+        from __future__ import annotations
+
+        from typing import Any
+
+        from pydantic import BaseModel, RootModel, constr
+
+
+        class Player(BaseModel):
+            name: str | None = None
+
+
+        class Scores(RootModel[dict[str, int] | None]):
+            root: dict[str, int] | None
+
+
+        class NullFirstScores(RootModel[dict[str, int] | None]):
+            root: dict[str, int] | None
+
+
+        class ObjectOnlyScores(RootModel[dict[str, int]]):
+            root: dict[str, int]
+
+
+        class Players(RootModel[dict[str, Player] | None]):
+            root: dict[str, Player] | None
+
+
+        class Teams1(BaseModel):
+            captain: Player | None = None
+
+
+        class Teams(RootModel[dict[str, Teams1] | None]):
+            root: dict[str, Teams1] | None
+
+
+        class Rounds(RootModel[dict[str, list[int]] | None]):
+            root: dict[str, list[int]] | None
+
+
+        class Seasons(RootModel[dict[str, dict[str, float] | None] | None]):
+            root: dict[str, dict[str, float] | None] | None
+
+
+        class Labels(RootModel[dict[str, constr(min_length=1)] | None]):
+            root: dict[str, constr(min_length=1)] | None
+
+
+        class Teams2(BaseModel):
+            captain: Player | None = None
+
+
+        class Board(BaseModel):
+            scores: dict[str, int] | None
+            players: dict[str, Player] | None = None
+            teams: dict[str, Teams2] | None = None
+            history: list[dict[str, int] | None] | None = None
+            plain: dict[str, int] | None = None
+            nullable_array: list[int] | None = None
+            untyped: dict[str, Any] | None = None
+            fixed: dict[str, int] = None
+        ```
+
+        <!-- fmt: on -->
+
+    === "Without Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  nullable_map_value_types.yaml
+
+        from __future__ import annotations
+
+        from typing import Any
+
+        from pydantic import BaseModel, RootModel
+
+
+        class Player(BaseModel):
+            name: str | None = None
+
+
+        class Scores(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class NullFirstScores(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class ObjectOnlyScores(RootModel[dict[str, Any]]):
+            root: dict[str, Any]
+
+
+        class Players(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class Teams(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class Rounds(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class Seasons(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class Labels(RootModel[dict[str, Any] | None]):
+            root: dict[str, Any] | None
+
+
+        class Board(BaseModel):
+            scores: dict[str, Any] | None
+            players: dict[str, Any] | None = None
+            teams: dict[str, Any] | None = None
+            history: list[dict[str, Any] | None] | None = None
+            plain: dict[str, int] | None = None
+            nullable_array: list[int] | None = None
+            untyped: dict[str, Any] | None = None
+            fixed: dict[str, int] = None
         ```
 
         <!-- fmt: on -->

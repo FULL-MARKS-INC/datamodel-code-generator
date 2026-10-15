@@ -224,6 +224,7 @@ class BaseGenerateConfig(TypedDict):
     use_enum_values_in_discriminator: NotRequired[bool]
     use_msgspec_tagged_unions: NotRequired[bool]
     use_msgspec_nullable_enum_alias: NotRequired[bool]
+    use_typed_nullable_map_values: NotRequired[bool]
     set_default_enum_member: NotRequired[bool]
     use_subclass_enum: NotRequired[bool]
     use_specialized_enum: NotRequired[bool]

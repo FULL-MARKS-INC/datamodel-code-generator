@@ -159,6 +159,7 @@ class ParserConfigDict(TypedDict):
     use_enum_values_in_discriminator: NotRequired[bool]
     use_msgspec_tagged_unions: NotRequired[bool]
     use_msgspec_nullable_enum_alias: NotRequired[bool]
+    use_typed_nullable_map_values: NotRequired[bool]
     known_third_party: NotRequired[list[str] | None]
     custom_formatters: NotRequired[list[str] | None]
     custom_formatters_kwargs: NotRequired[dict[str, Any] | None]

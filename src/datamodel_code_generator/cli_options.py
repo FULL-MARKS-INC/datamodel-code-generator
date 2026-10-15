@@ -606,6 +606,12 @@ CLI_OPTION_META: dict[str, CLIOptionMeta] = {
         topic=OptionTopic.TYPING_CUSTOMIZATION,
         group=OptionGroup.TYPE_MAPPING,
     ),
+    "--use-typed-nullable-map-values": CLIOptionMeta(
+        name="--use-typed-nullable-map-values",
+        category=OptionCategory.TYPING,
+        topic=OptionTopic.TYPING_CUSTOMIZATION,
+        group=OptionGroup.TYPE_MAPPING,
+    ),
     "--use-type-checking-imports": CLIOptionMeta(
         name="--use-type-checking-imports",
         category=OptionCategory.TEMPLATE,

@@ -256,6 +256,7 @@ class ParserConfig(BaseModel):
     use_enum_values_in_discriminator: bool = False
     use_msgspec_tagged_unions: bool = False
     use_msgspec_nullable_enum_alias: bool = False
+    use_typed_nullable_map_values: bool = False
     known_third_party: list[str] | None = None
     custom_formatters: list[str] | None = None
     custom_formatters_kwargs: dict[str, Any] | None = None

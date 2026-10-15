@@ -513,6 +513,19 @@ class StdoutBindingContext(NamedTuple):
     treat_dot_as_module: bool | None
 
 
+def _forward_defined_models(contexts: list[ModuleContext], forwarder_map: ForwarderMap) -> ForwarderMap:
+    """Keep the re-exports of the models an internal module still defines, dropping a module left without any.
+
+    Import cycles are merged before reuse and root model collapsing drop models from the internal module.
+    """
+    defined = {ctx.module_key: {model.class_name for model in ctx.models} for ctx in contexts}
+    return {
+        module: (internal_module, kept)
+        for module, (internal_module, class_mappings) in forwarder_map.items()
+        if (kept := [mapping for mapping in class_mappings if mapping[1] in defined[internal_module]])
+    }
+
+
 def _decode_json_pointer_part(value: str) -> str:
     return value.replace("~1", "/").replace("~0", "~")
 
@@ -2979,6 +2992,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self.use_enum_values_in_discriminator = config.use_enum_values_in_discriminator
         self.use_msgspec_tagged_unions = config.use_msgspec_tagged_unions
         self.use_msgspec_nullable_enum_alias = config.use_msgspec_nullable_enum_alias
+        self.use_typed_nullable_map_values = config.use_typed_nullable_map_values
         self.known_third_party = config.known_third_party
         self.custom_formatter = config.custom_formatters
         self.custom_formatters_kwargs = config.custom_formatters_kwargs
@@ -7862,6 +7876,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Render the shared result mapping and apply final output-only transformations."""
         future_imports = self.imports.extract_future()
         future_imports_str = str(future_imports)
+        if forwarder_map:
+            forwarder_map = _forward_defined_models(contexts, forwarder_map)
 
         # Export depth and collision prefixes must follow the final package layout.
         if (

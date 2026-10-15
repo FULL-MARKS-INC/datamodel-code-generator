@@ -583,12 +583,22 @@
   },
   "nullable-map-layout": {
     "input": {"path": "nullable-map-layout.yaml"},
-    "model": {"openapi_scopes": ["api"], "output": "models"},
+    "model": {"openapi_scopes": ["api"], "output": "models", "use_typed_nullable_map_values": true},
     "steps": [{"generate": {}}, {"tree": null}]
   },
   "nullable-map-class-keys": {
     "input": {"path": "nullable-map-class-keys.yaml"},
-    "model": {"openapi_scopes": ["api"], "aliases": {"Tags1.label": "tag_label"}},
+    "model": {"openapi_scopes": ["api"], "aliases": {"Tags1.label": "tag_label"}, "use_typed_nullable_map_values": true},
+    "steps": [{"generate": {}}, {"check": {}}]
+  },
+  "nullable-map-layout-untyped": {
+    "input": {"path": "nullable-map-layout.yaml"},
+    "model": {"openapi_scopes": ["api"], "output": "models"},
+    "steps": [{"generate": {}}, {"tree": null}]
+  },
+  "nullable-map-class-keys-untyped": {
+    "input": {"path": "nullable-map-class-keys.yaml"},
+    "model": {"openapi_scopes": ["api"], "aliases": {"Tags.label": "tag_label"}},
     "steps": [{"generate": {}}, {"check": {}}]
   }
 }

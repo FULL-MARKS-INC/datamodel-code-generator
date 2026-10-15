@@ -171,6 +171,7 @@ def test_failed_untyped_nullable_map_parse_disposes_the_typed_parser(mocker: Moc
             OPEN_API_DATA_PATH / "nullable_map_value_cycle.yaml",
             input_file_type=InputFileType.OpenAPI,
             output_model_type=DataModelType.PydanticV2Dataclass,
+            use_typed_nullable_map_values=True,
         )
 
     assert dispose.call_count == 1

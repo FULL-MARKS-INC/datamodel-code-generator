@@ -1576,6 +1576,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     abs_path = str((self.base_path / file_path).resolve())
                     self._external_ref_mapping[abs_path] = python_package
         self.reserved_refs: defaultdict[tuple[str, ...], set[str]] = defaultdict(set)
+        self._loads_only_used_references = False
         self._dangling_refs: set[tuple[str, str]] = set()
         self._dynamic_anchor_index: dict[tuple[str, ...], dict[str, str]] = {}
         self._recursive_anchor_index: dict[tuple[str, ...], list[str]] = {}
@@ -10112,9 +10113,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             **(self._get_python_type_flags(obj) or {"is_dict": True}),
         )
 
+    @property
+    def _types_nullable_map_values(self) -> bool:
+        """Whether this run types the values of nullable maps."""
+        return self.use_typed_nullable_map_values and not self.run_context.untyped_nullable_maps
+
     def _typed_nullable_map_value_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
-        """Return the value schema of a nullable map unless this run keeps the values of nullable maps untyped."""
-        return None if self.run_context.untyped_nullable_maps else _nullable_map_value_schema(obj)
+        """Return the value schema of a nullable map when this run types the values of nullable maps."""
+        return _nullable_map_value_schema(obj) if self._types_nullable_map_values else None
 
     def _parse_nullable_map(
         self, name: str, obj: JsonSchemaObject, path: list[str], additional_properties: JsonSchemaObject
@@ -12475,7 +12481,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             self.model_resolver.add_id(f"#{obj.anchor}", path)
 
     def parse_ref(self, obj: JsonSchemaObject, path: list[str]) -> None:
-        """Recursively parse all $ref references in a schema object."""
+        """Recursively parse all $ref references in a schema object, unless only the used ones are loaded."""
+        if self._loads_only_used_references:
+            return
         self._traverse_schema_objects(obj, path, self._resolve_ref_callback)
         self._parse_dynamic_specializations()
 

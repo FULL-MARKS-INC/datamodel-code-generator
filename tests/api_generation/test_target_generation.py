@@ -16,7 +16,7 @@ from datamodel_code_generator.__main__ import Exit
 from datamodel_code_generator.remote_lock import RemoteReferenceLock
 from datamodel_code_generator.util import get_yaml_backend
 from tests.api_generation.support.target_generation import SOURCE, target_render_report
-from tests.conftest import assert_output, freeze_time
+from tests.conftest import assert_directory_content, assert_output, freeze_time
 from tests.main.conftest import run_main_and_assert, run_main_with_args
 from tests.test_http import _SchemaHandler, local_http_server  # ruff: ignore[unused-import] - Register the existing fixture.
 
@@ -69,6 +69,26 @@ def test_target_render(
     if case.startswith("input-cycle"):
         expected = {"pyyaml": f"{case}.txt", "ryaml": f"{case}-ryaml.txt"}[get_yaml_backend()]
     assert_output(target_render_report(case, tmp_path, monkeypatch, capsys), EXPECTED / expected)
+
+
+@pytest.mark.parametrize(
+    ("case", "directory", "pattern"),
+    [
+        pytest.param("nullable-map-layout-untyped", "models", "*.py", id="layout"),
+        pytest.param("nullable-map-class-keys-untyped", "", "models.py", id="class-keys"),
+    ],
+)
+def test_target_render_untyped_nullable_maps(
+    case: str,
+    directory: str,
+    pattern: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Write the 0.83.0 models of nullable maps beside the server without --use-typed-nullable-map-values."""
+    assert_output(target_render_report(case, tmp_path, monkeypatch, capsys), EXPECTED / f"{case}.txt")
+    assert_directory_content(tmp_path / directory, EXPECTED / case / directory, pattern)
 
 
 @pytest.mark.abnormal_path("the running interpreter is never older than the supported minimum")
