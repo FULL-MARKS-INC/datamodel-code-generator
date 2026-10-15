@@ -2035,12 +2035,19 @@ def _iter_matching_duplicates(
         yield canonical, model
 
 
+def _get_schema_path(model: DataModel | Reference) -> str:
+    """Return the path of the schema a model is generated from, through read and write variants and reuse."""
+    source = model if isinstance(model, DataModel) else model.source
+    reused = source.reused_reference if isinstance(source, DataModel) else None
+    return _source_path((reused or model).path)
+
+
 def _check_discriminator_mapping_paths(
     model: DataModel | Reference,
     mapping: dict[str, str],
     discriminator_values: list[DiscriminatorValue],
 ) -> None:
-    model_path = _source_path(model.path)
+    model_path = _get_schema_path(model)
     for name, path in mapping.items():
         if "/" not in path and "#" not in path:
             if model_path.rsplit("/", 1)[-1] == path:
@@ -2103,23 +2110,35 @@ def _get_discriminator_values(
 ) -> list[DiscriminatorValue]:
     if (
         value := _find_discriminator_value(discriminator_model.fields, field_name, field_name_mode=field_name_mode)
+    ) is not None or (
+        value := _find_reused_discriminator_value(discriminator_model, field_name, field_name_mode=field_name_mode)
     ) is not None:
         return [value]
 
-    # Reuse models are created as empty subclasses with a "/reuse" path suffix.
     # Nested choices cannot be updated later, so also accept inherited literals.
-    if (require_literal or discriminator_model.path.endswith("/reuse")) and (
-        value := _find_discriminator_value(
-            discriminator_model.iter_all_fields(),
-            field_name,
-            field_name_mode=field_name_mode,
-        )
-    ) is not None:
-        return [value]
     if require_literal:
-        return []
+        value = _find_discriminator_value(
+            discriminator_model.iter_all_fields(), field_name, field_name_mode=field_name_mode
+        )
+        return [] if value is None else [value]
 
     return _get_union_discriminator_values(discriminator_model, field_name, mapping, field_name_mode=field_name_mode)
+
+
+def _find_reused_discriminator_value(
+    discriminator_model: DataModel,
+    field_name: str,
+    *,
+    field_name_mode: Literal["original", "resolved", "either"],
+) -> DiscriminatorValue | None:
+    """Return the tag that the schema of a model gives it when reuse replaced it with an empty subclass.
+
+    The base class the subclass inherits from can carry the tag another union wrote, which is not its own.
+    """
+    reused = discriminator_model.reused_reference
+    if reused is None or not isinstance(source := reused.source, DataModel):
+        return None
+    return _find_discriminator_value(source.fields, field_name, field_name_mode=field_name_mode)
 
 
 def _get_union_discriminator_values(
@@ -2129,20 +2148,14 @@ def _get_union_discriminator_values(
     *,
     field_name_mode: Literal["original", "resolved", "either"],
 ) -> list[DiscriminatorValue]:
-    """Return the tags a union selects a variant by: mapping values, a reuse model's inherited tag, else its name."""
+    """Return the tags a union selects a variant by: mapping values, the tag of its own schema, else its name."""
     if mapped := _get_mapping_discriminator_values(discriminator_model, mapping):
         return mapped
     if (
-        discriminator_model.path.endswith("/reuse")
-        and (
-            value := _find_discriminator_value(
-                discriminator_model.iter_all_fields(), field_name, field_name_mode=field_name_mode
-            )
-        )
-        is not None
-    ):
+        value := _find_reused_discriminator_value(discriminator_model, field_name, field_name_mode=field_name_mode)
+    ) is not None:
         return [value]
-    return [_source_path(discriminator_model.path).split("/")[-1]]
+    return [_get_schema_path(discriminator_model).split("/")[-1]]
 
 
 def _get_mapping_discriminator_values(
@@ -2281,6 +2294,62 @@ def _apply_discriminator_tags(tags: list[_DiscriminatorTag], tag_field: str, *, 
     for model, field, value in tags:
         model.apply_discriminator_tag(field, tag_field, value)
         _clear_model_imports_cache_if_retained(model, can_retain_cache=can_retain_cache)
+
+
+def _has_cyclic_ancestry(model: DataModel) -> bool:
+    """Return whether the base classes of a model, however distant, inherit from one another in a cycle."""
+    visiting: dict[int, bool] = {id(model): True}
+    stack = [(id(model), iter(_find_base_classes(model)))]
+    while stack:
+        if (base := next(stack[-1][1], None)) is None:
+            visiting[stack.pop()[0]] = False
+            continue
+        if visiting.get(id(base)):
+            return True
+        if id(base) not in visiting:
+            visiting[id(base)] = True
+            stack.append((id(base), iter(_find_base_classes(base))))
+    return False
+
+
+def _tag_fields_of_tagged_bases(models: Iterable[DataModel]) -> list[DataModel]:
+    """Tag the structs that declare the tag field of a tagged base as a field, which msgspec rejects.
+
+    A struct inherits the tag of its base, so its single literal becomes its own tag, as for a tagged variant, and a
+    struct with any other such field opts out of the tag to keep the field. Bases of other modules are tagged by then,
+    as every module is processed first, and a base is handled before the structs inheriting from it, as its own tag
+    decides theirs. Inheritance cycles are reported later. Return the structs that opted out.
+    """
+    pending = {id(model): model for model in models}
+    opted_out: list[DataModel] = []
+
+    def tag_fields_of(model: DataModel) -> None:
+        if pending.pop(id(model), None) is None:
+            return
+        if not model.base_classes or _has_cyclic_ancestry(model):
+            return
+        bases = _find_base_classes(model)
+        for base in bases:
+            tag_fields_of(base)
+        if not (tag_fields := {tag[0] for base in bases if (tag := base.discriminator_tag) is not None}):
+            return
+        tagged_fields = [
+            (field, tag_field)
+            for field in model.fields
+            if not field.extras.get("is_classvar")
+            and (tag_field := next(iter({field.name, _get_source_field_name(field)} & tag_fields), None)) is not None
+        ]
+        if any(len(field.data_type.literals) != 1 for field, _ in tagged_fields):
+            model.opt_out_of_inherited_tag()
+            opted_out.append(model)
+            return
+        for field, tag_field in tagged_fields:
+            model.apply_discriminator_tag(field, tag_field, field.data_type.literals[0])
+            _clear_model_imports_cache_if_retained(model, can_retain_cache=True)
+
+    while pending:
+        tag_fields_of(next(iter(pending.values())))
+    return opted_out
 
 
 def _get_mapped_discriminator_tag(
@@ -2928,6 +2997,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._variant_discriminator_tags: dict[tuple[int, str], _VariantDiscriminatorTags] = {}
         self._removed_reuse_users: dict[int, tuple[DataType, list[str]]] = {}
         self._renamed_types: dict[str, str] = {}
+        self._collapsed_reuse_models: dict[int, list[DataModel]] = {}
+        self._collapsed_reuse_users: dict[int, tuple[DataType, Reference]] = {}
         self._quotes_hidden_types = False
 
         self.keyword_only = config.keyword_only
@@ -3626,7 +3697,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     break
 
                 for canonical, duplicate in duplicates:
-                    self.generation_store.redirect_reference_users(duplicate.reference, canonical.reference)
+                    self.__redirect_collapsed_reuse_users(duplicate, canonical)
                     for child in duplicate.reference.iter_data_model_children():
                         self.generation_store.set_base_classes(
                             child,
@@ -4098,10 +4169,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
                 tags: list[_DiscriminatorTag] = []
                 union_name = model.class_name if self._is_root_model(model) else f"{model.class_name}.{field.name}"
+                collapsed_unions = self.__get_collapsed_unions(model, field)
                 field_name_mode: Literal["resolved", "either"] = (
                     "resolved" if field.SUPPORTS_DISCRIMINATOR else "either"
                 )
-                for data_type in field.data_type.data_types:
+                for index, data_type in enumerate(field.data_type.data_types):
                     if not data_type.reference:  # pragma: no cover
                         continue
                     discriminator_model = data_type.reference.source
@@ -4128,6 +4200,20 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                         values=discriminator_values,
                         field_name_mode=field_name_mode,
                     )
+                    for collapsed_name, collapsed_types, collapsed_mapping in (
+                        (union_name, field.data_type.data_types, mapping),
+                        *collapsed_unions,
+                    ):
+                        self.__record_collapsed_variant_tags(
+                            discriminator_model,
+                            collapsed_name,
+                            collapsed_types[index],
+                            property_name=property_name,
+                            field_name=field_name,
+                            mapping=collapsed_mapping,
+                            values=discriminator_values,
+                            field_name_mode=field_name_mode,
+                        )
                     has_one_literal = False
                     for discriminator_field in discriminator_model.fields:
                         if discriminator_field.name != field_name and (
@@ -4255,13 +4341,12 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             has_imported_literal = any(import_ == IMPORT_LITERAL for import_ in imports)
             if has_imported_literal:  # pragma: no cover
                 imports.append(IMPORT_LITERAL)
-        if not unions:
-            return
-        derived_models: defaultdict[str, list[DataModel]] = defaultdict(list)
-        for derived_model in {id(model): model for model in chain(self.results, models)}.values():
-            for base_model in _find_base_classes(derived_model):
-                derived_models[base_model.path].append(derived_model)
-        _tag_discriminator_unions(unions, derived_models, can_retain_cache=can_retain_cache)
+        if unions:
+            derived_models: defaultdict[str, list[DataModel]] = defaultdict(list)
+            for derived_model in {id(model): model for model in chain(self.results, models)}.values():
+                for base_model in _find_base_classes(derived_model):
+                    derived_models[base_model.path].append(derived_model)
+            _tag_discriminator_unions(unions, derived_models, can_retain_cache=can_retain_cache)
 
     @classmethod
     def _create_set_from_list(cls, data_type: DataType) -> DataType | None:
@@ -4389,7 +4474,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 # A module written earlier names the value, as a field of a collapsed root model does, so it stays.
                 continue
             if isinstance(model, Enum) or self.collapse_reuse_models:
-                self.__redirect_removed_reuse_users(model.reference, cached_model_reference)
+                self.__redirect_removed_reuse_users(model, cached_model)
                 duplicates.append(model)
             elif id(model.reference) in typed_map_values:
                 self.generation_store.redirect_model_reference_users(model, models, cached_model_reference)
@@ -4404,14 +4489,26 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         for duplicate in duplicates:
             models.remove(duplicate)
 
-    def __redirect_removed_reuse_users(self, old_reference: Reference, new_reference: Reference) -> None:
+    def __redirect_removed_reuse_users(self, duplicate: DataModel, canonical: DataModel) -> None:
         """Redirect every user of a duplicate that reuse removes, remembering what each user referred to.
 
         Modules processed earlier already imported the duplicate, so their imports are corrected after processing.
         """
         users = self._removed_reuse_users
-        for user in self.generation_store.redirect_reference_users(old_reference, new_reference):
-            users.setdefault(id(user), (user, []))[1].append(old_reference.path)
+        for user in self.__redirect_collapsed_reuse_users(duplicate, canonical):
+            users.setdefault(id(user), (user, []))[1].append(duplicate.reference.path)
+
+    def __redirect_collapsed_reuse_users(self, duplicate: DataModel, canonical: DataModel) -> list[DataType]:
+        """Redirect every user of a duplicate that collapsed reuse removes to the kept model, remembering the duplicate.
+
+        A discriminated union keeps mapping the duplicate to the tags of its own schema, so they are compared with
+        the tags of the kept model.
+        """
+        users = self.generation_store.redirect_reference_users(duplicate.reference, canonical.reference)
+        for user in users:
+            self._collapsed_reuse_users.setdefault(id(user), (user, duplicate.reference))
+        self._collapsed_reuse_models.setdefault(id(canonical), []).append(duplicate)
+        return users
 
     def __find_duplicate_models_across_modules(
         self,
@@ -4514,7 +4611,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 if module != duplicate_module:
                     continue
                 if isinstance(duplicate_model, Enum) or not supports_inheritance or self.collapse_reuse_models:
-                    self.generation_store.redirect_reference_users(duplicate_model.reference, shared_ref)
+                    self.__redirect_collapsed_reuse_users(duplicate_model, canonical_model)
                     models_to_remove[module].add(duplicate_model)
                 else:
                     inherited_model = duplicate_model.create_reuse_model(shared_ref)
@@ -5147,6 +5244,63 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 variant, property_name, values, union_name, {}
             )
 
+    def __get_collapsed_unions(
+        self, model: DataModel, field: DataModelFieldBase
+    ) -> list[tuple[str, list[DataType], dict[str, str]]]:
+        """Return the discriminated unions that collapsed reuse removed as duplicates of a union field of a model.
+
+        Users of a removed duplicate use the kept model, so their union decodes only the tags the kept one gives.
+        """
+        unions: list[tuple[str, list[DataType], dict[str, str]]] = []
+        if not (duplicates := self._collapsed_reuse_models.get(id(model))):
+            return unions
+        index = model.fields.index(field)
+        for duplicate in duplicates:
+            if len(duplicate.fields) != len(model.fields):  # pragma: no cover
+                continue
+            duplicate_field = duplicate.fields[index]
+            if not isinstance(discriminator := duplicate_field.extras.get("discriminator"), dict) or len(
+                data_types := duplicate_field.data_type.data_types
+            ) != len(field.data_type.data_types):  # pragma: no cover
+                continue
+            name = (
+                duplicate.class_name
+                if self._is_root_model(duplicate)
+                else f"{duplicate.class_name}.{duplicate_field.name}"
+            )
+            unions.append((name, data_types, discriminator.get("mapping", {})))
+        return unions
+
+    def __record_collapsed_variant_tags(  # noqa: PLR0913
+        self,
+        variant: DataModel,
+        union_name: str,
+        data_type: DataType,
+        *,
+        property_name: str,
+        field_name: str,
+        mapping: dict[str, str],
+        values: list[DiscriminatorValue],
+        field_name_mode: Literal["original", "resolved", "either"],
+    ) -> None:
+        """Remember the tags a union maps a variant to when collapsed reuse replaced the model the union names.
+
+        The union maps the removed duplicate to the tags its own schema, the mapping or its name give, which the kept
+        model need not carry. They replace the tags derived from the kept model for that union.
+        """
+        user, reference = self._collapsed_reuse_users.get(id(data_type), (None, None))
+        if user is not data_type or reference is None or not isinstance(removed := reference.source, DataModel):
+            return
+        key = (id(variant), property_name)
+        if set(tags := _get_discriminator_values(removed, field_name, mapping, field_name_mode=field_name_mode)) != set(
+            values
+        ):
+            self._variant_discriminator_tags.setdefault(
+                key, _VariantDiscriminatorTags(variant, property_name, values, union_name, {})
+            ).others[union_name] = tags
+        elif (recorded := self._variant_discriminator_tags.get(key)) is not None:
+            recorded.others.pop(union_name, None)
+
     def __warn_about_dropped_constraints(self, contexts: Sequence[ModuleContext]) -> None:  # noqa: PLR6301
         """Warn once per field whose constraints the output model leaves out on its type."""
         for ctx in contexts:
@@ -5584,6 +5738,37 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 get_inherited_fields(_find_base_classes(model)),
             ):
                 model.clear_imports_cache()
+
+    @classmethod
+    def __fix_tag_opt_out_field_ordering(cls, opted_out: list[DataModel], models: list[DataModel]) -> None:
+        """Make keyword-only the structs that opted out of a tag, and those inheriting from them, when they need it.
+
+        A field named like the inherited tag field is then a field of its own after the inherited ones, as the base
+        declares the tag field as a class variable instead, so a required one can follow a default. Bases are fixed
+        before the structs inheriting from them, as their keyword-only fields are not positional there.
+        """
+        if not opted_out:
+            return
+        opted_out_ids = {id(model) for model in opted_out}
+        for model, ancestors in sorted(
+            (
+                (model, ancestors)
+                for model in models
+                if (ancestors := linearize_data_models(_find_base_classes(model)))
+                and not opted_out_ids.isdisjoint(map(id, (model, *ancestors)))
+            ),
+            key=lambda item: len(item[1]),
+        ):
+            effective_fields: dict[str, tuple[DataModelFieldBase, DataModel, bool | None]] = {
+                field.name: (field, declaring_model, None)
+                for declaring_model in (*reversed(ancestors), model)
+                for field in declaring_model.fields
+                if field.name and not field.is_class_var
+            }
+            if cls.__get_constructor_ordering_conflicts(
+                model, effective_fields, cls._get_constructor_field_policy(model), set()
+            ):
+                model.enable_model_keyword_only()
 
     def __fix_constructor_field_ordering(self, models: list[DataModel]) -> None:
         """Fix constructor field ordering after inherited defaults are resolved."""
@@ -7206,6 +7391,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Build module structure from sorted models."""
         module_models = _group_models_by_module(sorted_data_models.values(), module_split_mode)
         model_to_module_models, model_path_to_module_name = _index_module_models(module_models, module_split_mode)
+        self._collapsed_reuse_models.clear()
+        self._collapsed_reuse_users.clear()
         for _, models in module_models:
             self.__delete_duplicate_models(models)
             self.__replace_duplicate_name_in_module(models)
@@ -8208,6 +8395,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             module_to_import[module_] = ctx.imports
             contexts.append(ctx)
 
+        if self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR:
+            all_models = [model for ctx in contexts for model in ctx.models]
+            self.__fix_tag_opt_out_field_ordering(_tag_fields_of_tagged_bases(all_models), all_models)
         self.__import_removed_reuse_canonicals(
             contexts,
             internal_modules=internal_modules,

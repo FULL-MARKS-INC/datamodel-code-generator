@@ -198,6 +198,7 @@ _NO_CONSTRAINT_KEYWORDS: frozenset[str] = frozenset()
 _DECLARED_STRING_CONSTRAINT_KEYWORDS: frozenset[str] = STRING_KEYWORDS | {"minItems", "maxItems"}
 _ALL_OF_METADATA_FIELDS = ("nullable", "description", "default", "example", "examples", "readOnly", "writeOnly")
 _ALL_OF_REFERENCE_TARGET_EXCLUDED_FIELDS = frozenset({"ref", "enum", "allOf", "anyOf", "oneOf", "custom_type_path"})
+_ALL_OF_REFERENCE_TARGET_EXCLUDED_EXTRAS = frozenset({"const", "x-python-import", "x-python-type"})
 _ALL_OF_REFERENCE_VALUE_EXCLUDED_FIELDS = frozenset({
     "ref",
     "enum",
@@ -251,12 +252,6 @@ _ALLOF_BOUND_CONSTRAINT_FIELDS = frozenset({
     *_INHERITED_PROPERTY_COUNT_CONSTRAINT_FIELDS,
 })
 _INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS = frozenset({"contains", "maxContains", "minContains"})
-_ALL_OF_REFERENCE_TARGET_EXCLUDED_EXTRAS = frozenset({
-    "const",
-    "x-python-import",
-    "x-python-type",
-    *_INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS,
-})
 _RAW_SCHEMA_EXPLICIT_FIELD_EXTRAS_KEY = "_raw_schema_explicit_field_extras"
 _INHERITED_TYPE_SHAPE_FIELDS = frozenset({
     "$dynamicRef",
@@ -4729,15 +4724,24 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 self._dynamic_bindings,
             ) = previous
 
+    def _get_contains_bounds(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
+        """Return the item bounds that the contains keywords of a schema imply, as a schema of those bounds alone."""
+        if not (keys := _INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS & obj.extras.keys()):
+            return None
+        contains = self.SCHEMA_OBJECT_TYPE.model_validate({key: obj.extras[key] for key in keys})
+        return self.SCHEMA_OBJECT_TYPE.model_validate(self._get_array_items_constraints(contains))
+
     def _merge_ref_with_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject:
         """Merge $ref schema with current schema's additional keywords.
 
         JSON Schema 2020-12 allows $ref alongside other keywords,
         which should be merged together.
 
-        The local keywords take precedence over referenced schema. References inside a schema from
-        another document are rebased to their locations first, and a referenced schema that is itself
-        a $ref is merged with its own target, so aliases keep the definition they name.
+        The local keywords take precedence over referenced schema, except a local contains: both contains then
+        apply, so the referenced contains keywords become the item bounds they imply and intersect with the local
+        bounds. References inside a schema from another document are rebased to their locations first, and a
+        referenced schema that is itself a $ref is merged with its own target, so aliases keep the definition they
+        name.
         """
         if not obj.ref:
             return obj
@@ -4759,6 +4763,22 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         current_dict = obj.model_dump(exclude={"ref"}, exclude_unset=True, by_alias=True)
         merged = self._deep_merge(ref_dict, current_dict)
         merged.pop("$ref", None)
+        if (
+            "contains" in obj.extras
+            and (contains_bounds := self._get_contains_bounds(self.SCHEMA_OBJECT_TYPE.model_validate(ref_dict)))
+            is not None
+        ):
+            sibling_contains = _INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS & obj.extras.keys()
+            extras_key = JsonSchemaObject.__extra_key__
+            merged[extras_key] = {
+                **{
+                    key: value
+                    for key, value in merged[extras_key].items()
+                    if key not in _INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS
+                },
+                **{key: obj.extras[key] for key in sibling_contains},
+            }
+            self._merge_schema_constraints(merged, [contains_bounds], intersect=True)
 
         merged_obj = self.SCHEMA_OBJECT_TYPE.model_validate(merged)
         merged_obj.__dict__[_MERGED_REF_TARGET_KEY] = resolved_ref
@@ -7598,7 +7618,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         The siblings constrain the referenced value like siblings of a $ref, so the value is written like a $ref with
         sibling keywords, which keeps the constraints where the referenced type cannot hold them. Both constrain the
         value, so their bounds intersect under every allOf merge mode. The reference is still registered, so model
-        names stay as they were. Outputs that never enforce constraints keep the reference.
+        names stay as they were. Outputs that never enforce constraints keep the reference. The contains keywords of
+        the referenced value become the item bounds they imply, as they do on the referenced type, so they intersect
+        with the siblings, also with contains keywords among them.
         """
         if (
             len(obj.allOf) != 1
@@ -7633,7 +7655,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 exclude={"allOf", *JsonSchemaObject.__constraint_fields__}, exclude_unset=True, by_alias=True
             )
         )
-        self._merge_schema_constraints(merged, [obj], intersect=True)
+        contains_bounds = self._get_contains_bounds(target)
+        self._merge_schema_constraints(
+            merged, [obj] if contains_bounds is None else [obj, contains_bounds], intersect=True
+        )
         return self.SCHEMA_OBJECT_TYPE.model_validate(merged)
 
     def _merge_value_schemas(self, schemas: list[JsonSchemaObject]) -> JsonSchemaObject | None:

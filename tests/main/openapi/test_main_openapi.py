@@ -72,6 +72,7 @@ from tests.main.conftest import (
     TIMESTAMP,
     _generated_model,
     _generated_package_module,
+    _model_json_validator,
     assert_generated_model_json_invalid,
     assert_generated_model_json_validation,
     installed_pydantic_runs_target,
@@ -826,6 +827,76 @@ def test_main_openapi_discriminator_variant_tag_warnings(
     )
 
 
+@pytest.mark.parametrize(
+    ("expected_name", "extra_args"),
+    [
+        ("pydantic_v2.BaseModel", []),
+        ("dataclasses.dataclass", ["--output-model-type", "dataclasses.dataclass"]),
+        ("msgspec.Struct", ["--output-model-type", "msgspec.Struct"]),
+        ("msgspec_tagged_unions", ["--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions"]),
+        ("collapse_pydantic_v2.BaseModel", ["--collapse-reuse-models"]),
+        (
+            "collapse_msgspec_tagged_unions",
+            ["--collapse-reuse-models", "--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions"],
+        ),
+    ],
+)
+def test_main_openapi_discriminator_reuse_variant_mapping(
+    output_file: Path, expected_name: str, extra_args: list[str]
+) -> None:
+    """Give a variant that reuse replaced the tag that a discriminator mapping gives its schema, at runtime too.
+
+    Collapsed reuse keeps the released output, which cannot decode such tags, and warns about each union.
+    """
+    import msgspec
+
+    name = "discriminator_reuse_variant_mapping"
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        run_main_and_assert(
+            input_path=OPEN_API_DATA_PATH / f"{name}.yaml",
+            output_path=output_file,
+            input_file_type="openapi",
+            assert_func=assert_file_content,
+            expected_file=EXPECTED_OPENAPI_PATH / name / f"{expected_name}.py",
+            extra_args=[
+                "--reuse-model",
+                *extra_args,
+                "--disable-timestamp",
+                "--formatters",
+                "builtin",
+                "--target-python-version",
+                "3.10",
+            ],
+            force_exec_validation=True,
+        )
+    assert_output(
+        "".join(f"{record.message}\n" for record in recorded if record.category is UserWarning),
+        EXPECTED_OPENAPI_PATH / name / f"{expected_name}_warnings.txt",
+    )
+    decoded = []
+    with _generated_model(output_file, name, "Dog") as dog:
+        namespace = vars(sys.modules[dog.__module__])
+        for union, payloads in json.loads((DATA_PATH / f"payloads/{name}.json").read_text()).items():
+            if (model := namespace.get(union)) is None:
+                decoded.append(f"{union}: not generated\n")
+                continue
+            for payload in payloads:
+                try:
+                    if "msgspec.Struct" in extra_args:
+                        value = msgspec.json.decode(json.dumps(payload), type=model)
+                    else:
+                        value = _model_json_validator(model)(json.dumps(payload))
+                except (msgspec.ValidationError, pydantic.ValidationError):
+                    result = "rejected"
+                except TypeError:
+                    result = "TypeError"
+                else:
+                    result = type(getattr(value, "root", value)).__name__
+                decoded.append(f"{union} {json.dumps(payload)}: {result}\n")
+    assert_output("".join(decoded), EXPECTED_OPENAPI_PATH / name / f"{expected_name}_decoded.txt")
+
+
 def test_main_openapi_msgspec_union_tag_clashes(output_file: Path) -> None:
     """Report tagged msgspec Struct unions that msgspec refuses: other tag fields, shared or mixed tags, tag False."""
     with warnings.catch_warnings(record=True) as recorded:
@@ -1024,6 +1095,71 @@ def test_main_openapi_msgspec_tagged_unions_modules(output_dir: Path) -> None:
         ],
         force_exec_validation=True,
     )
+
+
+def test_main_openapi_msgspec_tagged_base_subclass_modules(output_dir: Path) -> None:
+    """Tag a struct that declares the tag field of a base that a later module tags, so that it imports."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "discriminator_msgspec_tagged_base_subclass_modules.yaml",
+        output_path=output_dir,
+        input_file_type="openapi",
+        expected_directory=EXPECTED_OPENAPI_PATH / "discriminator" / "msgspec_tagged_base_subclass_modules",
+        extra_args=[
+            "--output-model-type",
+            "msgspec.Struct",
+            "--target-python-version",
+            "3.10",
+            "--disable-timestamp",
+        ],
+        force_exec_validation=True,
+    )
+
+
+def test_main_openapi_msgspec_tagged_base_redefined_field(output_dir: Path) -> None:
+    """Let a struct that redefines the tag field of a tagged base, in its module or another, opt out of the tag.
+
+    The struct keeps the field and decodes it, and a union of it with its base is still reported as undecodable.
+    """
+    import msgspec
+
+    name = "discriminator_msgspec_tagged_base_redefined_field"
+    expected = EXPECTED_OPENAPI_PATH / "discriminator" / "msgspec_tagged_base_redefined_field"
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        run_main_and_assert(
+            input_path=OPEN_API_DATA_PATH / f"{name}.yaml",
+            output_path=output_dir,
+            input_file_type="openapi",
+            expected_directory=expected,
+            extra_args=[
+                "--output-model-type",
+                "msgspec.Struct",
+                "--target-python-version",
+                "3.10",
+                "--disable-timestamp",
+            ],
+            force_exec_validation=True,
+        )
+    assert_output(
+        "".join(
+            f"{message}\n"
+            for message in dict.fromkeys(str(record.message) for record in recorded if record.category is UserWarning)
+        ),
+        expected.with_name(f"{expected.name}_warnings.txt"),
+    )
+    decoded = []
+    for path, payloads in json.loads((DATA_PATH / f"payloads/{name}.json").read_text()).items():
+        module_path, _, model_name = path.rpartition(".")
+        with _generated_package_module(output_dir, module_path) as module:
+            for payload in payloads:
+                try:
+                    result = repr(msgspec.json.decode(json.dumps(payload), type=getattr(module, model_name)))
+                except msgspec.ValidationError:
+                    result = "rejected"
+                except TypeError:
+                    result = "TypeError"
+                decoded.append(f"{path} {json.dumps(payload)}: {result}\n")
+    assert_output("".join(decoded), expected.with_name(f"{expected.name}_decoded.txt"))
 
 
 @pytest.mark.parametrize("entrypoint", ["cli", "api"])
