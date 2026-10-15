@@ -37,7 +37,7 @@ class GetText:
     """Plans of the get_text operation."""
 
     RESPONSES: Final = OperationResponses(
-        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.FieldTextsGetResponse, null=True), '201': Declared(media_type='application/json', model=nullable_results_basemodel_models.FieldTextsGetResponse1, null=True), '202': Declared(media_type='application/json', model=nullable_results_basemodel_models.Thing), '203': Declared(media_type='text/plain', kind='text', model=nullable_results_basemodel_models.FieldTextsGetResponse2), '2XX': Declared(media_type='application/json', null=True), '4XX': Declared(media_type='application/json', model=nullable_results_basemodel_models.Color, null=True), 'default': Declared(media_type='application/problem+json', model=nullable_results_basemodel_models.Pet | None, null=True)},
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.TextsGetResponse, null=True), '201': Declared(media_type='application/json', model=nullable_results_basemodel_models.TextsGetResponse1, null=True), '202': Declared(media_type='application/json', model=nullable_results_basemodel_models.Thing), '203': Declared(media_type='text/plain', kind='text', model=nullable_results_basemodel_models.TextsGetResponse2), '2XX': Declared(media_type='application/json', null=True), '4XX': Declared(media_type='application/json', model=nullable_results_basemodel_models.Color, null=True), 'default': Declared(media_type='application/problem+json', model=nullable_results_basemodel_models.Pet | None, null=True)},
     )
 
 
@@ -55,7 +55,7 @@ class GetList:
     """Plans of the get_list operation."""
 
     RESPONSES: Final = OperationResponses(
-        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.FieldListsGetResponse, null=True)},
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.ListsGetResponse, null=True)},
     )
 
 
@@ -71,7 +71,7 @@ class GetValue:
     """Plans of the get_value operation."""
 
     RESPONSES: Final = OperationResponses(
-        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.FieldValuesGetResponse, null=True)},
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.ValuesGetResponse, null=True)},
     )
 
 
@@ -105,7 +105,7 @@ class GetNote:
     """Plans of the get_note operation."""
 
     RESPONSES: Final = OperationResponses(
-        responses={'200': Declared(media_type='text/plain', kind='text', model=nullable_results_basemodel_models.FieldNotesGetResponse)},
+        responses={'200': Declared(media_type='text/plain', kind='text', model=nullable_results_basemodel_models.NotesGetResponse)},
         primary=200,
     )
 
@@ -114,8 +114,8 @@ class PostMemo:
     """Plans of the post_memo operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_results_basemodel_models.FieldMemosPostRequest | None)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_results_basemodel_models.MemosPostRequest | None)),),
     )
     RESPONSES: Final = OperationResponses(
-        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.FieldMemosPostResponse | None, null=True)},
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.MemosPostResponse | None, null=True)},
     )

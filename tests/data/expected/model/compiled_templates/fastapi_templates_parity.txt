@@ -230,7 +230,7 @@ class Pets(PetsService):
         self,
         *,
         limit: int | None,
-    ) -> models.Pets | HTTPResult[models.Pets | models.FieldPetsGetResponse] | Response:
+    ) -> models.Pets | HTTPResult[models.Pets | models.PetsGetResponse] | Response:
         """
         Handle GET /pets.
         """
@@ -238,7 +238,7 @@ class Pets(PetsService):
 
     async def create_pets(
         self,
-    ) -> None | HTTPResult[models.FieldPetsPostResponse] | Response:
+    ) -> None | HTTPResult[models.PetsPostResponse] | Response:
         """
         Handle POST /pets.
         """

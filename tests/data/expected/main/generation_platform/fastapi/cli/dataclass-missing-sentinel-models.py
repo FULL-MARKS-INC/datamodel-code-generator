@@ -20,8 +20,8 @@ class Contact:
 
 
 @dataclass
-class FieldContactsSearchPostRequest:
+class ContactsSearchPostRequest:
     nickname: constr(pattern=r'^[a-z]+$')
 
 
-FieldContactsSearchPostResponse = TypeAliasType("FieldContactsSearchPostResponse", str)
+ContactsSearchPostResponse = TypeAliasType("ContactsSearchPostResponse", str)

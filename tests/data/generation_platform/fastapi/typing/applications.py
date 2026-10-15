@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, params
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
 from fastapi.routing import APIRoute
-from secured_models import FieldPetsGetResponse
+from secured_models import PetsGetResponse
 from starlette.middleware import Middleware
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -62,7 +62,7 @@ def record(request: Request) -> None:
 
 
 class Pets(PetsService[User]):
-    def list_pets(self, *, principal: User) -> FieldPetsGetResponse:
+    def list_pets(self, *, principal: User) -> PetsGetResponse:
         return store[principal.name]
 
 
@@ -86,7 +86,7 @@ class Default(DefaultService[User]):
         del principal
 
 
-store: dict[str, FieldPetsGetResponse] = {}
+store: dict[str, PetsGetResponse] = {}
 admin_pets: PetsService[Admin] = Pets()
 authorizer: Authorize[User] = authorize
 async_authorizer: AsyncAuthorize[Admin] = authorize_async

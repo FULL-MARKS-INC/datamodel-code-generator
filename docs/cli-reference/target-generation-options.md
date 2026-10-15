@@ -3296,7 +3296,7 @@ pyproject.toml, here as `generate-server = "fastapi"`.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -3437,7 +3437,7 @@ for methods that read the body themselves. `--server-body-modes` overrides it fo
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -3579,7 +3579,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -3719,7 +3719,7 @@ methods. `--server-handler-modes` overrides it for single operations.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -3863,7 +3863,7 @@ table.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4005,7 +4005,7 @@ Each service method takes a `request` keyword argument as well as the operation'
             *,
             request: Request,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4169,7 +4169,7 @@ Choose how the server package lays out its routes (experimental).
             list_pets,
             methods=['GET'],
             status_code=200,
-            response_model=models.FieldPetsGetResponse,
+            response_model=models.PetsGetResponse,
             response_model_by_alias=True,
             response_model_exclude_unset=True,
             operation_id='listPets',
@@ -4393,7 +4393,7 @@ generates.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4534,7 +4534,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4675,7 +4675,7 @@ directory, and the `server-output` key of pyproject.toml is relative to the pypr
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4815,7 +4815,7 @@ generation prints name the package by it; the package imports its own modules re
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -4956,7 +4956,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             page_size: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -5120,7 +5120,7 @@ without a file against the working directory, and against the pyproject.toml dir
             list_pets,
             methods=['GET'],
             status_code=200,
-            response_model=models.FieldPetsGetResponse,
+            response_model=models.PetsGetResponse,
             response_model_by_alias=True,
             response_model_exclude_unset=True,
             operation_id='listPets',
@@ -5344,7 +5344,7 @@ The JSON object, inline or in a file, maps group keys, such as `tag:pets` for th
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """

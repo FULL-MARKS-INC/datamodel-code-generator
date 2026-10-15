@@ -287,7 +287,7 @@ class DefaultResource:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest,
+        body: models.OwnersPostRequest,
         email: UNSET = UNSET,
         nickName: UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -306,7 +306,7 @@ class DefaultResource:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest | UNSET = UNSET,
+        body: models.OwnersPostRequest | UNSET = UNSET,
         email: str | UNSET = UNSET,
         nickName: str | UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -672,7 +672,7 @@ class DefaultWithResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest,
+        body: models.OwnersPostRequest,
         email: UNSET = UNSET,
         nickName: UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -691,7 +691,7 @@ class DefaultWithResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest | UNSET = UNSET,
+        body: models.OwnersPostRequest | UNSET = UNSET,
         email: str | UNSET = UNSET,
         nickName: str | UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -1057,7 +1057,7 @@ class DefaultWithRawResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest,
+        body: models.OwnersPostRequest,
         email: UNSET = UNSET,
         nickName: UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -1076,7 +1076,7 @@ class DefaultWithRawResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest | UNSET = UNSET,
+        body: models.OwnersPostRequest | UNSET = UNSET,
         email: str | UNSET = UNSET,
         nickName: str | UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -1442,7 +1442,7 @@ class DefaultWithStreamingResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest,
+        body: models.OwnersPostRequest,
         email: UNSET = UNSET,
         nickName: UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,
@@ -1461,7 +1461,7 @@ class DefaultWithStreamingResponse:
     def create_owner(
         self,
         *,
-        body: models.FieldOwnersPostRequest | UNSET = UNSET,
+        body: models.OwnersPostRequest | UNSET = UNSET,
         email: str | UNSET = UNSET,
         nickName: str | UNSET = UNSET,
         media_type: Literal['application/json'] | None = None,

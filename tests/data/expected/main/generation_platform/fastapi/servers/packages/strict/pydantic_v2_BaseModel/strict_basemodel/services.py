@@ -57,7 +57,7 @@ class DefaultService(Protocol):
     def upload(
         self,
         *,
-        body: strict_basemodel_models.FieldUploadsPostRequest,
+        body: strict_basemodel_models.UploadsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /uploads.

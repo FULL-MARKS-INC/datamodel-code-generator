@@ -121,7 +121,7 @@ def _add_upload(
 
     def upload(
         *,
-        body: Annotated[strict_basemodel_models.FieldUploadsPostRequest, Depends(contract.Upload.BODY)],
+        body: Annotated[strict_basemodel_models.UploadsPostRequest, Depends(contract.Upload.BODY)],
     ) -> object:
         return dispatch(
             upload_handler(

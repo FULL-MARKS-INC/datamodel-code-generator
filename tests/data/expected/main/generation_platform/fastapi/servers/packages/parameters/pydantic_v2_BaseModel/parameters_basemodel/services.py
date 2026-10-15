@@ -125,13 +125,13 @@ class DefaultService(Protocol):
     def get_item(
         self,
         *,
-        level: parameters_basemodel_models.FieldItemsLevelGetPathLevelParameter,
-        mode: parameters_basemodel_models.FieldItemsLevelGetQueryModeParameter | None,
-        ratio: parameters_basemodel_models.FieldItemsLevelGetQueryRatioParameter | None,
+        level: parameters_basemodel_models.ItemsLevelGetPathLevelParameter,
+        mode: parameters_basemodel_models.ItemsLevelGetQueryModeParameter | None,
+        ratio: parameters_basemodel_models.ItemsLevelGetQueryRatioParameter | None,
         X_Flag: Literal[True] | None,
-        kind: parameters_basemodel_models.FieldItemsLevelGetQueryKindParameter | None,
-        tier: parameters_basemodel_models.FieldItemsLevelGetQueryTierParameter1 | None,
-        levels: list[parameters_basemodel_models.FieldItemsLevelGetQueryLevelsParameterEnum] | None,
+        kind: parameters_basemodel_models.ItemsLevelGetQueryKindParameter | None,
+        tier: parameters_basemodel_models.ItemsLevelGetQueryTierParameter1 | None,
+        levels: list[parameters_basemodel_models.ItemsLevelGetQueryLevelsParameterEnum] | None,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle GET /items/{level}.

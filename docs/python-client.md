@@ -661,6 +661,11 @@ project, a call may give the fields of an object body as keyword arguments inste
 or its fields, never both. See [Body field arguments](python-client-reference.md#body-field-arguments) for which
 bodies take fields and how they are named.
 
+A `$ref` beside only annotations, such as `description` or `x-` extensions, takes the type and constraints of the
+referenced component, as a bare `$ref` does, for a body and for a parameter. The client checks a plain value the
+component's constraints refuse before sending: a call raises a `DecodeError` with the reason `unencodable` instead of
+the server answering 422.
+
 A `format: binary` string is raw bytes, which only a whole body, such as `application/octet-stream`, `image/png` or
 `text/csv`, or a file part of a multipart form can carry; a `text/*` body whose model type is one binary string travels
 as its raw bytes, without a charset decoding or base64, as an `application/octet-stream` one does; the method takes such

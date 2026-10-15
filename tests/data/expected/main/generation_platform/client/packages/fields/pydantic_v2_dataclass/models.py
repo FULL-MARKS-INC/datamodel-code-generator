@@ -66,34 +66,34 @@ class Pet:
     tag: str | None | MISSING = MISSING
 
 
-FieldPetsPostQueryTagParameter = TypeAliasType("FieldPetsPostQueryTagParameter", str)
+PetsPostQueryTagParameter = TypeAliasType("PetsPostQueryTagParameter", str)
 
 
-FieldPetsPetIdPatchPathPetIdParameter = TypeAliasType("FieldPetsPetIdPatchPathPetIdParameter", int)
+PetsPetIdPatchPathPetIdParameter = TypeAliasType("PetsPetIdPatchPathPetIdParameter", int)
 
 
-FieldPetsPetIdVisitsPostPathPetIdParameter = TypeAliasType("FieldPetsPetIdVisitsPostPathPetIdParameter", int)
+PetsPetIdVisitsPostPathPetIdParameter = TypeAliasType("PetsPetIdVisitsPostPathPetIdParameter", int)
 
 
-FieldPetsPetIdOwnerPutPathPetIdParameter = TypeAliasType("FieldPetsPetIdOwnerPutPathPetIdParameter", int)
+PetsPetIdOwnerPutPathPetIdParameter = TypeAliasType("PetsPetIdOwnerPutPathPetIdParameter", int)
 
 
-FieldOwnersPostRequest = TypeAliasType("FieldOwnersPostRequest", Owner | None)
+OwnersPostRequest = TypeAliasType("OwnersPostRequest", Owner | None)
 
 
-FieldPetsPetIdLabelsPutPathPetIdParameter = TypeAliasType("FieldPetsPetIdLabelsPutPathPetIdParameter", int)
+PetsPetIdLabelsPutPathPetIdParameter = TypeAliasType("PetsPetIdLabelsPutPathPetIdParameter", int)
 
 
-FieldPetsPetIdPhotoPutPathPetIdParameter = TypeAliasType("FieldPetsPetIdPhotoPutPathPetIdParameter", int)
+PetsPetIdPhotoPutPathPetIdParameter = TypeAliasType("PetsPetIdPhotoPutPathPetIdParameter", int)
 
 
 @dataclass
-class FieldPetsPetIdPhotoPutRequest:
+class PetsPetIdPhotoPutRequest:
     photo: bytes
     caption: str | MISSING = MISSING
 
 
-FieldPetsPetIdRecordsPutPathPetIdParameter = TypeAliasType("FieldPetsPetIdRecordsPutPathPetIdParameter", int)
+PetsPetIdRecordsPutPathPetIdParameter = TypeAliasType("PetsPetIdRecordsPutPathPetIdParameter", int)
 
 
 @dataclass

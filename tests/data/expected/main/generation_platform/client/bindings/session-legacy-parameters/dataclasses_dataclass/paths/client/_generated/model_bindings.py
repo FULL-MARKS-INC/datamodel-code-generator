@@ -16,13 +16,13 @@ MODELS: Final[dict[type, Model]] = {
     models.Item: Model((Field('x', 'x', omit_none=True),)),
 }
 
-codec_0: Final[DataclassCodec[models.FieldXGetQueryQParameter]] = DataclassCodec(None, MODELS)
+codec_0: Final[DataclassCodec[models.XGetQueryQParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1x/get parameter (request query q)."""
 
-codec_1: Final[DataclassCodec[models.FieldXGetQueryOptionalParameter]] = DataclassCodec(None, MODELS)
+codec_1: Final[DataclassCodec[models.XGetQueryOptionalParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1x/get parameter (request query optional)."""
 
-codec_2: Final[DataclassCodec[models.FieldXGetQueryFilterParameter]] = DataclassCodec(None, MODELS)
+codec_2: Final[DataclassCodec[models.XGetQueryFilterParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1x/get parameter (request query filter application/json)."""
 
 codec_3: Final[DataclassCodec[models.LimitParameter]] = DataclassCodec(None, MODELS)

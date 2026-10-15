@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from pets_models import (
-    FieldLoginPostRequest,
-    FieldPetsGetQueryFilterParameter,
-    FieldPetsGetResponse,
-    FieldProfilePutRequest,
-    FieldUploadPostRequest,
+    LoginPostRequest,
+    PetsGetQueryFilterParameter,
+    PetsGetResponse,
+    ProfilePutRequest,
+    UploadPostRequest,
     Pet,
 )
 from pydantic import MISSING
@@ -19,7 +19,7 @@ from pets.services import DefaultService
 
 
 class Default(DefaultService):
-    def list_pets(self, *, filter: FieldPetsGetQueryFilterParameter | None) -> FieldPetsGetResponse:
+    def list_pets(self, *, filter: PetsGetQueryFilterParameter | None) -> PetsGetResponse:
         owner = None if filter is None or filter.owner is MISSING else filter.owner
         return [Pet(name="a", owner=owner)]
 
@@ -29,13 +29,13 @@ class Default(DefaultService):
         assert_type(body.tag, str)
         return body
 
-    def login(self, *, body: FieldLoginPostRequest) -> None:
+    def login(self, *, body: LoginPostRequest) -> None:
         assert_type(body.note, str | None | MISSING)
 
-    def upload(self, *, body: FieldUploadPostRequest) -> None:
+    def upload(self, *, body: UploadPostRequest) -> None:
         assert_type(body.file, bytes)
 
-    def update_profile(self, *, body: FieldProfilePutRequest) -> None:
+    def update_profile(self, *, body: ProfilePutRequest) -> None:
         assert_type(body.note, str | None | MISSING)
 
 

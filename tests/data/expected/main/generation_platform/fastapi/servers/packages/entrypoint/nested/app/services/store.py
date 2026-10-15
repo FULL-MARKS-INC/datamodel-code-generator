@@ -17,7 +17,7 @@ class Store(StoreService):
 
     def get_inventory(
         self,
-    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
+    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
         """
         Handle GET /store/inventory.
         """

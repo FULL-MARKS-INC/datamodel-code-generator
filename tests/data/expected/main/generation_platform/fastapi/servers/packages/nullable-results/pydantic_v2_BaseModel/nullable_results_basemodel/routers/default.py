@@ -44,7 +44,7 @@ def _add_get_text(
         get_text,
         methods=['GET'],
         status_code=200,
-        response_model=nullable_results_basemodel_models.FieldTextsGetResponse,
+        response_model=nullable_results_basemodel_models.TextsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='getText',
@@ -116,7 +116,7 @@ def _add_get_list(
         get_list,
         methods=['GET'],
         status_code=200,
-        response_model=nullable_results_basemodel_models.FieldListsGetResponse,
+        response_model=nullable_results_basemodel_models.ListsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='getList',
@@ -188,7 +188,7 @@ def _add_get_value(
         get_value,
         methods=['GET'],
         status_code=200,
-        response_model=nullable_results_basemodel_models.FieldValuesGetResponse,
+        response_model=nullable_results_basemodel_models.ValuesGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='getValue',
@@ -352,7 +352,7 @@ def _add_post_memo(
     def post_memo(
         *,
         case: Annotated[str, Query(alias='case')],
-        body: Annotated[nullable_results_basemodel_models.FieldMemosPostRequest | None, Depends(contract.PostMemo.BODY)],
+        body: Annotated[nullable_results_basemodel_models.MemosPostRequest | None, Depends(contract.PostMemo.BODY)],
     ) -> object:
         return dispatch(
             post_memo_handler(
@@ -367,7 +367,7 @@ def _add_post_memo(
         post_memo,
         methods=['POST'],
         status_code=200,
-        response_model=nullable_results_basemodel_models.FieldMemosPostResponse | None,
+        response_model=nullable_results_basemodel_models.MemosPostResponse | None,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='postMemo',

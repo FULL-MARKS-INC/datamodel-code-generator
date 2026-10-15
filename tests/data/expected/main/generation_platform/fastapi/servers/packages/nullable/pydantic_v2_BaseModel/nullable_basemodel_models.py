@@ -28,39 +28,39 @@ class Color(Enum):
     NoneType_None = None
 
 
-class FieldTextsPostRequest(RootModel[constr(max_length=5) | None]):
+class TextsPostRequest(RootModel[constr(max_length=5) | None]):
     root: constr(max_length=5) | None
 
 
-class FieldListsPostRequest(RootModel[list[int] | None]):
+class ListsPostRequest(RootModel[list[int] | None]):
     root: list[int] | None
 
 
-class FieldChoicesPostRequest(RootModel[Item | int | None]):
+class ChoicesPostRequest(RootModel[Item | int | None]):
     root: Item | int | None
 
 
-class FieldCodesPostRequest(RootModel[str | None]):
+class CodesPostRequest(RootModel[str | None]):
     root: str | None
 
 
-class FieldValuesPostRequest(RootModel[Any]):
+class ValuesPostRequest(RootModel[Any]):
     root: Any
 
 
-class FieldIdsPostRequest(RootModel[UUID]):
+class IdsPostRequest(RootModel[UUID]):
     root: UUID
 
 
-class FieldDraftsPostRequest(RootModel[str | None]):
+class DraftsPostRequest(RootModel[str | None]):
     root: str | None
 
 
-class FieldNotesPostRequest(BaseModel):
+class NotesPostRequest(BaseModel):
     text: str
 
 
-class FieldFormsPostRequest(BaseModel):
+class FormsPostRequest(BaseModel):
     name: str
     tags: list[str] | None = None
     count: int | None = None
@@ -70,11 +70,11 @@ class Meta(BaseModel):
     size: int | None = None
 
 
-class FieldUploadsPostRequest(BaseModel):
+class UploadsPostRequest(BaseModel):
     file: bytes
     note: str | None = None
     meta: Meta | None = None
 
 
-class FieldExtendedPostRequest(Item):
+class ExtendedPostRequest(Item):
     note: str | None = None

@@ -11,5 +11,5 @@ from typing import Final
 from .._runtime.model_codecs.pydantic_dataclasses import PydanticDataclassCodec
 
 
-codec_0: Final[PydanticDataclassCodec[models.FieldItemsPostResponseItem]] = PydanticDataclassCodec(models.FieldItemsPostResponseItem)
+codec_0: Final[PydanticDataclassCodec[models.ItemsPostResponseItem]] = PydanticDataclassCodec(models.ItemsPostResponseItem)
 """Codec of /paths/~1items/post response_body (response 200 application/json)."""

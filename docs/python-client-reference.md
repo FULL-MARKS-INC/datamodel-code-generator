@@ -55,7 +55,7 @@ Every keyword is a real keyword-only parameter of the method and of each of its 
         petId: int,
         response_media_type: Literal['text/plain'],
         options: RequestOptions | None = None,
-    ) -> models.FieldPetsPetIdGetResponse: ...
+    ) -> models.PetsPetIdGetResponse: ...
     def get_pet(
         self,
         *,
@@ -99,7 +99,7 @@ Every overload and the implementation take `**kwargs` typed by a TypedDict of th
     def get_pet(
         self,
         **kwargs: Unpack[Operation2Arguments2],
-    ) -> models.FieldPetsPetIdGetResponse: ...
+    ) -> models.PetsPetIdGetResponse: ...
     def get_pet(
         self,
         **kwargs: Unpack[Operation2Arguments3],

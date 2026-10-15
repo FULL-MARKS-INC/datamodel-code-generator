@@ -1,16 +1,16 @@
 # pets pydantic_v2.BaseModel
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip;q=0.5, identity, accept: application/json, user-agent: custom/1, x-client: c, x-trace: t1] b''
-  client headers = FieldPetsGetResponse(root=[])
+  client headers = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip;q=0.5, identity, accept: application/json, user-agent: custom/1, x-view: v1, x-trace: t1, cookie: session=s1] b''
-  view headers under the parameters = FieldPetsGetResponse(root=[])
+  view headers under the parameters = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip;q=0.5, identity, accept: application/json, user-agent: nested/1, x-view: v2, x-trace: t1] b''
-  nested view headers = FieldPetsGetResponse(root=[])
+  nested view headers = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip;q=0.5, identity, accept: application/json, user-agent: custom/1, x-trace: call] b''
-  call headers over the parameters = FieldPetsGetResponse(root=[])
+  call headers over the parameters = PetsGetResponse(root=[])
   > POST https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip;q=0.5, identity, accept: application/json, user-agent: custom/1, x-client: c, content-type: text/plain, content-length: 14] b'{"name":"fox"}'
   body relabeled = Pet(id=1, name='fox', tag=None)
@@ -52,10 +52,10 @@
   raw parts unlabeled by the call = b'ok'
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, x-trace: a<HTAB>b ~] b''
-  parameter text = FieldPetsGetResponse(root=[])
+  parameter text = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, x-trace: t, x-a: a<HTAB>b ~, x-empty: ] b''
-  call header text = FieldPetsGetResponse(root=[])
+  call header text = PetsGetResponse(root=[])
   parameter non-ASCII ! DecodeError: DecodeError(operation_id='listPets', reason='unencodable', location='header.X-Trace') [operation_id='listPets', location=('header', 'X-Trace'), body_bytes=b'', truncated=False, cause=ParameterEncodingError('A header value contains control characters, non-ASCII text, surrounding whitespace, or a list delimiter')] unencodable
   call header non-ASCII ! ConfigurationError: ConfigurationError(reason='invalid_value', field_path='headers.X-A') [field_path=('headers', 'X-A')] invalid_value
   parameter DEL ! DecodeError: DecodeError(operation_id='listPets', reason='unencodable', location='header.X-Trace') [operation_id='listPets', location=('header', 'X-Trace'), body_bytes=b'', truncated=False, cause=ParameterEncodingError('A header value contains control characters, non-ASCII text, surrounding whitespace, or a list delimiter')] unencodable

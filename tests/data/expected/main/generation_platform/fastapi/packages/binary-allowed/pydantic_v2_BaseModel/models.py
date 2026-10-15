@@ -13,18 +13,18 @@ class Record(BaseModel):
     secret: SecretStr | None = None
 
 
-FieldFilesPostQueryDigestParameter = TypeAliasType("FieldFilesPostQueryDigestParameter", Base64Bytes)
+FilesPostQueryDigestParameter = TypeAliasType("FilesPostQueryDigestParameter", Base64Bytes)
 
 
-class FieldFilesPostRequest(RootModel[bytes]):
+class FilesPostRequest(RootModel[bytes]):
     root: bytes
 
 
-class FieldFilesPostResponse(RootModel[bytes]):
+class FilesPostResponse(RootModel[bytes]):
     root: bytes
 
 
-class FieldUploadsPostRequest(BaseModel):
+class UploadsPostRequest(BaseModel):
     file: bytes
     pages: list[bytes] | None = None
     icon: str | None = Field(None, json_schema_extra={'contentMediaType': 'image/png'})

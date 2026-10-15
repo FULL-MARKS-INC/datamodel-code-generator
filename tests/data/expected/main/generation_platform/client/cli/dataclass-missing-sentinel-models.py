@@ -27,7 +27,7 @@ class Pets:
     next_cursor: str | None | MISSING = MISSING
 
 
-FieldPetsGetQueryLimitParameter = TypeAliasType("FieldPetsGetQueryLimitParameter", int)
+PetsGetQueryLimitParameter = TypeAliasType("PetsGetQueryLimitParameter", int)
 
 
-FieldPetsGetQueryCursorParameter = TypeAliasType("FieldPetsGetQueryCursorParameter", str)
+PetsGetQueryCursorParameter = TypeAliasType("PetsGetQueryCursorParameter", str)

@@ -17,8 +17,8 @@ codec_0: Final[MsgspecCodec[models.Item]] = MsgspecCodec(models.Item)
 codec_1: Final[MsgspecCodec[models.Item]] = MsgspecCodec(models.Item)
 """Codec of /paths/~1items/post response_body (response 200 application/json)."""
 
-codec_2: Final[MsgspecCodec[models.FieldInlinePostRequest]] = MsgspecCodec(models.FieldInlinePostRequest)
+codec_2: Final[MsgspecCodec[models.InlinePostRequest]] = MsgspecCodec(models.InlinePostRequest)
 """Codec of /paths/~1inline/post request_body (request application/json)."""
 
-codec_3: Final[MsgspecCodec[models.FieldInlinePostResponse]] = MsgspecCodec(models.FieldInlinePostResponse)
+codec_3: Final[MsgspecCodec[models.InlinePostResponse]] = MsgspecCodec(models.InlinePostResponse)
 """Codec of /paths/~1inline/post response_body (response 200 application/json)."""

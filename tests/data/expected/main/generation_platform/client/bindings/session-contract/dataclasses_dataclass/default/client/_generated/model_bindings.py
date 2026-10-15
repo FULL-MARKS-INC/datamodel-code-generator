@@ -21,23 +21,23 @@ MODELS: Final[dict[type, Model]] = {
         )
     ),
     models.Problem: Model((Field('message', 'message'),)),
-    models.FieldRecordsIdPostQueryFilterParameter: Model(
+    models.RecordsIdPostQueryFilterParameter: Model(
         (Field('active', 'active', omit_none=True),)
     ),
 }
 
-codec_0: Final[DataclassCodec[models.FieldRecordsIdPostHeaderTraceParameter]] = (
+codec_0: Final[DataclassCodec[models.RecordsIdPostHeaderTraceParameter]] = (
     DataclassCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post parameter (request header trace)."""
 
-codec_1: Final[DataclassCodec[models.FieldRecordsIdPostQueryFilterParameter]] = (
-    DataclassCodec(models.FieldRecordsIdPostQueryFilterParameter, MODELS)
+codec_1: Final[DataclassCodec[models.RecordsIdPostQueryFilterParameter]] = (
+    DataclassCodec(models.RecordsIdPostQueryFilterParameter, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post parameter (request query filter application/json)."""
 
-codec_2: Final[DataclassCodec[models.FieldRecordsIdPostPathIdParameter]] = (
-    DataclassCodec(None, MODELS)
+codec_2: Final[DataclassCodec[models.RecordsIdPostPathIdParameter]] = DataclassCodec(
+    None, MODELS
 )
 """Codec of /paths/~1records~1{id}/post parameter (request path id)."""
 
@@ -56,12 +56,12 @@ codec_6: Final[DataclassCodec[models.Record]] = DataclassCodec(models.Record, MO
 codec_7: Final[DataclassCodec[models.Record]] = DataclassCodec(models.Record, MODELS)
 """Codec of /paths/~1records~1{id}/post response_body (response 201 application/json)."""
 
-codec_8: Final[DataclassCodec[models.FieldRecordsIdPostResponse201LocationHeader]] = (
+codec_8: Final[DataclassCodec[models.RecordsIdPostResponse201LocationHeader]] = (
     DataclassCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post response_header (response Location 201)."""
 
-codec_9: Final[DataclassCodec[models.FieldRecordsIdPostResponse201XLimitHeader]] = (
+codec_9: Final[DataclassCodec[models.RecordsIdPostResponse201XLimitHeader]] = (
     DataclassCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post response_header (response X-Limit 201)."""
@@ -69,8 +69,8 @@ codec_9: Final[DataclassCodec[models.FieldRecordsIdPostResponse201XLimitHeader]]
 codec_10: Final[DataclassCodec[models.Problem]] = DataclassCodec(models.Problem, MODELS)
 """Codec of /paths/~1records~1{id}/post response_body (response 4XX application/problem+json)."""
 
-codec_11: Final[DataclassCodec[models.FieldRecordsIdPostPathIdParameter]] = (
-    DataclassCodec(None, MODELS)
+codec_11: Final[DataclassCodec[models.RecordsIdPostPathIdParameter]] = DataclassCodec(
+    None, MODELS
 )
 """Codec of /paths/~1records~1{id}/get parameter (request path id)."""
 

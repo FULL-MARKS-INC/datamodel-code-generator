@@ -11,5 +11,5 @@ from typing import Final
 from .._runtime.model_codecs.stdlib_typeddicts import TypedDictCodec
 
 
-codec_0: Final[TypedDictCodec[models.FieldItemsPostRequestItem]] = TypedDictCodec(None, {})
+codec_0: Final[TypedDictCodec[models.ItemsPostRequestItem]] = TypedDictCodec(None, {})
 """Codec of /paths/~1items/post request_body (request application/json)."""

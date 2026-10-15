@@ -1,10 +1,10 @@
 # unions-mapped pydantic_v2.BaseModel
   > GET https://api.example.com/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  cat = FieldPetsGetResponse(root=Cat(kind='cat', lives=9))
+  cat = PetsGetResponse(root=Cat(kind='cat', lives=9))
   > GET https://api.example.com/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  dog = FieldPetsGetResponse(root=Dog(kind='dog', good=True))
+  dog = PetsGetResponse(root=Dog(kind='dog', good=True))
 # unions-mapped pydantic_v2.dataclass, dataclasses.dataclass
   > GET https://api.example.com/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''

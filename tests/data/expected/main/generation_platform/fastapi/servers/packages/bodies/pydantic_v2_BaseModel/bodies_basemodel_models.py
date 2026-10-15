@@ -60,47 +60,47 @@ class Choices(BaseModel):
     lists: list[int] | list[str] | None = None
 
 
-class FieldProfilesPostRequest(BaseModel):
+class ProfilesPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     a: int | None = None
 
 
-class FieldProfilesPostRequest1(BaseModel):
+class ProfilesPostRequest1(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     b: str | None = None
 
 
-class FieldVariantsPostRequest(BaseModel):
+class VariantsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     a: int | None = None
 
 
-class FieldVariantsPostRequest1(BaseModel):
+class VariantsPostRequest1(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     c: bool | None = None
 
 
-class FieldVariantsPostRequest2(BaseModel):
+class VariantsPostRequest2(BaseModel):
     tags: list[str] | None = None
 
 
-class FieldDocumentsPutRequest(RootModel[constr(max_length=5)]):
+class DocumentsPutRequest(RootModel[constr(max_length=5)]):
     root: constr(max_length=5)
 
 
-class FieldArchivesPutRequest(RootModel[constr(max_length=5)]):
+class ArchivesPutRequest(RootModel[constr(max_length=5)]):
     root: constr(max_length=5)
 
 
-class FieldFormsPostRequest(BaseModel):
+class FormsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -112,28 +112,28 @@ class FieldFormsPostRequest(BaseModel):
     count: int | None = None
 
 
-class FieldNativeFormsPostRequest(BaseModel):
+class NativeFormsPostRequest(BaseModel):
     name: str
     count: int | None = 1
 
 
-class FieldUploadsPostRequest(BaseModel):
+class UploadsPostRequest(BaseModel):
     file: bytes
     note: str | None = None
 
 
-class FieldSearchesPostRequest(BaseModel):
+class SearchesPostRequest(BaseModel):
     filter: Filter
     filters: list[Filter] | None = None
     tags: list[str] | None = None
     limit: int | None = None
 
 
-class FieldChoiceFilesPostRequest(Choices):
+class ChoiceFilesPostRequest(Choices):
     file: bytes | None = None
 
 
-class FieldExtrasPostRequest(BaseModel):
+class ExtrasPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -143,7 +143,7 @@ class FieldExtrasPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraListsPostRequest(BaseModel):
+class ExtraListsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -153,7 +153,7 @@ class FieldExtraListsPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraCountsPostRequest(BaseModel):
+class ExtraCountsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -163,7 +163,7 @@ class FieldExtraCountsPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraFilesPostRequest(BaseModel):
+class ExtraFilesPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -174,7 +174,7 @@ class FieldExtraFilesPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraScoresPostRequest(BaseModel):
+class ExtraScoresPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -184,31 +184,31 @@ class FieldExtraScoresPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraBasesPostRequest(Others):
+class ExtraBasesPostRequest(Others):
     name: str | None = None
 
 
-class FieldClosedFormsPostRequest(BaseModel):
+class ClosedFormsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     name: str | None = None
 
 
-class FieldClosedPartsPostRequest(BaseModel):
+class ClosedPartsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     name: str | None = None
 
 
-class FieldNotesPostRequest(RootModel[Item | None]):
+class NotesPostRequest(RootModel[Item | None]):
     root: Item | None
 
 
-class FieldLabelsPostRequest(RootModel[constr(max_length=5) | None]):
+class LabelsPostRequest(RootModel[constr(max_length=5) | None]):
     root: constr(max_length=5) | None
 
 
-class FieldRawPostRequest(BaseModel):
+class RawPostRequest(BaseModel):
     pass

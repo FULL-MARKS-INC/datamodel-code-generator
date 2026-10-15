@@ -37,7 +37,7 @@ def _add_list_pets(
         ] = 20,
         tags: Annotated[list[str] | None, Query(alias="tags")] = None,
         kind: Annotated[
-            pets_type_checking_basemodel_models.FieldPetsGetQueryKindParameter | None,
+            pets_type_checking_basemodel_models.PetsGetQueryKindParameter | None,
             Query(alias="kind"),
         ] = None,
         X_Request_Id: Annotated[
@@ -63,7 +63,7 @@ def _add_list_pets(
         list_pets,
         methods=["GET"],
         status_code=200,
-        response_model=pets_type_checking_basemodel_models.FieldPetsGetResponse,
+        response_model=pets_type_checking_basemodel_models.PetsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id="listPets",
@@ -135,7 +135,7 @@ def _add_list_my_pets(
         list_my_pets,
         methods=["GET"],
         status_code=200,
-        response_model=pets_type_checking_basemodel_models.FieldPetsMineGetResponse,
+        response_model=pets_type_checking_basemodel_models.PetsMineGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id="listMyPets",

@@ -16,9 +16,9 @@ class Contact(BaseModel):
     nickname: constr(pattern=r'^[a-z]+$') | MISSING = MISSING
 
 
-class FieldContactsSearchPostRequest(BaseModel):
+class ContactsSearchPostRequest(BaseModel):
     nickname: constr(pattern=r'^[a-z]+$')
 
 
-class FieldContactsSearchPostResponse(RootModel[str]):
+class ContactsSearchPostResponse(RootModel[str]):
     root: str

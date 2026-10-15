@@ -21,21 +21,21 @@ MODELS: Final[dict[type, Model]] = {
         )
     ),
     models.Problem: Model((Field('message', 'message'),)),
-    models.FieldRecordsIdPostQueryFilterParameter: Model((Field('active', 'active'),)),
+    models.RecordsIdPostQueryFilterParameter: Model((Field('active', 'active'),)),
 }
 
-codec_0: Final[TypedDictCodec[models.FieldRecordsIdPostHeaderTraceParameter]] = (
+codec_0: Final[TypedDictCodec[models.RecordsIdPostHeaderTraceParameter]] = (
     TypedDictCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post parameter (request header trace)."""
 
-codec_1: Final[TypedDictCodec[models.FieldRecordsIdPostQueryFilterParameter]] = (
-    TypedDictCodec(models.FieldRecordsIdPostQueryFilterParameter, MODELS)
+codec_1: Final[TypedDictCodec[models.RecordsIdPostQueryFilterParameter]] = (
+    TypedDictCodec(models.RecordsIdPostQueryFilterParameter, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post parameter (request query filter application/json)."""
 
-codec_2: Final[TypedDictCodec[models.FieldRecordsIdPostPathIdParameter]] = (
-    TypedDictCodec(None, MODELS)
+codec_2: Final[TypedDictCodec[models.RecordsIdPostPathIdParameter]] = TypedDictCodec(
+    None, MODELS
 )
 """Codec of /paths/~1records~1{id}/post parameter (request path id)."""
 
@@ -54,12 +54,12 @@ codec_6: Final[TypedDictCodec[models.Record]] = TypedDictCodec(models.Record, MO
 codec_7: Final[TypedDictCodec[models.Record]] = TypedDictCodec(models.Record, MODELS)
 """Codec of /paths/~1records~1{id}/post response_body (response 201 application/json)."""
 
-codec_8: Final[TypedDictCodec[models.FieldRecordsIdPostResponse201LocationHeader]] = (
+codec_8: Final[TypedDictCodec[models.RecordsIdPostResponse201LocationHeader]] = (
     TypedDictCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post response_header (response Location 201)."""
 
-codec_9: Final[TypedDictCodec[models.FieldRecordsIdPostResponse201XLimitHeader]] = (
+codec_9: Final[TypedDictCodec[models.RecordsIdPostResponse201XLimitHeader]] = (
     TypedDictCodec(None, MODELS)
 )
 """Codec of /paths/~1records~1{id}/post response_header (response X-Limit 201)."""
@@ -67,8 +67,8 @@ codec_9: Final[TypedDictCodec[models.FieldRecordsIdPostResponse201XLimitHeader]]
 codec_10: Final[TypedDictCodec[models.Problem]] = TypedDictCodec(models.Problem, MODELS)
 """Codec of /paths/~1records~1{id}/post response_body (response 4XX application/problem+json)."""
 
-codec_11: Final[TypedDictCodec[models.FieldRecordsIdPostPathIdParameter]] = (
-    TypedDictCodec(None, MODELS)
+codec_11: Final[TypedDictCodec[models.RecordsIdPostPathIdParameter]] = TypedDictCodec(
+    None, MODELS
 )
 """Codec of /paths/~1records~1{id}/get parameter (request path id)."""
 

@@ -20,29 +20,29 @@ class Filter:
 
 
 @dataclass
-class FieldFormsPostRequest:
+class FormsPostRequest:
     name: str
     count: int | None = 1
     tags: list[str] | MISSING = MISSING
 
 
-FieldNotesPostRequest = TypeAliasType("FieldNotesPostRequest", dict[str, str])
+NotesPostRequest = TypeAliasType("NotesPostRequest", dict[str, str])
 
 
 @dataclass
-class FieldUploadsPostRequest:
+class UploadsPostRequest:
     file: bytes
     note: str | MISSING = MISSING
 
 
 @dataclass
-class FieldBatchesPostRequest:
+class BatchesPostRequest:
     files: list[bytes]
     label: str | MISSING = MISSING
 
 
 @dataclass
-class FieldSearchesPostRequest:
+class SearchesPostRequest:
     filter: Filter
     filters: list[Filter] | MISSING = MISSING
     tags: list[str] | MISSING = MISSING
@@ -50,35 +50,35 @@ class FieldSearchesPostRequest:
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtrasPostRequest:
+class ExtrasPostRequest:
     name: str | MISSING = MISSING
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtraListsPostRequest:
+class ExtraListsPostRequest:
     name: str | MISSING = MISSING
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtraScoresPostRequest:
+class ExtraScoresPostRequest:
     name: str | MISSING = MISSING
 
 
 @dataclass
-class FieldExtraBasesPostRequest(Others):
+class ExtraBasesPostRequest(Others):
     name: str | MISSING = MISSING
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtraPatternsPostRequest:
+class ExtraPatternsPostRequest:
     name: str | MISSING = MISSING
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtraProfilesPostRequest:
+class ExtraProfilesPostRequest:
     name: str | MISSING = MISSING
 
 
 @dataclass(config=ConfigDict(extra='allow'))
-class FieldExtraProfilesPostRequest1:
+class ExtraProfilesPostRequest1:
     count: int | MISSING = MISSING

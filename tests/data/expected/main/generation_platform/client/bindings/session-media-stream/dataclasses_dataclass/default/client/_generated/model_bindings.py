@@ -11,5 +11,5 @@ from typing import Final
 from .._runtime.model_codecs.stdlib_dataclasses import DataclassCodec
 
 
-codec_0: Final[DataclassCodec[models.FieldItemsPostRequestItem]] = DataclassCodec(None, {})
+codec_0: Final[DataclassCodec[models.ItemsPostRequestItem]] = DataclassCodec(None, {})
 """Codec of /paths/~1items/post request_body (request application/json)."""

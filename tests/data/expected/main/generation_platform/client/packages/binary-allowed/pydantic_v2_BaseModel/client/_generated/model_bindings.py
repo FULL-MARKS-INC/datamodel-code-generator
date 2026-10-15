@@ -11,7 +11,7 @@ import models
 
 from .._runtime.model_codecs.pydantic_models import PydanticCodec
 
-codec_0: Final[PydanticCodec[models.FieldFilesPostQueryDigestParameter]] = PydanticCodec(models.FieldFilesPostQueryDigestParameter)
+codec_0: Final[PydanticCodec[models.FilesPostQueryDigestParameter]] = PydanticCodec(models.FilesPostQueryDigestParameter)
 """Codec of /paths/~1files/post parameter (request query digest)."""
 
 codec_1: Final[PydanticCodec[models.Record]] = PydanticCodec(models.Record)

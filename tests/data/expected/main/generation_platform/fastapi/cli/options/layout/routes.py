@@ -44,7 +44,7 @@ def _add_list_pets(
         list_pets,
         methods=['GET'],
         status_code=200,
-        response_model=models.FieldPetsGetResponse,
+        response_model=models.PetsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listPets',

@@ -12,11 +12,7 @@ from annotated_types import MultipleOf
 from fastapi import APIRouter, Depends, Path, Query, params
 from fastapi.responses import Response
 from pydantic import Base64Str, Field, StringConstraints
-from spellings_exact_basemodel_models import (
-    FieldCountsGetResponse,
-    FieldPetsGetResponse,
-    Pet,
-)
+from spellings_exact_basemodel_models import CountsGetResponse, Pet, PetsGetResponse
 
 from .._generated import contract
 from .._generated.contract import OperationDependencies
@@ -52,7 +48,7 @@ def _add_list_pets(
         list_pets,
         methods=['GET'],
         status_code=200,
-        response_model=FieldPetsGetResponse,
+        response_model=PetsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listPets',
@@ -89,7 +85,7 @@ def _add_list_counts(
         list_counts,
         methods=['GET'],
         status_code=200,
-        response_model=FieldCountsGetResponse,
+        response_model=CountsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listCounts',

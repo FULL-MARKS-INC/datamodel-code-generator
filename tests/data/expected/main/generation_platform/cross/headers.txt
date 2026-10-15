@@ -5,4 +5,4 @@ get_text
   > GET /text
   get_text()
   < 204 -
-  = (FieldTextGetResponse204XNameHeader(root='café'), FieldTextGetResponse204XTagsHeader(root=['café', 'b']), ('café',), ('café,b',))
+  = (TextGetResponse204XNameHeader(root='café'), TextGetResponse204XTagsHeader(root=['café', 'b']), ('café',), ('café,b',))

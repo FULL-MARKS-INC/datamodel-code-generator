@@ -26,27 +26,27 @@ service DefaultService without its methods: TypeError
 > POST /accounts
 < 422 application/json [{"type": "missing", "loc": ["body"]}]
 > POST /profiles
-  post_profile(body=FieldProfilesPostRequest1(b='x'), media_type='application/json; profile=b')
+  post_profile(body=ProfilesPostRequest1(b='x'), media_type='application/json; profile=b')
 < 204 - b''
 > POST /profiles
-  post_profile(body=FieldProfilesPostRequest(a=1), media_type='application/json; profile=a')
+  post_profile(body=ProfilesPostRequest(a=1), media_type='application/json; profile=a')
 < 204 - b''
 > POST /profiles
 < 422 application/json [{"type": "extra_forbidden", "loc": ["body", "b"]}]
 > POST /profiles
-  post_profile(body=FieldProfilesPostRequest(a=2), media_type='application/json; profile=a')
+  post_profile(body=ProfilesPostRequest(a=2), media_type='application/json; profile=a')
 < 204 - b''
 > POST /profiles
   post_profile(body=None, media_type=None)
 < 204 - b''
 > POST /variants
-  post_variant(body=FieldVariantsPostRequest1(c=True), media_type='application/json')
+  post_variant(body=VariantsPostRequest1(c=True), media_type='application/json')
 < 204 - b''
 > POST /variants
-  post_variant(body=FieldVariantsPostRequest(a=1), media_type='application/json; profile=v1')
+  post_variant(body=VariantsPostRequest(a=1), media_type='application/json; profile=v1')
 < 204 - b''
 > POST /variants
-  post_variant(body=FieldVariantsPostRequest2(tags=['a', 'b']), media_type='application/x-www-form-urlencoded')
+  post_variant(body=VariantsPostRequest2(tags=['a', 'b']), media_type='application/x-www-form-urlencoded')
 < 204 - b''
 > PUT /documents
 < 422 application/json [{"type": "missing", "loc": ["body"]}]
@@ -59,18 +59,18 @@ service DefaultService without its methods: TypeError
   put_document(body=Item(name='b'), media_type='application/vnd.item+json')
 < 204 - b''
 > PUT /documents
-  put_document(body=FieldDocumentsPutRequest(root='hello'), media_type='text/markdown')
+  put_document(body=DocumentsPutRequest(root='hello'), media_type='text/markdown')
 < 204 - b''
 > PUT /documents
 < 422 application/json [{"type": "string_too_long", "loc": ["body"]}]
 > PUT /documents
-  put_document(body=FieldDocumentsPutRequest(root='ÿ'), media_type='text/plain')
+  put_document(body=DocumentsPutRequest(root='ÿ'), media_type='text/plain')
 < 204 - b''
 > PUT /blobs
   put_blob(body=b'raw bytes')
 < 204 - b''
 > PUT /archives
-  put_archive(body=FieldArchivesPutRequest(root='hello'), media_type='text/plain')
+  put_archive(body=ArchivesPutRequest(root='hello'), media_type='text/plain')
 < 204 - b''
 > PUT /archives
 < 422 application/json [{"type": "string_too_long", "loc": ["body"]}]
@@ -78,18 +78,18 @@ service DefaultService without its methods: TypeError
   put_archive(body=b'PK', media_type='application/zip')
 < 204 - b''
 > POST /forms
-  post_form(body=FieldFormsPostRequest(name='a', tags=['x', 'y'], count=2, other=3))
+  post_form(body=FormsPostRequest(name='a', tags=['x', 'y'], count=2, other=3))
 < 204 - b''
 > POST /forms
 < 422 application/json [{"type": "int_parsing", "loc": ["body", "count"]}]
 > POST /forms
-  post_form(body=FieldFormsPostRequest(name='b', tags=None, count=None))
+  post_form(body=FormsPostRequest(name='b', tags=None, count=None))
 < 204 - b''
 > POST /native-forms
-  post_native_form(body=FieldNativeFormsPostRequest(name='a', count=1))
+  post_native_form(body=NativeFormsPostRequest(name='a', count=1))
 < 204 - b''
 > POST /uploads
-  upload(body=FieldUploadsPostRequest(file=b'file body', note='n'))
+  upload(body=UploadsPostRequest(file=b'file body', note='n'))
 < 204 - b''
 > POST /checks
   post_check(body=Check(code=12, scores=[1, 2]))
@@ -110,13 +110,13 @@ service DefaultService without its methods: TypeError
   post_note(body=None)
 < 204 - b''
 > POST /notes
-  post_note(body=FieldNotesPostRequest(root=Item(name='a')))
+  post_note(body=NotesPostRequest(root=Item(name='a')))
 < 204 - b''
 > POST /labels
-  post_label(body=FieldLabelsPostRequest(root=None))
+  post_label(body=LabelsPostRequest(root=None))
 < 204 - b''
 > POST /labels
-  post_label(body=FieldLabelsPostRequest(root='a'))
+  post_label(body=LabelsPostRequest(root='a'))
 < 204 - b''
 > POST /labels
 < 422 application/json [{"type": "missing", "loc": ["body"]}]

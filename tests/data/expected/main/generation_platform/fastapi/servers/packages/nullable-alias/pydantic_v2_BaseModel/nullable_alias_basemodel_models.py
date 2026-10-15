@@ -26,34 +26,34 @@ class ColorEnum(StrEnum):
 Color = TypeAliasType("Color", ColorEnum | None)
 
 
-FieldTextsPostRequest = TypeAliasType(
-    "FieldTextsPostRequest", Annotated[str, Field(max_length=5)] | None
+TextsPostRequest = TypeAliasType(
+    "TextsPostRequest", Annotated[str, Field(max_length=5)] | None
 )
 
 
-FieldListsPostRequest = TypeAliasType("FieldListsPostRequest", list[int] | None)
+ListsPostRequest = TypeAliasType("ListsPostRequest", list[int] | None)
 
 
-FieldChoicesPostRequest = TypeAliasType("FieldChoicesPostRequest", Item | int | None)
+ChoicesPostRequest = TypeAliasType("ChoicesPostRequest", Item | int | None)
 
 
-FieldValuesPostRequest = TypeAliasType("FieldValuesPostRequest", Any)
+ValuesPostRequest = TypeAliasType("ValuesPostRequest", Any)
 
 
-FieldIdsPostRequest = TypeAliasType("FieldIdsPostRequest", UUID)
+IdsPostRequest = TypeAliasType("IdsPostRequest", UUID)
 
 
-FieldDraftsPostRequest = TypeAliasType("FieldDraftsPostRequest", str | None)
+DraftsPostRequest = TypeAliasType("DraftsPostRequest", str | None)
 
 
 class Reply(BaseModel):
     text: str | None = None
 
 
-class FieldNotesPostRequest(BaseModel):
+class NotesPostRequest(BaseModel):
     text: str
     replies: list[Reply] | None = None
 
 
-class FieldExtendedPostRequest(Item):
+class ExtendedPostRequest(Item):
     note: str | None = None

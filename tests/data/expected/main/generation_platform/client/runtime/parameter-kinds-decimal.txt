@@ -35,37 +35,37 @@
   send level of 2 = None
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Amount '12345678901234567890.123' = FieldValuesGetResponse204XAmountHeader(root=Decimal('12345678901234567890.123'))
+  read X-Amount '12345678901234567890.123' = ValuesGetResponse204XAmountHeader(root=Decimal('12345678901234567890.123'))
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Amount '1.50' = FieldValuesGetResponse204XAmountHeader(root=Decimal('1.50'))
+  read X-Amount '1.50' = ValuesGetResponse204XAmountHeader(root=Decimal('1.50'))
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Amounts '12345678901234567890.123,1.50' = FieldValuesGetResponse204XAmountsHeader(root=[Decimal('12345678901234567890.123'), Decimal('1.50')])
+  read X-Amounts '12345678901234567890.123,1.50' = ValuesGetResponse204XAmountsHeader(root=[Decimal('12345678901234567890.123'), Decimal('1.50')])
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Step '12345678901234567890.12' = FieldValuesGetResponse204XStepHeader(root=Decimal('12345678901234567890.12'))
+  read X-Step '12345678901234567890.12' = ValuesGetResponse204XStepHeader(root=Decimal('12345678901234567890.12'))
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '2.2' = <FieldValuesGetResponse204XRatioHeader.number_2_2: 2.2>
+  read X-Ratio '2.2' = <ValuesGetResponse204XRatioHeader.number_2_2: 2.2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '0.5' = <FieldValuesGetResponse204XRatioHeader.number_0_5: 0.5>
+  read X-Ratio '0.5' = <ValuesGetResponse204XRatioHeader.number_0_5: 0.5>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Level '2' = <FieldValuesGetResponse204XLevelHeader.integer_2: 2>
+  read X-Level '2' = <ValuesGetResponse204XLevelHeader.integer_2: 2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Count '12' = FieldValuesGetResponse204XCountHeader(root=12)
+  read X-Count '12' = ValuesGetResponse204XCountHeader(root=12)
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Flag 'true' = FieldValuesGetResponse204XFlagHeader(root=True)
+  read X-Flag 'true' = ValuesGetResponse204XFlagHeader(root=True)
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Mixed '5' = FieldValuesGetResponse204XMixedHeader(root='5')
+  read X-Mixed '5' = ValuesGetResponse204XMixedHeader(root='5')
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Mixed 'abc' = FieldValuesGetResponse204XMixedHeader(root='abc')
+  read X-Mixed 'abc' = ValuesGetResponse204XMixedHeader(root='abc')
   > POST https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/x-www-form-urlencoded, multipart/form-data, content-type: application/x-www-form-urlencoded, content-length: 108] b'amount=12345678901234567890.123&amounts=1.50&amounts=2&step=0.25&level=2&count=12&flag=true&mixed=5&either=5'
   send fields with 5 = Values(amount=None, amounts=None, step=None, level=None, count=None, flag=None, mixed='5', either='7')
@@ -136,13 +136,13 @@
   read X-Step '12345678901234567890.12' = Decimal('12345678901234567890.12')
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '2.2' = <FieldValuesGetResponse204XRatioHeader.number_2_2: 2.2>
+  read X-Ratio '2.2' = <ValuesGetResponse204XRatioHeader.number_2_2: 2.2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '0.5' = <FieldValuesGetResponse204XRatioHeader.number_0_5: 0.5>
+  read X-Ratio '0.5' = <ValuesGetResponse204XRatioHeader.number_0_5: 0.5>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Level '2' = <FieldValuesGetResponse204XLevelHeader.integer_2: 2>
+  read X-Level '2' = <ValuesGetResponse204XLevelHeader.integer_2: 2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
   read X-Count '12' = 12
@@ -225,13 +225,13 @@
   read X-Step '12345678901234567890.12' = 1.2345678901234567e+19
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '2.2' = <FieldValuesGetResponse204XRatioHeader.number_2_2: 2.2>
+  read X-Ratio '2.2' = <ValuesGetResponse204XRatioHeader.number_2_2: 2.2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '0.5' = <FieldValuesGetResponse204XRatioHeader.number_0_5: 0.5>
+  read X-Ratio '0.5' = <ValuesGetResponse204XRatioHeader.number_0_5: 0.5>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Level '2' = <FieldValuesGetResponse204XLevelHeader.integer_2: 2>
+  read X-Level '2' = <ValuesGetResponse204XLevelHeader.integer_2: 2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
   read X-Count '12' = 12
@@ -383,7 +383,7 @@
   > GET https://api.example.com/values?step=0.25
     [host: api.example.com, accept-encoding: gzip, deflate] b''
   send step of 0.25 = None
-  send ratio of 2.2 ! TypeError: Enums must contain either all str or all int values - type `<enum 'FieldValuesGetQueryRatioParameter'>` is not supported []
+  send ratio of 2.2 ! TypeError: Enums must contain either all str or all int values - type `<enum 'ValuesGetQueryRatioParameter'>` is not supported []
   > GET https://api.example.com/values?level=2
     [host: api.example.com, accept-encoding: gzip, deflate] b''
   send level of 2 = None
@@ -401,13 +401,13 @@
   read X-Step '12345678901234567890.12' = 1.2345678901234567e+19
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '2.2' ! TypeError: Enums must contain either all str or all int values - type `<enum 'FieldValuesGetResponse204XRatioHeader'>` is not supported []
+  read X-Ratio '2.2' ! TypeError: Enums must contain either all str or all int values - type `<enum 'ValuesGetResponse204XRatioHeader'>` is not supported []
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Ratio '0.5' ! TypeError: Enums must contain either all str or all int values - type `<enum 'FieldValuesGetResponse204XRatioHeader'>` is not supported []
+  read X-Ratio '0.5' ! TypeError: Enums must contain either all str or all int values - type `<enum 'ValuesGetResponse204XRatioHeader'>` is not supported []
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
-  read X-Level '2' = <FieldValuesGetResponse204XLevelHeader.integer_2: 2>
+  read X-Level '2' = <ValuesGetResponse204XLevelHeader.integer_2: 2>
   > GET https://api.example.com/values
     [host: api.example.com, accept-encoding: gzip, deflate] b''
   read X-Count '12' = 12

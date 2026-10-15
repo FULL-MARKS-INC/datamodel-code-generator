@@ -7,7 +7,7 @@ app standard
   get_greeting(mode=absent)
 < 200 application/json "hello"
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"]}]
@@ -44,10 +44,10 @@ app standard
   get_problem(mode=absent)
 < 200 application/problem+json {"message":"Gone"}
 > GET /problems?mode=result
-  get_problem(mode=<FieldProblemsGetQueryModeParameter.result: 'result'>)
+  get_problem(mode=<ProblemsGetQueryModeParameter.result: 'result'>)
 < 200 application/json {"id":2,"name":"Rex"}
 > GET /problems?mode=invalid
-  get_problem(mode=<FieldProblemsGetQueryModeParameter.invalid: 'invalid'>)
+  get_problem(mode=<ProblemsGetQueryModeParameter.invalid: 'invalid'>)
 < ResponseValidationError: ['Input should be a valid dictionary or instance of Error']
 > GET /notes
   get_note(empty=None)
@@ -74,7 +74,7 @@ app plain
   get_greeting(mode=absent)
 < 200 text/plain; charset=utf-8 hello
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"]}]
@@ -95,7 +95,7 @@ app included
   get_greeting(mode=absent)
 < 200 text/plain; charset=utf-8 hello
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"], "input": "other", "ctx": {"expected": "'bare', 'result' or 'value'"}}]
@@ -119,7 +119,7 @@ app standard
   get_greeting(mode=absent)
 < 200 application/json "hello"
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"]}]
@@ -156,10 +156,10 @@ app standard
   get_problem(mode=absent)
 < 200 application/problem+json {"message":"Gone"}
 > GET /problems?mode=result
-  get_problem(mode=<FieldProblemsGetQueryModeParameter.result: 'result'>)
+  get_problem(mode=<ProblemsGetQueryModeParameter.result: 'result'>)
 < 200 application/json {"id":2,"name":"Rex"}
 > GET /problems?mode=invalid
-  get_problem(mode=<FieldProblemsGetQueryModeParameter.invalid: 'invalid'>)
+  get_problem(mode=<ProblemsGetQueryModeParameter.invalid: 'invalid'>)
 < ResponseValidationError: ['Input should be a dictionary or an instance of Error']
 > GET /notes
   get_note(empty=None)
@@ -186,7 +186,7 @@ app plain
   get_greeting(mode=absent)
 < 200 text/plain; charset=utf-8 hello
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"]}]
@@ -207,7 +207,7 @@ app included
   get_greeting(mode=absent)
 < 200 text/plain; charset=utf-8 hello
 > GET /greetings?mode=result
-  get_greeting(mode=<FieldGreetingsGetQueryModeParameter.result: 'result'>)
+  get_greeting(mode=<GreetingsGetQueryModeParameter.result: 'result'>)
 < 200 application/json "ok"
 > GET /greetings?mode=other
 < 422 application/json [{"type": "enum", "loc": ["query", "mode"], "input": "other", "ctx": {"expected": "'bare', 'result' or 'value'"}}]

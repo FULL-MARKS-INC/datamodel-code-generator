@@ -35,7 +35,7 @@ def services(server: ModuleType, models: ModuleType, record: Recorder) -> dict[s
         "word": lambda: "abc",
         "numbers": lambda: [1, 2],
         "thing": lambda: models.Thing(id=1),
-        "memo": lambda: models.FieldMemosPostResponse(text="m"),
+        "memo": lambda: models.MemosPostResponse(text="m"),
     }
     return {
         "default": service(
@@ -73,6 +73,6 @@ def calls(kit: Kit) -> Calls:
         ("get_pet None", lambda: view.get_pet(case="none")),
         ("get_thing", lambda: api.get_thing(case="thing")),
         ("post_memo None", lambda: api.post_memo(case="none", body=None)),
-        ("post_memo value", lambda: api.post_memo(case="memo", body=models.FieldMemosPostRequest(text="a"))),
-        ("post_memo refused", lambda: api.post_memo(case="none", body=models.FieldMemosPostRequest.model_construct())),
+        ("post_memo value", lambda: api.post_memo(case="memo", body=models.MemosPostRequest(text="a"))),
+        ("post_memo refused", lambda: api.post_memo(case="none", body=models.MemosPostRequest.model_construct())),
     ]

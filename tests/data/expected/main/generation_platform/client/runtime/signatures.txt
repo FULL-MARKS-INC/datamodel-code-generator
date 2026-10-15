@@ -9,10 +9,10 @@
     keywords petId!, response_media_type, options coroutine False
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, x-trace: t1] b''
-  list = FieldPetsGetResponse(root=[])
+  list = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, x-trace: t1, x-call: 1] b''
-  list forwarding a mapping of known keys = FieldPetsGetResponse(root=[])
+  list forwarding a mapping of known keys = PetsGetResponse(root=[])
   > GET https://api.example.com/v1/pets/3
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
   get with its narrowed response media = Pet(id=3, name='fox', tag=None)
@@ -30,7 +30,7 @@
     keywords petId!, response_media_type, options coroutine False
   > GET https://api.example.com/v1/pets
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, x-trace: t1] b''
-  async list = FieldPetsGetResponse(root=[])
+  async list = PetsGetResponse(root=[])
   async list with an unknown keyword ! TypeError when called, sent False
   async list with no keyword ! TypeError when called, sent False
   async streaming list with an unknown keyword ! TypeError, sent False

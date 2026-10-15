@@ -18,7 +18,7 @@ class Owner:
     email: str | MISSING = MISSING
 
 
-FieldOwnersGetResponse = TypeAliasType("FieldOwnersGetResponse", list[Owner])
+OwnersGetResponse = TypeAliasType("OwnersGetResponse", list[Owner])
 
 
 @dataclass

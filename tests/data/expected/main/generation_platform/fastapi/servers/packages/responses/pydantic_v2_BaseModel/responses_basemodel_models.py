@@ -25,46 +25,46 @@ class Error(BaseModel):
     message: str
 
 
-class FieldGreetingsGetQueryModeParameter(StrEnum):
+class GreetingsGetQueryModeParameter(StrEnum):
     bare = 'bare'
     result = 'result'
     value = 'value'
 
 
-class FieldGreetingsGetResponse(RootModel[str]):
+class GreetingsGetResponse(RootModel[str]):
     root: str
 
 
-FieldDocumentsIdGetPathIdParameter = TypeAliasType("FieldDocumentsIdGetPathIdParameter", int)
+DocumentsIdGetPathIdParameter = TypeAliasType("DocumentsIdGetPathIdParameter", int)
 
 
-FieldPetsIdGetPathIdParameter = TypeAliasType("FieldPetsIdGetPathIdParameter", int)
+PetsIdGetPathIdParameter = TypeAliasType("PetsIdGetPathIdParameter", int)
 
 
-class FieldTextGetResponse(RootModel[str]):
+class TextGetResponse(RootModel[str]):
     root: str
 
 
-class FieldTextHeadResponse(RootModel[str]):
+class TextHeadResponse(RootModel[str]):
     root: str
 
 
-class FieldBytesGetResponse(RootModel[bytes]):
+class BytesGetResponse(RootModel[bytes]):
     root: bytes
 
 
-class FieldProblemsGetQueryModeParameter(StrEnum):
+class ProblemsGetQueryModeParameter(StrEnum):
     bare = 'bare'
     result = 'result'
     invalid = 'invalid'
 
 
-FieldNotesGetQueryEmptyParameter = TypeAliasType("FieldNotesGetQueryEmptyParameter", bool)
+NotesGetQueryEmptyParameter = TypeAliasType("NotesGetQueryEmptyParameter", bool)
 
 
-class FieldNotesGetResponse(RootModel[str | None]):
+class NotesGetResponse(RootModel[str | None]):
     root: str | None
 
 
-class FieldChosenGetResponse(RootModel[str]):
+class ChosenGetResponse(RootModel[str]):
     root: str

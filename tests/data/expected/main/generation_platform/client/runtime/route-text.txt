@@ -5,4 +5,4 @@
   AsyncNotesCurrentCache.fetch Fetch GET /notes/"""\café through the helper's cache, revalidating a stale entry.
   > GET https://api.example.com/notes/%22%22%22\caf%C3%A9
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  fetch = FieldNotesCaféGetResponse(root='note')
+  fetch = NotesCaféGetResponse(root='note')

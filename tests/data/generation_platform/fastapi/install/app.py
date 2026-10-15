@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from models import Contact, FieldContactsSearchPostRequest, FieldContactsSearchPostResponse
+from models import Contact, ContactsSearchPostRequest, ContactsSearchPostResponse
 from server import create_app
 from server.services import DefaultService
 
@@ -14,8 +14,8 @@ class Contacts(DefaultService):
     def create_contact(self, *, body: Contact) -> Contact:
         return body
 
-    def search_contacts(self, *, body: FieldContactsSearchPostRequest) -> FieldContactsSearchPostResponse:
-        return FieldContactsSearchPostResponse(body.nickname)
+    def search_contacts(self, *, body: ContactsSearchPostRequest) -> ContactsSearchPostResponse:
+        return ContactsSearchPostResponse(body.nickname)
 
 
 async def call(app: object, path: str, media_type: str, body: bytes) -> str:

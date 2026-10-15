@@ -150,7 +150,7 @@ class DocumentsResource:
     def read_document(
         self,
         *,
-        id: models.FieldDocumentsIdGetPathIdParameter,
+        id: models.DocumentsIdGetPathIdParameter,
         filter: JSONValue | UNSET = UNSET,
         X_Mode: str | UNSET = UNSET,
         response_media_type: Literal['application/vnd.api+json'] | None = None,
@@ -338,7 +338,7 @@ class DocumentsWithResponse:
     def read_document(
         self,
         *,
-        id: models.FieldDocumentsIdGetPathIdParameter,
+        id: models.DocumentsIdGetPathIdParameter,
         filter: JSONValue | UNSET = UNSET,
         X_Mode: str | UNSET = UNSET,
         response_media_type: Literal['application/vnd.api+json'] | None = None,
@@ -472,7 +472,7 @@ class DocumentsWithRawResponse:
     def read_document(
         self,
         *,
-        id: models.FieldDocumentsIdGetPathIdParameter,
+        id: models.DocumentsIdGetPathIdParameter,
         filter: JSONValue | UNSET = UNSET,
         X_Mode: str | UNSET = UNSET,
         response_media_type: Literal['application/vnd.api+json'] | None = None,
@@ -606,7 +606,7 @@ class DocumentsWithStreamingResponse:
     def read_document(
         self,
         *,
-        id: models.FieldDocumentsIdGetPathIdParameter,
+        id: models.DocumentsIdGetPathIdParameter,
         filter: JSONValue | UNSET = UNSET,
         X_Mode: str | UNSET = UNSET,
         response_media_type: Literal['application/vnd.api+json'] | None = None,

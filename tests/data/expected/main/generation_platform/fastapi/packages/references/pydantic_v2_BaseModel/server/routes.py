@@ -175,7 +175,7 @@ def _add_list_owners(
         list_owners,
         methods=['GET'],
         status_code=200,
-        response_model=models.FieldOwnersGetResponse,
+        response_model=models.OwnersGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listOwners',

@@ -9,6 +9,6 @@ from app.server.services import StoreService
 class Store(StoreService):
     """Count the pets in stock by kind."""
 
-    def get_inventory(self) -> models.FieldStoreInventoryGetResponse:
+    def get_inventory(self) -> models.StoreInventoryGetResponse:
         """Return the inventory."""
-        return models.FieldStoreInventoryGetResponse({"cats": 2, "dogs": 1})
+        return models.StoreInventoryGetResponse({"cats": 2, "dogs": 1})

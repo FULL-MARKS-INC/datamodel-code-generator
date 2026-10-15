@@ -28,68 +28,68 @@ class Color(Enum):
     NoneType_None = None
 
 
-FieldTextsGetQueryCaseParameter = TypeAliasType("FieldTextsGetQueryCaseParameter", str)
+TextsGetQueryCaseParameter = TypeAliasType("TextsGetQueryCaseParameter", str)
 
 
-class FieldTextsGetResponse(RootModel[constr(max_length=5) | None]):
+class TextsGetResponse(RootModel[constr(max_length=5) | None]):
     root: constr(max_length=5) | None
 
 
-class FieldTextsGetResponse200XRateHeader(RootModel[int]):
+class TextsGetResponse200XRateHeader(RootModel[int]):
     root: int
 
 
-class FieldTextsGetResponse1(RootModel[Thing | None]):
+class TextsGetResponse1(RootModel[Thing | None]):
     root: Thing | None
 
 
-class FieldTextsGetResponse2(RootModel[str | None]):
+class TextsGetResponse2(RootModel[str | None]):
     root: str | None
 
 
-class FieldTextsHeadResponse(RootModel[str | None]):
+class TextsHeadResponse(RootModel[str | None]):
     root: str | None
 
 
-FieldListsGetQueryCaseParameter = TypeAliasType("FieldListsGetQueryCaseParameter", str)
+ListsGetQueryCaseParameter = TypeAliasType("ListsGetQueryCaseParameter", str)
 
 
-class FieldListsGetResponse(RootModel[list[int] | None]):
+class ListsGetResponse(RootModel[list[int] | None]):
     root: list[int] | None
 
 
-FieldNamesGetQueryCaseParameter = TypeAliasType("FieldNamesGetQueryCaseParameter", str)
+NamesGetQueryCaseParameter = TypeAliasType("NamesGetQueryCaseParameter", str)
 
 
-FieldValuesGetQueryCaseParameter = TypeAliasType("FieldValuesGetQueryCaseParameter", str)
+ValuesGetQueryCaseParameter = TypeAliasType("ValuesGetQueryCaseParameter", str)
 
 
-class FieldValuesGetResponse(RootModel[Any]):
+class ValuesGetResponse(RootModel[Any]):
     root: Any
 
 
-FieldAnythingGetQueryCaseParameter = TypeAliasType("FieldAnythingGetQueryCaseParameter", str)
+AnythingGetQueryCaseParameter = TypeAliasType("AnythingGetQueryCaseParameter", str)
 
 
-FieldPetsGetQueryCaseParameter = TypeAliasType("FieldPetsGetQueryCaseParameter", str)
+PetsGetQueryCaseParameter = TypeAliasType("PetsGetQueryCaseParameter", str)
 
 
-FieldThingsGetQueryCaseParameter = TypeAliasType("FieldThingsGetQueryCaseParameter", str)
+ThingsGetQueryCaseParameter = TypeAliasType("ThingsGetQueryCaseParameter", str)
 
 
-FieldNotesGetQueryCaseParameter = TypeAliasType("FieldNotesGetQueryCaseParameter", str)
+NotesGetQueryCaseParameter = TypeAliasType("NotesGetQueryCaseParameter", str)
 
 
-class FieldNotesGetResponse(RootModel[str | None]):
+class NotesGetResponse(RootModel[str | None]):
     root: str | None
 
 
-FieldMemosPostQueryCaseParameter = TypeAliasType("FieldMemosPostQueryCaseParameter", str)
+MemosPostQueryCaseParameter = TypeAliasType("MemosPostQueryCaseParameter", str)
 
 
-class FieldMemosPostRequest(BaseModel):
+class MemosPostRequest(BaseModel):
     text: str
 
 
-class FieldMemosPostResponse(BaseModel):
+class MemosPostResponse(BaseModel):
     text: str

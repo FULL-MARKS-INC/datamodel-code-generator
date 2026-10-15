@@ -2390,14 +2390,14 @@
                   "default": ""
                 }
               ],
-              "returns": "models.Pets | HTTPResult[models.Pets | models.FieldPetsGetResponse] | Response",
+              "returns": "models.Pets | HTTPResult[models.Pets | models.PetsGetResponse] | Response",
               "docstring": "\"\"\"\n        Handle GET /pets.\n        \"\"\""
             },
             {
               "name": "create_pets",
               "asynchronous": true,
               "parameters": [],
-              "returns": "None | HTTPResult[models.FieldPetsPostResponse] | Response",
+              "returns": "None | HTTPResult[models.PetsPostResponse] | Response",
               "docstring": "\"\"\"\n        Handle POST /pets.\n        \"\"\""
             },
             {

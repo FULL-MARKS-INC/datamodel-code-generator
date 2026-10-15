@@ -6,14 +6,14 @@ from pydantic import MISSING
 from typing_extensions import assert_type
 
 from pets import AsyncClient, Client
-from pets_models import FieldLoginPostRequest, FieldPetsGetQueryFilterParameter, Pet
+from pets_models import LoginPostRequest, PetsGetQueryFilterParameter, Pet
 
 
 def send(client: Client) -> None:
     client.default.create_pet(body=Pet(name="a", owner=None))
     client.default.create_pet(body=Pet(name="a", owner=None, tag=MISSING, nick=None))
-    client.default.login(body=FieldLoginPostRequest(user="ann", note=None))
-    client.default.list_pets(filter=FieldPetsGetQueryFilterParameter(owner=None))
+    client.default.login(body=LoginPostRequest(user="ann", note=None))
+    client.default.list_pets(filter=PetsGetQueryFilterParameter(owner=None))
 
 
 def read(client: Client) -> None:

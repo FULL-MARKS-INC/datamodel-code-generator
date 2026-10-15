@@ -12,6 +12,6 @@ if TYPE_CHECKING:
 class Store(StoreService):
     """Count the pets in stock."""
 
-    def get_inventory(self, *, scale: Decimal | None = None) -> models.FieldStoreInventoryGetResponse:
+    def get_inventory(self, *, scale: Decimal | None = None) -> models.StoreInventoryGetResponse:
         """Return the inventory."""
-        return models.FieldStoreInventoryGetResponse({"cats": 2 if scale is None else int(scale)})
+        return models.StoreInventoryGetResponse({"cats": 2 if scale is None else int(scale)})

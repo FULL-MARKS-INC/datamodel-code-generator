@@ -156,10 +156,10 @@
   album of tags their named charset cannot represent ! DecodeError: DecodeError(operation_id='submitAlbum', reason='unencodable', location='body.tags') [operation_id='submitAlbum', location=('body', 'tags'), body_bytes=b'', truncated=False, cause=ParameterEncodingError("The text cannot be represented in its media type's charset")] unencodable
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read = FieldProfilesGetResponse(name='Ada', age=36, score=1.5, ratio=2, active=True, tags=['a', 'b'], address=Address(city='Oslo', codes=[7]), bonus=7)
+  profile read = ProfilesGetResponse(name='Ada', age=36, score=1.5, ratio=2, active=True, tags=['a', 'b'], address=Address(city='Oslo', codes=[7]), bonus=7)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read with a quoted boundary = FieldProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
+  profile read with a quoted boundary = ProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
   profile read without a boundary ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_framing') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\nAda\r\n--b1--\r\n', truncated=False, cause=ValueError('A multipart body must hold its boundary and parts with headers, each part ending at the next boundary')] invalid_framing
@@ -168,10 +168,10 @@
   profile read of another boundary ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_framing') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\nAda\r\n--b1--\r\n', truncated=False, cause=ValueError('A multipart body must hold its boundary and parts with headers, each part ending at the next boundary')] invalid_framing
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read with a preamble, padding, and an epilogue = FieldProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
+  profile read with a preamble, padding, and an epilogue = ProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read of a boundary mid-line = FieldProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
+  profile read of a boundary mid-line = ProfilesGetResponse(name='Ada', age=None, score=None, ratio=None, active=None, tags=None, address=None)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
   profile read of a part off its line ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_framing') [operation_id='readProfile', body_bytes=b'--b1 x\r\n\r\n--b1--\r\n', truncated=False, cause=ValueError('A multipart body must hold its boundary and parts with headers, each part ending at the next boundary')] invalid_framing
@@ -195,7 +195,7 @@
   profile read of a null address twice ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_syntax') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\nAda\r\n--b1\r\nContent-Disposition: form-data; name="address"\r\nContent-Type: application/json\r\n\r\nnull\r\n--b1\r\nContent-Disposition: form-data; name="address"\r\nContent-Type: application/json\r\n\r\nnull\r\n--b1--\r\n', truncated=False, cause=MalformedError('A form-data body repeats a single-valued member')] invalid_syntax
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read of an extra that is no integer ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_value') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\nAda\r\n--b1\r\nContent-Disposition: form-data; name="bonus"\r\n\r\nx\r\n--b1--\r\n', truncated=False, cause=1 validation error for FieldProfilesGetResponse
+  profile read of an extra that is no integer ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_value') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\nAda\r\n--b1\r\nContent-Disposition: form-data; name="bonus"\r\n\r\nx\r\n--b1--\r\n', truncated=False, cause=1 validation error for ProfilesGetResponse
 bonus
   Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='x', input_type=str]
     For further information visit https://errors.pydantic.dev/<version>/v/int_parsing] invalid_value
@@ -207,13 +207,13 @@ bonus
   profile read of text that is not UTF-8 ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_syntax') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="name"\r\n\r\n\xff\r\n--b1--\r\n', truncated=False, cause=UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'invalid start byte')] invalid_syntax
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read of Latin-1 text = FieldProfilesGetResponse(name='café', age=None, score=None, ratio=None, active=None, tags=None, address=None)
+  profile read of Latin-1 text = ProfilesGetResponse(name='café', age=None, score=None, ratio=None, active=None, tags=None, address=None)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read of UTF-16 text = FieldProfilesGetResponse(name='café', age=None, score=None, ratio=None, active=None, tags=None, address=None)
+  profile read of UTF-16 text = ProfilesGetResponse(name='café', age=None, score=None, ratio=None, active=None, tags=None, address=None)
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  profile read without its name ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_value') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="age"\r\n\r\n36\r\n--b1--\r\n', truncated=False, cause=1 validation error for FieldProfilesGetResponse
+  profile read without its name ! DecodeError: DecodeError(status_code=200, operation_id='readProfile', reason='invalid_value') [operation_id='readProfile', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="age"\r\n\r\n36\r\n--b1--\r\n', truncated=False, cause=1 validation error for ProfilesGetResponse
 name
   Field required [type=missing, input_value={'age': 36}, input_type=dict]
     For further information visit https://errors.pydantic.dev/<version>/v/missing] invalid_value
@@ -231,16 +231,16 @@ name
   parts read of a body without its boundary ! DecodeError: DecodeError(status_code=200, operation_id='readParts', reason='invalid_framing') [operation_id='readParts', body_bytes=b'not multipart', truncated=False, cause=ValueError('A multipart body must hold its boundary and parts with headers, each part ending at the next boundary')] invalid_framing
   > GET https://media.example.com/api/attachments
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/mixed, multipart/form-data] b''
-  stored id read = FieldAttachmentsGetResponse(id=4)
+  stored id read = AttachmentsGetResponse(id=4)
   > GET https://media.example.com/api/attachments
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/mixed, multipart/form-data] b''
-  stored id read of an extra part ! DecodeError: DecodeError(status_code=202, operation_id='readParts', reason='invalid_value') [operation_id='readParts', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="id"\r\n\r\n4\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n1\r\n--b1--\r\n', truncated=False, cause=1 validation error for FieldAttachmentsGetResponse
+  stored id read of an extra part ! DecodeError: DecodeError(status_code=202, operation_id='readParts', reason='invalid_value') [operation_id='readParts', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="id"\r\n\r\n4\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n1\r\n--b1--\r\n', truncated=False, cause=1 validation error for AttachmentsGetResponse
 x
   Extra inputs are not permitted [type=extra_forbidden, input_value='1', input_type=str]
     For further information visit https://errors.pydantic.dev/<version>/v/extra_forbidden] invalid_value
   > GET https://media.example.com/api/attachments
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/mixed, multipart/form-data] b''
-  stored id read of a repeated extra part ! DecodeError: DecodeError(status_code=202, operation_id='readParts', reason='invalid_value') [operation_id='readParts', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="id"\r\n\r\n4\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n1\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n2\r\n--b1--\r\n', truncated=False, cause=1 validation error for FieldAttachmentsGetResponse
+  stored id read of a repeated extra part ! DecodeError: DecodeError(status_code=202, operation_id='readParts', reason='invalid_value') [operation_id='readParts', body_bytes=b'--b1\r\nContent-Disposition: form-data; name="id"\r\n\r\n4\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n1\r\n--b1\r\nContent-Disposition: form-data; name="x"\r\n\r\n2\r\n--b1--\r\n', truncated=False, cause=1 validation error for AttachmentsGetResponse
 x
   Extra inputs are not permitted [type=extra_forbidden, input_value='2', input_type=str]
     For further information visit https://errors.pydantic.dev/<version>/v/extra_forbidden] invalid_value
@@ -327,7 +327,7 @@ codes.0
   async upload without its photo = None
   > GET https://media.example.com/api/profiles
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
-  async profile read = FieldProfilesGetResponse(name='Ada', age=36, score=1.5, ratio=2, active=True, tags=['a', 'b'], address=Address(city='Oslo', codes=[7]), bonus=7)
+  async profile read = ProfilesGetResponse(name='Ada', age=36, score=1.5, ratio=2, active=True, tags=['a', 'b'], address=Address(city='Oslo', codes=[7]), bonus=7)
   > GET https://media.example.com/api/uploads
     [host: media.example.com, accept-encoding: gzip, deflate, accept: multipart/form-data] b''
   async upload read MultipartData(<9 parts>) DecodedPart(name='title', content_type=None) 'title' None None [('Content-Disposition', 'form-data; name="title"')] 'Notes'; DecodedPart(name='count', content_type=None) 'count' None None [('Content-Disposition', 'form-data; name="count"')] 3; DecodedPart(name='tags', content_type=None) 'tags' None None [('Content-Disposition', 'form-data; name="tags"')] 'a'; DecodedPart(name='tags', content_type=None) 'tags' None None [('Content-Disposition', 'form-data; name="tags"')] 'b'; DecodedPart(name='meta', content_type='application/json') 'meta' None 'application/json' [('Content-Disposition', 'form-data; name="meta"'), ('Content-Type', 'application/json')] Address(city='Oslo', codes=[7]); DecodedPart(name='photo', content_type='image/png') 'photo' 'a.png' 'image/png' [('Content-Disposition', 'form-data; name="photo"; filename="a.png"'), ('Content-Type', 'image/png')] b'\x89PNG'; DecodedPart(name='pages', content_type=None) 'pages' None None [('Content-Disposition', 'form-data; name="pages"')] b'1'; DecodedPart(name='pages', content_type=None) 'pages' None None [('Content-Disposition', 'form-data; name="pages"')] b'2'; DecodedPart(name='bonus', content_type=None) 'bonus' None None [('Content-Disposition', 'form-data; name="bonus"')] 7

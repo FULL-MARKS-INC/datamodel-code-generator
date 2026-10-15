@@ -9,6 +9,6 @@ from app.server.services import StoreService
 class Store(StoreService):
     """Count the pets of one warehouse."""
 
-    def get_inventory(self, warehouse: str) -> models.FieldStoreInventoryGetResponse:  # type: ignore[override]
+    def get_inventory(self, warehouse: str) -> models.StoreInventoryGetResponse:  # type: ignore[override]
         """Return the inventory of a warehouse."""
-        return models.FieldStoreInventoryGetResponse({warehouse: 0})
+        return models.StoreInventoryGetResponse({warehouse: 0})

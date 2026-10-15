@@ -22,8 +22,8 @@ codec_0: Final[TypedDictCodec[models.Item]] = TypedDictCodec(models.Item, MODELS
 codec_1: Final[TypedDictCodec[models.Item]] = TypedDictCodec(models.Item, MODELS)
 """Codec of /paths/~1items/post response_body (response 200 application/json)."""
 
-codec_2: Final[TypedDictCodec[models.FieldInlinePostRequest]] = TypedDictCodec(None, MODELS)
+codec_2: Final[TypedDictCodec[models.InlinePostRequest]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1inline/post request_body (request application/json)."""
 
-codec_3: Final[TypedDictCodec[models.FieldInlinePostResponse]] = TypedDictCodec(None, MODELS)
+codec_3: Final[TypedDictCodec[models.InlinePostResponse]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1inline/post response_body (response 200 application/json)."""

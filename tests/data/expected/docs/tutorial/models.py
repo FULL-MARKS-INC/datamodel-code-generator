@@ -36,7 +36,7 @@ class Error(BaseModel):
     message: str
 
 
-type FieldPetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
+type PetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
 
 
-type FieldPetsPetIdGetPathPetIdParameter = int
+type PetsPetIdGetPathPetIdParameter = int

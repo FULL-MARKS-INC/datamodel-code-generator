@@ -97,9 +97,9 @@ post_memo None
   = None
 post_memo value
   > POST /memos?case=memo [application/json]
-  post_memo(case='memo', body=FieldMemosPostRequest(text='a'))
+  post_memo(case='memo', body=MemosPostRequest(text='a'))
   < 200 application/json
-  = FieldMemosPostResponse(text='m')
+  = MemosPostResponse(text='m')
 post_memo refused
   > POST /memos?case=none [application/json]
   < 422 application/json

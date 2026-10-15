@@ -28,24 +28,24 @@ class ColorEnum(StrEnum):
 Color = TypeAliasType("Color", ColorEnum | None | MISSING)
 
 
-FieldTextsPostRequest = TypeAliasType(
-    "FieldTextsPostRequest", Annotated[str, Field(max_length=5)] | None
+TextsPostRequest = TypeAliasType(
+    "TextsPostRequest", Annotated[str, Field(max_length=5)] | None
 )
 
 
-FieldListsPostRequest = TypeAliasType("FieldListsPostRequest", list[int] | MISSING)
+ListsPostRequest = TypeAliasType("ListsPostRequest", list[int] | MISSING)
 
 
-FieldChoicesPostRequest = TypeAliasType("FieldChoicesPostRequest", Item | int | None)
+ChoicesPostRequest = TypeAliasType("ChoicesPostRequest", Item | int | None)
 
 
-FieldValuesPostRequest = TypeAliasType("FieldValuesPostRequest", Any | None)
+ValuesPostRequest = TypeAliasType("ValuesPostRequest", Any | None)
 
 
-FieldIdsPostRequest = TypeAliasType("FieldIdsPostRequest", UUID | None)
+IdsPostRequest = TypeAliasType("IdsPostRequest", UUID | None)
 
 
-FieldDraftsPostRequest = TypeAliasType("FieldDraftsPostRequest", str | None)
+DraftsPostRequest = TypeAliasType("DraftsPostRequest", str | None)
 
 
 @dataclass
@@ -54,11 +54,11 @@ class Reply:
 
 
 @dataclass
-class FieldNotesPostRequest:
+class NotesPostRequest:
     text: str | MISSING = MISSING
     replies: list[Reply] | MISSING = MISSING
 
 
 @dataclass
-class FieldExtendedPostRequest(Item):
+class ExtendedPostRequest(Item):
     note: str | MISSING = MISSING

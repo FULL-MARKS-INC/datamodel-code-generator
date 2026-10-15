@@ -171,15 +171,15 @@ class GetItem:
     class Parameters:
         """The adapter parameters of get_item."""
 
-        level: parameters_basemodel_models.FieldItemsLevelGetPathLevelParameter
-        mode: parameters_basemodel_models.FieldItemsLevelGetQueryModeParameter | None
-        ratio: parameters_basemodel_models.FieldItemsLevelGetQueryRatioParameter | None
+        level: parameters_basemodel_models.ItemsLevelGetPathLevelParameter
+        mode: parameters_basemodel_models.ItemsLevelGetQueryModeParameter | None
+        ratio: parameters_basemodel_models.ItemsLevelGetQueryRatioParameter | None
         X_Flag: Literal[True] | None
-        tier: parameters_basemodel_models.FieldItemsLevelGetQueryTierParameter1 | None
-        levels: list[parameters_basemodel_models.FieldItemsLevelGetQueryLevelsParameterEnum] | None
+        tier: parameters_basemodel_models.ItemsLevelGetQueryTierParameter1 | None
+        levels: list[parameters_basemodel_models.ItemsLevelGetQueryLevelsParameterEnum] | None
 
     PARAMETERS: Final = ParameterAdapter(
-        arguments=(ParameterArgument(name='level', plan=ParameterPlan(location='path', name='level', style='simple', required=True, kind='integer'), adapter=TypeAdapter(parameters_basemodel_models.FieldItemsLevelGetPathLevelParameter)), ParameterArgument(name='mode', plan=ParameterPlan(location='query', name='mode', style='form', explode=True, kind='integer', reserved_names=('kind', 'levels', 'ratio', 'tier')), adapter=TypeAdapter(parameters_basemodel_models.FieldItemsLevelGetQueryModeParameter)), ParameterArgument(name='ratio', plan=ParameterPlan(location='query', name='ratio', style='form', explode=True, kind='number', reserved_names=('kind', 'levels', 'mode', 'tier')), adapter=TypeAdapter(parameters_basemodel_models.FieldItemsLevelGetQueryRatioParameter)), ParameterArgument(name='X_Flag', plan=ParameterPlan(location='header', name='X-Flag', style='simple', kind='boolean'), adapter=TypeAdapter(Literal[True])), ParameterArgument(name='tier', plan=ParameterPlan(location='query', name='tier', style='form', explode=True, kind='integer', reserved_names=('kind', 'levels', 'mode', 'ratio')), adapter=TypeAdapter(parameters_basemodel_models.FieldItemsLevelGetQueryTierParameter1 | None)), ParameterArgument(name='levels', plan=ParameterPlan(location='query', name='levels', style='form', explode=True, shape='array', kind='integer', reserved_names=('kind', 'mode', 'ratio', 'tier')), adapter=TypeAdapter(list[parameters_basemodel_models.FieldItemsLevelGetQueryLevelsParameterEnum]))),
+        arguments=(ParameterArgument(name='level', plan=ParameterPlan(location='path', name='level', style='simple', required=True, kind='integer'), adapter=TypeAdapter(parameters_basemodel_models.ItemsLevelGetPathLevelParameter)), ParameterArgument(name='mode', plan=ParameterPlan(location='query', name='mode', style='form', explode=True, kind='integer', reserved_names=('kind', 'levels', 'ratio', 'tier')), adapter=TypeAdapter(parameters_basemodel_models.ItemsLevelGetQueryModeParameter)), ParameterArgument(name='ratio', plan=ParameterPlan(location='query', name='ratio', style='form', explode=True, kind='number', reserved_names=('kind', 'levels', 'mode', 'tier')), adapter=TypeAdapter(parameters_basemodel_models.ItemsLevelGetQueryRatioParameter)), ParameterArgument(name='X_Flag', plan=ParameterPlan(location='header', name='X-Flag', style='simple', kind='boolean'), adapter=TypeAdapter(Literal[True])), ParameterArgument(name='tier', plan=ParameterPlan(location='query', name='tier', style='form', explode=True, kind='integer', reserved_names=('kind', 'levels', 'mode', 'ratio')), adapter=TypeAdapter(parameters_basemodel_models.ItemsLevelGetQueryTierParameter1 | None)), ParameterArgument(name='levels', plan=ParameterPlan(location='query', name='levels', style='form', explode=True, shape='array', kind='integer', reserved_names=('kind', 'mode', 'ratio', 'tier')), adapter=TypeAdapter(list[parameters_basemodel_models.ItemsLevelGetQueryLevelsParameterEnum]))),
         record=Parameters,
         path=RawPath(template='/items/{level}', names=frozenset({'level'})),
     )

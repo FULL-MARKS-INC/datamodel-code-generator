@@ -6,20 +6,20 @@ service DefaultService without its methods: TypeError
   post_note(body=None)
 < 204 - b''
 > POST /notes
-  post_note(body=FieldNotesPostRequest(text='a', replies=None))
+  post_note(body=NotesPostRequest(text='a', replies=None))
 < 204 - b''
 > POST /notes
 < 422 application/json [{"type": "missing", "loc": ["body", "text"]}]
 > POST /notes
 < 422 application/json [{"type": "missing", "loc": ["body"]}]
 > POST /notes
-  post_note(body=FieldNotesPostRequest(text='a', replies=[None, Reply(text='b')]))
+  post_note(body=NotesPostRequest(text='a', replies=[None, Reply(text='b')]))
 < 204 - b''
 > POST /extended
   post_extended(body=None)
 < 204 - b''
 > POST /extended
-  post_extended(body=FieldExtendedPostRequest(name='a', note='n'))
+  post_extended(body=ExtendedPostRequest(name='a', note='n'))
 < 204 - b''
 > POST /extended
 < 422 application/json [{"type": "missing", "loc": ["body", "name"]}]
@@ -30,20 +30,20 @@ service DefaultService without its methods: TypeError
   post_note(body=None)
 < 204 - b''
 > POST /notes
-  post_note(body=FieldNotesPostRequest(text='a', replies=MISSING))
+  post_note(body=NotesPostRequest(text='a', replies=MISSING))
 < 204 - b''
 > POST /notes
 < 422 application/json [{"type": "missing", "loc": ["body", "text"]}]
 > POST /notes
 < 422 application/json [{"type": "missing", "loc": ["body"]}]
 > POST /notes
-  post_note(body=FieldNotesPostRequest(text='a', replies=[None, Reply(text='b')]))
+  post_note(body=NotesPostRequest(text='a', replies=[None, Reply(text='b')]))
 < 204 - b''
 > POST /extended
   post_extended(body=None)
 < 204 - b''
 > POST /extended
-  post_extended(body=FieldExtendedPostRequest(name='a', note='n'))
+  post_extended(body=ExtendedPostRequest(name='a', note='n'))
 < 204 - b''
 > POST /extended
 < 422 application/json [{"type": "missing", "loc": ["body", "name"]}]

@@ -26,7 +26,7 @@ MODELS: Final[dict[type, Model]] = {
     models.NewPet: Model((Field('name', 'name'), Field('kind', 'kind', models.Kind), Field('tag', 'tag', omit_none=True), Field('birthDate', 'birthDate', omit_none=True), Field('owner', 'owner', models.Owner, omit_none=True), Field('id', 'id', omit_none=True), Field('secret', 'secret', omit_none=True))),
 }
 
-codec_0: Final[DataclassCodec[models.FieldPetsPostQueryTagParameter]] = DataclassCodec(None, MODELS)
+codec_0: Final[DataclassCodec[models.PetsPostQueryTagParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets/post parameter (request query tag)."""
 
 codec_1: Final[DataclassCodec[models.NewPet]] = DataclassCodec(models.NewPet, MODELS)
@@ -38,37 +38,37 @@ codec_2: Final[DataclassCodec[models.PetForm]] = DataclassCodec(models.PetForm, 
 codec_3: Final[DataclassCodec[models.Pet]] = DataclassCodec(models.Pet, MODELS)
 """Codec of /paths/~1pets/post response_body (response 201 application/json)."""
 
-codec_4: Final[DataclassCodec[models.FieldPetsPetIdPatchPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_4: Final[DataclassCodec[models.PetsPetIdPatchPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}/patch parameter (request path petId)."""
 
 codec_5: Final[DataclassCodec[models.PetPatch]] = DataclassCodec(models.PetPatch, MODELS)
 """Codec of /paths/~1pets~1{petId}/patch request_body (request application/json)."""
 
-codec_6: Final[DataclassCodec[models.FieldPetsPetIdVisitsPostPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_6: Final[DataclassCodec[models.PetsPetIdVisitsPostPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1visits/post parameter (request path petId)."""
 
 codec_7: Final[DataclassCodec[models.Visit]] = DataclassCodec(models.Visit, MODELS)
 """Codec of /paths/~1pets~1{petId}~1visits/post request_body (request application/json)."""
 
-codec_8: Final[DataclassCodec[models.FieldPetsPetIdOwnerPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_8: Final[DataclassCodec[models.PetsPetIdOwnerPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1owner/put parameter (request path petId)."""
 
 codec_9: Final[DataclassCodec[models.Owner]] = DataclassCodec(models.Owner, MODELS)
 """Codec of /paths/~1pets~1{petId}~1owner/put request_body (request application/json)."""
 
-codec_10: Final[DataclassCodec[models.FieldOwnersPostRequest]] = DataclassCodec(Choice((('object', models.Owner),)), MODELS)
+codec_10: Final[DataclassCodec[models.OwnersPostRequest]] = DataclassCodec(Choice((('object', models.Owner),)), MODELS)
 """Codec of /paths/~1owners/post request_body (request application/json)."""
 
-codec_11: Final[DataclassCodec[models.FieldPetsPetIdLabelsPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_11: Final[DataclassCodec[models.PetsPetIdLabelsPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1labels/put parameter (request path petId)."""
 
 codec_12: Final[DataclassCodec[models.Labels]] = DataclassCodec(models.Labels, MODELS)
 """Codec of /paths/~1pets~1{petId}~1labels/put request_body (request application/json)."""
 
-codec_13: Final[DataclassCodec[models.FieldPetsPetIdPhotoPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_13: Final[DataclassCodec[models.PetsPetIdPhotoPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1photo/put parameter (request path petId)."""
 
-codec_14: Final[DataclassCodec[models.FieldPetsPetIdRecordsPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
+codec_14: Final[DataclassCodec[models.PetsPetIdRecordsPutPathPetIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1records/put parameter (request path petId)."""
 
 codec_15: Final[DataclassCodec[models.Pet]] = DataclassCodec(models.Pet, MODELS)

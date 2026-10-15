@@ -26,7 +26,7 @@ class Photo(BaseModel):
     caption: str | None = None
 
 
-type FieldPetsPetIdPhotoPutPathPetIdParameter = int
+type PetsPetIdPhotoPutPathPetIdParameter = int
 
 
-type FieldPetsPetIdPhotoGetPathPetIdParameter = int
+type PetsPetIdPhotoGetPathPetIdParameter = int

@@ -31,36 +31,36 @@ class Color(Enum):
     NoneType_None = None
 
 
-FieldTextsPostRequest = TypeAliasType(
-    "FieldTextsPostRequest", Annotated[str, Field(max_length=5)] | None
+TextsPostRequest = TypeAliasType(
+    "TextsPostRequest", Annotated[str, Field(max_length=5)] | None
 )
 
 
-FieldListsPostRequest = TypeAliasType("FieldListsPostRequest", list[int] | None)
+ListsPostRequest = TypeAliasType("ListsPostRequest", list[int] | None)
 
 
-FieldChoicesPostRequest = TypeAliasType("FieldChoicesPostRequest", Item | int | None)
+ChoicesPostRequest = TypeAliasType("ChoicesPostRequest", Item | int | None)
 
 
-FieldCodesPostRequest = TypeAliasType("FieldCodesPostRequest", str | None)
+CodesPostRequest = TypeAliasType("CodesPostRequest", str | None)
 
 
-FieldValuesPostRequest = TypeAliasType("FieldValuesPostRequest", Any)
+ValuesPostRequest = TypeAliasType("ValuesPostRequest", Any)
 
 
-FieldIdsPostRequest = TypeAliasType("FieldIdsPostRequest", UUID)
+IdsPostRequest = TypeAliasType("IdsPostRequest", UUID)
 
 
-FieldDraftsPostRequest = TypeAliasType("FieldDraftsPostRequest", str | None)
+DraftsPostRequest = TypeAliasType("DraftsPostRequest", str | None)
 
 
 @dataclass
-class FieldNotesPostRequest:
+class NotesPostRequest:
     text: str
 
 
 @dataclass
-class FieldFormsPostRequest:
+class FormsPostRequest:
     name: str
     tags: list[str] | MISSING = MISSING
     count: int | MISSING = MISSING
@@ -72,12 +72,12 @@ class Meta:
 
 
 @dataclass
-class FieldUploadsPostRequest:
+class UploadsPostRequest:
     file: bytes
     note: str | MISSING = MISSING
     meta: Meta | MISSING = MISSING
 
 
 @dataclass
-class FieldExtendedPostRequest(Item):
+class ExtendedPostRequest(Item):
     note: str | MISSING = MISSING

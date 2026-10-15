@@ -4,10 +4,10 @@
   send and decode null = None
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object = FieldNotesPostResponse(text='b')
+  send and decode an object = NotesPostResponse(text='b')
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
-  decode an object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postNote', reason='invalid_value') [operation_id='postNote', body_bytes=b'{}', truncated=False, cause=1 validation error for nullable[FieldNotesPostResponse]
+  decode an object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postNote', reason='invalid_value') [operation_id='postNote', body_bytes=b'{}', truncated=False, cause=1 validation error for nullable[NotesPostResponse]
 text
   Field required [type=missing, input_value={}, input_type=dict]
     For further information visit https://errors.pydantic.dev/<version>/v/missing] invalid_value
@@ -16,10 +16,10 @@ text
   send and decode null through allOf = None
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object through allOf = FieldExtendedPostResponse(text='b', tag='t')
+  send and decode an object through allOf = ExtendedPostResponse(text='b', tag='t')
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
-  decode an allOf object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postExtended', reason='invalid_value') [operation_id='postExtended', body_bytes=b'{}', truncated=False, cause=1 validation error for nullable[FieldExtendedPostResponse]
+  decode an allOf object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postExtended', reason='invalid_value') [operation_id='postExtended', body_bytes=b'{}', truncated=False, cause=1 validation error for nullable[ExtendedPostResponse]
 text
   Field required [type=missing, input_value={}, input_type=dict]
     For further information visit https://errors.pydantic.dev/<version>/v/missing] invalid_value
@@ -38,19 +38,19 @@ text
   send and decode null = None
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object = FieldNotesPostResponse(text='b')
+  send and decode an object = NotesPostResponse(text='b')
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
-  decode an object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postNote', reason='invalid_value') [operation_id='postNote', body_bytes=b'{}', truncated=False, cause=TypeError("FieldNotesPostResponse.__init__() missing 1 required positional argument: 'text'")] invalid_value
+  decode an object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postNote', reason='invalid_value') [operation_id='postNote', body_bytes=b'{}', truncated=False, cause=TypeError("NotesPostResponse.__init__() missing 1 required positional argument: 'text'")] invalid_value
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
   send and decode null through allOf = None
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object through allOf = FieldExtendedPostResponse(text='b', tag='t')
+  send and decode an object through allOf = ExtendedPostResponse(text='b', tag='t')
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
-  decode an allOf object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postExtended', reason='invalid_value') [operation_id='postExtended', body_bytes=b'{}', truncated=False, cause=TypeError("FieldExtendedPostResponse.__init__() missing 1 required positional argument: 'text'")] invalid_value
+  decode an allOf object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postExtended', reason='invalid_value') [operation_id='postExtended', body_bytes=b'{}', truncated=False, cause=TypeError("ExtendedPostResponse.__init__() missing 1 required positional argument: 'text'")] invalid_value
   > POST https://api.example.com/forms
     [host: api.example.com, accept-encoding: gzip, deflate, content-type: application/x-www-form-urlencoded, content-length: 28] b'name=n&tags=a&tags=b&count=2'
   send a form's declared fields = None
@@ -94,7 +94,7 @@ text
   send and decode null = None
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object = FieldNotesPostResponse(text='b')
+  send and decode an object = NotesPostResponse(text='b')
   > POST https://api.example.com/notes
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
   decode an object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postNote', reason='invalid_value') [operation_id='postNote', body_bytes=b'{}', truncated=False, cause=ValidationError('Object missing required field `text`')] invalid_value
@@ -103,7 +103,7 @@ text
   send and decode null through allOf = None
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 12] b'{"text":"a"}'
-  send and decode an object through allOf = FieldExtendedPostResponse(text='b', tag='t')
+  send and decode an object through allOf = ExtendedPostResponse(text='b', tag='t')
   > POST https://api.example.com/extended
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json, content-type: application/json, content-length: 4] b'null'
   decode an allOf object without its required member ! DecodeError: DecodeError(status_code=200, operation_id='postExtended', reason='invalid_value') [operation_id='postExtended', body_bytes=b'{}', truncated=False, cause=ValidationError('Object missing required field `text`')] invalid_value

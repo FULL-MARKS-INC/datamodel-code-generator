@@ -55,33 +55,33 @@ class Pet(Struct):
     tag: str | None | UnsetType = UNSET
 
 
-FieldPetsPostQueryTagParameter: TypeAlias = str
+PetsPostQueryTagParameter: TypeAlias = str
 
 
-FieldPetsPetIdPatchPathPetIdParameter: TypeAlias = int
+PetsPetIdPatchPathPetIdParameter: TypeAlias = int
 
 
-FieldPetsPetIdVisitsPostPathPetIdParameter: TypeAlias = int
+PetsPetIdVisitsPostPathPetIdParameter: TypeAlias = int
 
 
-FieldPetsPetIdOwnerPutPathPetIdParameter: TypeAlias = int
+PetsPetIdOwnerPutPathPetIdParameter: TypeAlias = int
 
 
-FieldOwnersPostRequest: TypeAlias = Owner | None
+OwnersPostRequest: TypeAlias = Owner | None
 
 
-FieldPetsPetIdLabelsPutPathPetIdParameter: TypeAlias = int
+PetsPetIdLabelsPutPathPetIdParameter: TypeAlias = int
 
 
-FieldPetsPetIdPhotoPutPathPetIdParameter: TypeAlias = int
+PetsPetIdPhotoPutPathPetIdParameter: TypeAlias = int
 
 
-class FieldPetsPetIdPhotoPutRequest(Struct):
+class PetsPetIdPhotoPutRequest(Struct):
     photo: bytes
     caption: str | UnsetType = UNSET
 
 
-FieldPetsPetIdRecordsPutPathPetIdParameter: TypeAlias = int
+PetsPetIdRecordsPutPathPetIdParameter: TypeAlias = int
 
 
 class NewPet(Struct):

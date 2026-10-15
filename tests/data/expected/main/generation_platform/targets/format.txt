@@ -48,11 +48,11 @@ show models.py
   |     tag: str | None = None
   | 
   | 
-  | class FieldPetsGetResponse(RootModel[list[Pet]]):
+  | class PetsGetResponse(RootModel[list[Pet]]):
   |     root: list[Pet]
   | 
   | 
-  | FieldStoreOrdersGetQueryLimitParameter = TypeAliasType("FieldStoreOrdersGetQueryLimitParameter", int)
+  | StoreOrdersGetQueryLimitParameter = TypeAliasType("StoreOrdersGetQueryLimitParameter", int)
   | 
   | 
   | class Order(BaseModel):
@@ -105,7 +105,7 @@ show server/routers/pets.py
   |         list_pets,
   |         methods=['GET'],
   |         status_code=200,
-  |         response_model=models.FieldPetsGetResponse,
+  |         response_model=models.PetsGetResponse,
   |         response_model_by_alias=True,
   |         response_model_exclude_unset=True,
   |         operation_id='listPets',

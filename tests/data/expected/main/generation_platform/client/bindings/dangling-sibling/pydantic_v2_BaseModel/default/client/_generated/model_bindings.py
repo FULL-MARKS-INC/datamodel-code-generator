@@ -11,5 +11,5 @@ from typing import Final
 from .._runtime.model_codecs.pydantic_models import PydanticCodec
 
 
-codec_0: Final[PydanticCodec[models.FieldPetsGetResponse]] = PydanticCodec(models.FieldPetsGetResponse)
+codec_0: Final[PydanticCodec[models.Error]] = PydanticCodec(models.Error)
 """Codec of /paths/~1pets/get response_body (response default application/json)."""

@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
-from typing_extensions import TypeAliasType
+from pydantic import RootModel
 
 from . import owner
 
-FieldOwnersGetResponse = TypeAliasType("FieldOwnersGetResponse", list[owner.Owner])
+
+class OwnersGetResponse(RootModel[list[owner.Owner]]):
+    root: list[owner.Owner]

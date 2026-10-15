@@ -26,7 +26,7 @@ MODELS: Final[dict[type, Model]] = {
     models.NewPet: Model((Field('name', 'name'), Field('kind', 'kind'), Field('tag', 'tag'), Field('birthDate', 'birthDate'), Field('owner', 'owner', models.Owner), Field('id', 'id'), Field('secret', 'secret'))),
 }
 
-codec_0: Final[TypedDictCodec[models.FieldPetsPostQueryTagParameter]] = TypedDictCodec(None, MODELS)
+codec_0: Final[TypedDictCodec[models.PetsPostQueryTagParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets/post parameter (request query tag)."""
 
 codec_1: Final[TypedDictCodec[models.NewPet]] = TypedDictCodec(models.NewPet, MODELS)
@@ -38,37 +38,37 @@ codec_2: Final[TypedDictCodec[models.PetForm]] = TypedDictCodec(models.PetForm, 
 codec_3: Final[TypedDictCodec[models.Pet]] = TypedDictCodec(models.Pet, MODELS)
 """Codec of /paths/~1pets/post response_body (response 201 application/json)."""
 
-codec_4: Final[TypedDictCodec[models.FieldPetsPetIdPatchPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_4: Final[TypedDictCodec[models.PetsPetIdPatchPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}/patch parameter (request path petId)."""
 
 codec_5: Final[TypedDictCodec[models.PetPatch]] = TypedDictCodec(models.PetPatch, MODELS)
 """Codec of /paths/~1pets~1{petId}/patch request_body (request application/json)."""
 
-codec_6: Final[TypedDictCodec[models.FieldPetsPetIdVisitsPostPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_6: Final[TypedDictCodec[models.PetsPetIdVisitsPostPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1visits/post parameter (request path petId)."""
 
 codec_7: Final[TypedDictCodec[models.Visit]] = TypedDictCodec(models.Visit, MODELS)
 """Codec of /paths/~1pets~1{petId}~1visits/post request_body (request application/json)."""
 
-codec_8: Final[TypedDictCodec[models.FieldPetsPetIdOwnerPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_8: Final[TypedDictCodec[models.PetsPetIdOwnerPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1owner/put parameter (request path petId)."""
 
 codec_9: Final[TypedDictCodec[models.Owner]] = TypedDictCodec(models.Owner, MODELS)
 """Codec of /paths/~1pets~1{petId}~1owner/put request_body (request application/json)."""
 
-codec_10: Final[TypedDictCodec[models.FieldOwnersPostRequest]] = TypedDictCodec(Choice((('object', models.Owner),)), MODELS)
+codec_10: Final[TypedDictCodec[models.OwnersPostRequest]] = TypedDictCodec(Choice((('object', models.Owner),)), MODELS)
 """Codec of /paths/~1owners/post request_body (request application/json)."""
 
-codec_11: Final[TypedDictCodec[models.FieldPetsPetIdLabelsPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_11: Final[TypedDictCodec[models.PetsPetIdLabelsPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1labels/put parameter (request path petId)."""
 
 codec_12: Final[TypedDictCodec[models.Labels]] = TypedDictCodec(models.Labels, MODELS)
 """Codec of /paths/~1pets~1{petId}~1labels/put request_body (request application/json)."""
 
-codec_13: Final[TypedDictCodec[models.FieldPetsPetIdPhotoPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_13: Final[TypedDictCodec[models.PetsPetIdPhotoPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1photo/put parameter (request path petId)."""
 
-codec_14: Final[TypedDictCodec[models.FieldPetsPetIdRecordsPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
+codec_14: Final[TypedDictCodec[models.PetsPetIdRecordsPutPathPetIdParameter]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1pets~1{petId}~1records/put parameter (request path petId)."""
 
 codec_15: Final[TypedDictCodec[models.Pet]] = TypedDictCodec(models.Pet, MODELS)

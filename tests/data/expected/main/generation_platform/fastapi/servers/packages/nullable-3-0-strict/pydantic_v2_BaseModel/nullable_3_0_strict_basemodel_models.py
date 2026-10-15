@@ -27,27 +27,27 @@ class Color(RootModel[ColorEnum | None]):
     root: ColorEnum | None = None
 
 
-class FieldTextsPostRequest(RootModel[constr(max_length=5) | None]):
+class TextsPostRequest(RootModel[constr(max_length=5) | None]):
     root: constr(max_length=5) | None = None
 
 
-class FieldListsPostRequest(RootModel[list[int] | None]):
+class ListsPostRequest(RootModel[list[int] | None]):
     root: list[int] | None = Field(...)
 
 
-class FieldChoicesPostRequest(RootModel[Item | int | None]):
+class ChoicesPostRequest(RootModel[Item | int | None]):
     root: Item | int | None = None
 
 
-class FieldValuesPostRequest(RootModel[Any]):
+class ValuesPostRequest(RootModel[Any]):
     root: Any
 
 
-class FieldIdsPostRequest(RootModel[UUID]):
+class IdsPostRequest(RootModel[UUID]):
     root: UUID
 
 
-class FieldDraftsPostRequest(RootModel[str | None]):
+class DraftsPostRequest(RootModel[str | None]):
     root: str | None = None
 
 
@@ -55,10 +55,10 @@ class Reply(BaseModel):
     text: str | None = None
 
 
-class FieldNotesPostRequest(BaseModel):
+class NotesPostRequest(BaseModel):
     text: str
     replies: list[Reply | None] | None = None
 
 
-class FieldExtendedPostRequest(Item):
+class ExtendedPostRequest(Item):
     note: str | None = None

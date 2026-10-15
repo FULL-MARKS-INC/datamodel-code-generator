@@ -22,8 +22,8 @@ codec_0: Final[DataclassCodec[models.Item]] = DataclassCodec(models.Item, MODELS
 codec_1: Final[DataclassCodec[models.Item]] = DataclassCodec(models.Item, MODELS)
 """Codec of /paths/~1items/post response_body (response 200 application/json)."""
 
-codec_2: Final[DataclassCodec[models.FieldInlinePostRequest]] = DataclassCodec(None, MODELS)
+codec_2: Final[DataclassCodec[models.InlinePostRequest]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1inline/post request_body (request application/json)."""
 
-codec_3: Final[DataclassCodec[models.FieldInlinePostResponse]] = DataclassCodec(None, MODELS)
+codec_3: Final[DataclassCodec[models.InlinePostResponse]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1inline/post response_body (response 200 application/json)."""

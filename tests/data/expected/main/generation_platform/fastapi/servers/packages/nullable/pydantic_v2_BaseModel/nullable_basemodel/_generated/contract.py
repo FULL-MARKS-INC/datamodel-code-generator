@@ -44,7 +44,7 @@ class PostText:
     """Plans of the post_text operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldTextsPostRequest)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.TextsPostRequest)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -56,7 +56,7 @@ class PostList:
     """Plans of the post_list operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldListsPostRequest)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.ListsPostRequest)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -68,7 +68,7 @@ class PostChoice:
     """Plans of the post_choice operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldChoicesPostRequest)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.ChoicesPostRequest)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -116,7 +116,7 @@ class PostCode:
     """Plans of the post_code operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldCodesPostRequest)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.CodesPostRequest)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -128,7 +128,7 @@ class PostValue:
     """Plans of the post_value operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldValuesPostRequest)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.ValuesPostRequest)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -179,7 +179,7 @@ class PostNote:
     """Plans of the post_note operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldNotesPostRequest | None)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.NotesPostRequest | None)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -200,7 +200,7 @@ class Upload:
     """Plans of the upload operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='multipart/form-data', kind='multipart', adapter=TypeAdapter(nullable_basemodel_models.FieldUploadsPostRequest), fields=(FieldPlan('file', 'string'), FieldPlan('note', 'string')), json_parts=(JsonPart('meta', TypeAdapter(nullable_basemodel_models.Meta)),)),),
+        media=(BodyMedia(media_type='multipart/form-data', kind='multipart', adapter=TypeAdapter(nullable_basemodel_models.UploadsPostRequest), fields=(FieldPlan('file', 'string'), FieldPlan('note', 'string')), json_parts=(JsonPart('meta', TypeAdapter(nullable_basemodel_models.Meta)),)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},
@@ -212,7 +212,7 @@ class PostExtended:
     """Plans of the post_extended operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.FieldExtendedPostRequest | None)),),
+        media=(BodyMedia(media_type='application/json', kind='json', adapter=TypeAdapter(nullable_basemodel_models.ExtendedPostRequest | None)),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},

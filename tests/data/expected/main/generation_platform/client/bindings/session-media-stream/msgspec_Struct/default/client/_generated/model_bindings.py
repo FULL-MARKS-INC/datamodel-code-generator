@@ -11,5 +11,5 @@ from typing import Final
 from .._runtime.model_codecs.msgspec_structs import MsgspecCodec
 
 
-codec_0: Final[MsgspecCodec[models.FieldItemsPostRequestItem]] = MsgspecCodec(models.FieldItemsPostRequestItem)
+codec_0: Final[MsgspecCodec[models.ItemsPostRequestItem]] = MsgspecCodec(models.ItemsPostRequestItem)
 """Codec of /paths/~1items/post request_body (request application/json)."""

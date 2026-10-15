@@ -23,10 +23,10 @@ MODELS: Final[dict[type, Model]] = {
     models.Problem: Model((Field('code', 'code'),)),
 }
 
-codec_0: Final[DataclassCodec[models.FieldOrdersOrderIdGetPathOrderIdParameter]] = DataclassCodec(None, MODELS)
+codec_0: Final[DataclassCodec[models.OrdersOrderIdGetPathOrderIdParameter]] = DataclassCodec(None, MODELS)
 """Codec of /paths/~1orders~1{orderId}/get parameter (request path orderId)."""
 
-codec_1: Final[DataclassCodec[models.FieldOrdersOrderIdGetQueryViewParameter]] = DataclassCodec(models.FieldOrdersOrderIdGetQueryViewParameter, MODELS)
+codec_1: Final[DataclassCodec[models.OrdersOrderIdGetQueryViewParameter]] = DataclassCodec(models.OrdersOrderIdGetQueryViewParameter, MODELS)
 """Codec of /paths/~1orders~1{orderId}/get parameter (request query view)."""
 
 codec_2: Final[DataclassCodec[models.Order]] = DataclassCodec(models.Order, MODELS)

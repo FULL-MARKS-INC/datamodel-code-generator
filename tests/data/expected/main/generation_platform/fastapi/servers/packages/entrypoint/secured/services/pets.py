@@ -19,7 +19,7 @@ class Pets(PetsService[object]):
         self,
         *,
         principal: object,
-    ) -> secured_models.FieldPetsGetResponse | HTTPResult[secured_models.FieldPetsGetResponse] | Response:
+    ) -> secured_models.PetsGetResponse | HTTPResult[secured_models.PetsGetResponse] | Response:
         """
         Handle GET /pets.
         """

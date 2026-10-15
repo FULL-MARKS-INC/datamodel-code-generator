@@ -37,7 +37,7 @@ codec_0: Final[DataclassCodec[models.PetRequest]] = DataclassCodec(Choice((), 'k
 codec_1: Final[DataclassCodec[models.PetResponse]] = DataclassCodec(Choice((), 'kind', (('#-datamodel-code-generator-#-read-write-response-#-special-#', models.CatResponse), ('Dog', models.Dog))), MODELS)
 """Codec of /paths/~1pets/post response_body (response 200 application/json)."""
 
-codec_2: Final[DataclassCodec[models.FieldPetsListGetResponseResponse]] = DataclassCodec(Items(Choice((), 'kind', (('#-datamodel-code-generator-#-read-write-response-#-special-#', models.CatResponse), ('Dog', models.Dog)))), MODELS)
+codec_2: Final[DataclassCodec[models.PetsListGetResponseResponse]] = DataclassCodec(Items(Choice((), 'kind', (('#-datamodel-code-generator-#-read-write-response-#-special-#', models.CatResponse), ('Dog', models.Dog)))), MODELS)
 """Codec of /paths/~1pets~1list/get response_body (response 200 application/json)."""
 
 codec_3: Final[DataclassCodec[models.ChildResponse]] = DataclassCodec(models.ChildResponse, MODELS)

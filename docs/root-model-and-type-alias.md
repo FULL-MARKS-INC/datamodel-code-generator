@@ -30,6 +30,15 @@ that template is responsible for preserving its root constraints.
     their usual root models. See
     [OpenAPI Options: Generate all API declarations](openapi-options.md#generate-all-api-declarations).
 
+## API scope references
+
+!!! note "Changed in 0.84.0"
+    With `--openapi-scopes api`, a `$ref` beside only annotations such as `description`, `title`, `examples`, or
+    `x-` extensions is the referenced model itself, so a parameter, body, or response that refers to a `RootModel`
+    component is that `RootModel` rather than a second one wrapping it. Siblings that change the values, or
+    `nullable: true`, still give a derived model. See
+    [OpenAPI Options: Generate all API declarations](openapi-options.md#generate-all-api-declarations).
+
 ## 📊 Type Alias Behavior by Output Type and Python Version
 
 The type of type alias generated depends on the output model type and target Python version:

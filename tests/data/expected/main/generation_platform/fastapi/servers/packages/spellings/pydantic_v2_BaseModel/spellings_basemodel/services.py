@@ -30,7 +30,7 @@ class PetsService(Protocol):
         self,
         *,
         invalid: bool | None,
-    ) -> spellings_basemodel_models.FieldPetsGetResponse | HTTPResult[spellings_basemodel_models.FieldPetsGetResponse] | Response:
+    ) -> spellings_basemodel_models.PetsGetResponse | HTTPResult[spellings_basemodel_models.PetsGetResponse] | Response:
         """
         Handle GET /pets.
         """
@@ -40,7 +40,7 @@ class PetsService(Protocol):
         self,
         *,
         invalid: bool | None,
-    ) -> spellings_basemodel_models.FieldCountsGetResponse | HTTPResult[spellings_basemodel_models.FieldCountsGetResponse] | Response:
+    ) -> spellings_basemodel_models.CountsGetResponse | HTTPResult[spellings_basemodel_models.CountsGetResponse] | Response:
         """
         Handle GET /counts.
         """

@@ -4216,6 +4216,24 @@ models.
     `LimitParameter(5)`, or read its `.root` uses the plain value instead. See
     [Root Models and Type Aliases](root-model-and-type-alias.md#api-scope-parameters).
 
+!!! note "Changed in 0.84.0"
+    With `--openapi-scopes api`, a model derived from a schema inside `paths` is named after the operation without
+    the `Field` prefix 0.83.0 put before it: `FieldPetsGetResponse` is now `PetsGetResponse`. The separators of a
+    path are dropped, `/` alone becomes `Root` (`RootGetResponse`), and a name that starts with a digit keeps `Field`
+    (`Field2faCodesGetResponse` for `/2fa/codes`). A derived name that a component schema already holds takes a
+    numeric suffix, so a component `OrdersGetResponse` keeps its name and the model of `GET /orders` becomes
+    `OrdersGetResponse1`. Code that imports a derived model by its old name uses the new one instead. Component
+    schemas and `$ref` targets keep their names.
+
+!!! note "Changed in 0.84.0"
+    With `--openapi-scopes api`, a `$ref` beside only annotations in a parameter, request body, or response schema
+    is the referenced model itself, not a derived `RootModel` that wraps it, as it is for a property. The siblings
+    that count as annotations are `description`, `title`, `examples`, `example`, `default`, `deprecated`, `readOnly`,
+    `writeOnly`, `externalDocs`, `$comment`, and `x-` extensions. A `$ref` beside a keyword that changes its values,
+    such as `minLength`, `maxItems`, or `properties`, still has a derived model, and so does one beside
+    only `nullable: true`, unlike a property where it becomes `Optional`. See
+    [Root Models and Type Aliases](root-model-and-type-alias.md#api-scope-references).
+
 Adding other scopes alongside `api` does not repeat schema generation. `--openapi-include-paths` filters root paths and their reachable
 callbacks; webhooks and standalone components retain their declarations.
 
@@ -8349,6 +8367,15 @@ that template is responsible for preserving its root constraints.
     their usual root models. See
     [OpenAPI Options: Generate all API declarations](openapi-options.md#generate-all-api-declarations).
 
+## API scope references
+
+!!! note "Changed in 0.84.0"
+    With `--openapi-scopes api`, a `$ref` beside only annotations such as `description`, `title`, `examples`, or
+    `x-` extensions is the referenced model itself, so a parameter, body, or response that refers to a `RootModel`
+    component is that `RootModel` rather than a second one wrapping it. Siblings that change the values, or
+    `nullable: true`, still give a derived model. See
+    [OpenAPI Options: Generate all API declarations](openapi-options.md#generate-all-api-declarations).
+
 ## 📊 Type Alias Behavior by Output Type and Python Version
 
 The type of type alias generated depends on the output model type and target Python version:
@@ -12432,24 +12459,30 @@ An explicit name of [`--server-operation-names`](cli-reference/target-generation
 never renamed.
 
 A schema written inline, rather than under `components`, takes a model name derived from where it is: its path, its
-method, and its location. The tutorial's inline parameter schemas become these type aliases in `models.py`:
+method, and its location. The path's words are joined in PascalCase without its separators, so `/pets/{petId}` gives
+`PetsPetId`, the root path `/` gives `Root`, and only a path that starts with a digit, such as `/2fa`, is prefixed with
+`Field` to stay a valid name. The tutorial's inline parameter schemas become these type aliases in `models.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.inline-names -->
 <!-- fmt: off -->
 
 ```python
-type FieldPetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
+type PetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
 
 
-type FieldPetsPetIdGetPathPetIdParameter = int
+type PetsPetIdGetPathPetIdParameter = int
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.inline-names -->
 
-An inline response schema of `GET /pets` would likewise become `FieldPetsGetResponse`. The method arguments keep their
+An inline response schema of `GET /pets` would likewise become `PetsGetResponse`. The method arguments keep their
 own names, `limit` and `pet_id`, but a body or response model is a class you import. To name such a model, declare its
 schema under `components.schemas` and refer to it with `$ref`, as the tutorial does for `Pet`, `NewPet`, and `Error`.
+A `$ref` beside only annotations, such as `description`, `title`, `examples`, or `x-` extensions, names that model too,
+as it does for a property; one beside keywords that change its values, such as `minLength` or `nullable`, takes a
+derived name. A parameter or body of such a `$ref` has the type and constraints of the component, as a bare `$ref`
+does, so the service receives the component model, such as `Tags(root=[...])` for a `RootModel` component.
 
 ### Return values and `HTTPResult`
 
@@ -14130,6 +14163,11 @@ project, a call may give the fields of an object body as keyword arguments inste
 `name="Kiki", tag="bird"`; the client builds the model from them and sends only the fields given. A call gives the body
 or its fields, never both. See [Body field arguments](python-client-reference.md#body-field-arguments) for which
 bodies take fields and how they are named.
+
+A `$ref` beside only annotations, such as `description` or `x-` extensions, takes the type and constraints of the
+referenced component, as a bare `$ref` does, for a body and for a parameter. The client checks a plain value the
+component's constraints refuse before sending: a call raises a `DecodeError` with the reason `unencodable` instead of
+the server answering 422.
 
 A `format: binary` string is raw bytes, which only a whole body, such as `application/octet-stream`, `image/png` or
 `text/csv`, or a file part of a multipart form can carry; a `text/*` body whose model type is one binary string travels
@@ -17444,7 +17482,7 @@ Every keyword is a real keyword-only parameter of the method and of each of its 
         petId: int,
         response_media_type: Literal['text/plain'],
         options: RequestOptions | None = None,
-    ) -> models.FieldPetsPetIdGetResponse: ...
+    ) -> models.PetsPetIdGetResponse: ...
     def get_pet(
         self,
         *,
@@ -17488,7 +17526,7 @@ Every overload and the implementation take `**kwargs` typed by a TypedDict of th
     def get_pet(
         self,
         **kwargs: Unpack[Operation2Arguments2],
-    ) -> models.FieldPetsPetIdGetResponse: ...
+    ) -> models.PetsPetIdGetResponse: ...
     def get_pet(
         self,
         **kwargs: Unpack[Operation2Arguments3],
@@ -18735,7 +18773,7 @@ checkers point at the implementations to update.
   [Production settings](fastapi-server.md#production-settings).
 - **Literal paths come before templated paths**, so `/pets/me` is registered before `/pets/{petId}`. fcg sorted the
   routes by path.
-- **The models file has more names.** A schema written inline takes a derived name such as `FieldPetsGetResponse`, and
+- **The models file has more names.** A schema written inline takes a derived name such as `PetsGetResponse`, and
   parameters get type aliases. Declare schemas under `components` to name them yourself, as the tutorial does.
 - **Generation is stricter.** A path placeholder without a declared path parameter stops the run, where fcg ignored it.
   A path parameter that names no placeholder of its operation's path is refused with an error instead of being
@@ -51938,7 +51976,7 @@ pyproject.toml, here as `generate-server = "fastapi"`.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52079,7 +52117,7 @@ for methods that read the body themselves. `--server-body-modes` overrides it fo
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52221,7 +52259,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52361,7 +52399,7 @@ methods. `--server-handler-modes` overrides it for single operations.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52505,7 +52543,7 @@ table.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52647,7 +52685,7 @@ Each service method takes a `request` keyword argument as well as the operation'
             *,
             request: Request,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -52811,7 +52849,7 @@ Choose how the server package lays out its routes (experimental).
             list_pets,
             methods=['GET'],
             status_code=200,
-            response_model=models.FieldPetsGetResponse,
+            response_model=models.PetsGetResponse,
             response_model_by_alias=True,
             response_model_exclude_unset=True,
             operation_id='listPets',
@@ -53035,7 +53073,7 @@ generates.
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -53176,7 +53214,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -53317,7 +53355,7 @@ directory, and the `server-output` key of pyproject.toml is relative to the pypr
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -53457,7 +53495,7 @@ generation prints name the package by it; the package imports its own modules re
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -53598,7 +53636,7 @@ without a file against the working directory, and against the pyproject.toml dir
             self,
             *,
             page_size: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """
@@ -53762,7 +53800,7 @@ without a file against the working directory, and against the pyproject.toml dir
             list_pets,
             methods=['GET'],
             status_code=200,
-            response_model=models.FieldPetsGetResponse,
+            response_model=models.PetsGetResponse,
             response_model_by_alias=True,
             response_model_exclude_unset=True,
             operation_id='listPets',
@@ -53986,7 +54024,7 @@ The JSON object, inline or in a file, maps group keys, such as `tag:pets` for th
             self,
             *,
             limit: int,
-        ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse] | Response:
+        ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse] | Response:
             """
             Handle GET /pets.
             """

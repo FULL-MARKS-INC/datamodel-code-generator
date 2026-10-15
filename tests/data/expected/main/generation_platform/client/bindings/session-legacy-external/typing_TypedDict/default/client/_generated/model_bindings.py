@@ -13,11 +13,11 @@ from .._runtime.model_codecs.stdlib_typeddicts import Field, Model, TypedDictCod
 
 
 MODELS: Final[dict[type, Model]] = {
-    models.FieldExternalPostResponseItem: Model((Field('wire-name', 'wire-name'),)),
+    models.ExternalPostResponseItem: Model((Field('wire-name', 'wire-name'),)),
 }
 
-codec_0: Final[TypedDictCodec[models.FieldExternalPostRequestItem]] = TypedDictCodec(None, MODELS)
+codec_0: Final[TypedDictCodec[models.ExternalPostRequestItem]] = TypedDictCodec(None, MODELS)
 """Codec of /paths/~1external/post request_body (request application/json)."""
 
-codec_1: Final[TypedDictCodec[models.FieldExternalPostResponseItem]] = TypedDictCodec(models.FieldExternalPostResponseItem, MODELS)
+codec_1: Final[TypedDictCodec[models.ExternalPostResponseItem]] = TypedDictCodec(models.ExternalPostResponseItem, MODELS)
 """Codec of /paths/~1external/post response_body (response 200 application/json)."""

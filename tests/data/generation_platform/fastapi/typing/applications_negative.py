@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from applications import Admin, Pets, Public, Default, User, authorize, store
 from fastapi import FastAPI
-from secured_models import FieldPetsGetResponse
+from secured_models import PetsGetResponse
 
 from secured import Authorize, OperationDependencies, RequirementSets, create_app
 from secured.services import PetsService, DefaultService
@@ -40,7 +40,7 @@ class Anonymous(DefaultService[User]):
 
 
 class Admins(PetsService[Admin]):
-    def list_pets(self, *, principal: Admin) -> FieldPetsGetResponse:
+    def list_pets(self, *, principal: Admin) -> PetsGetResponse:
         return store[principal.name]
 
 

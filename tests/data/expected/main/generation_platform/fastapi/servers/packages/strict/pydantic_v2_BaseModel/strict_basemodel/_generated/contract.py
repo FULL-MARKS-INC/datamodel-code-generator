@@ -81,7 +81,7 @@ class Upload:
     """Plans of the upload operation."""
 
     BODY: Final = BodyAdapter(
-        media=(BodyMedia(media_type='multipart/form-data', kind='multipart', adapter=TypeAdapter(strict_basemodel_models.FieldUploadsPostRequest), fields=(FieldPlan('file', 'string'), FieldPlan('count', 'integer'), FieldPlan('score', 'number'), FieldPlan('flag', 'boolean'), FieldPlan('note', 'string'), FieldPlan('counts', 'integer', repeated=True))),),
+        media=(BodyMedia(media_type='multipart/form-data', kind='multipart', adapter=TypeAdapter(strict_basemodel_models.UploadsPostRequest), fields=(FieldPlan('file', 'string'), FieldPlan('count', 'integer'), FieldPlan('score', 'number'), FieldPlan('flag', 'boolean'), FieldPlan('note', 'string'), FieldPlan('counts', 'integer', repeated=True))),),
     )
     RESPONSES: Final = OperationResponses(
         responses={'204': Declared()},

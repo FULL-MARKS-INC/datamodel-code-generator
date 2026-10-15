@@ -29,11 +29,11 @@ def services(server: ModuleType, models: ModuleType, record: Recorder) -> dict[s
 def calls(kit: Kit) -> Calls:
     """Return calls that give each parameter a value, its default, or a value to encode."""
     api, models = kit.api, kit.models
-    level = models.FieldItemsLevelGetPathLevelParameter.integer_2
-    mode = models.FieldItemsLevelGetQueryModeParameter.integer_1
-    ratio = models.FieldItemsLevelGetQueryRatioParameter.number_1_5
-    kind = models.FieldItemsLevelGetQueryKindParameter.b
-    levels = [models.FieldItemsLevelGetQueryLevelsParameterEnum.integer_2] * 2
+    level = models.ItemsLevelGetPathLevelParameter.integer_2
+    mode = models.ItemsLevelGetQueryModeParameter.integer_1
+    ratio = models.ItemsLevelGetQueryRatioParameter.number_1_5
+    kind = models.ItemsLevelGetQueryKindParameter.b
+    levels = [models.ItemsLevelGetQueryLevelsParameterEnum.integer_2] * 2
     return [
         (
             "search every parameter",

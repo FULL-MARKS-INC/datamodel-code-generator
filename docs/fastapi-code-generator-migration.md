@@ -288,7 +288,7 @@ checkers point at the implementations to update.
   [Production settings](fastapi-server.md#production-settings).
 - **Literal paths come before templated paths**, so `/pets/me` is registered before `/pets/{petId}`. fcg sorted the
   routes by path.
-- **The models file has more names.** A schema written inline takes a derived name such as `FieldPetsGetResponse`, and
+- **The models file has more names.** A schema written inline takes a derived name such as `PetsGetResponse`, and
   parameters get type aliases. Declare schemas under `components` to name them yourself, as the tutorial does.
 - **Generation is stricter.** A path placeholder without a declared path parameter stops the run, where fcg ignored it.
   A path parameter that names no placeholder of its operation's path is refused with an error instead of being

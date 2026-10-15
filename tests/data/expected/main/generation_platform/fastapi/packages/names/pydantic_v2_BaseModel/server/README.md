@@ -82,7 +82,7 @@ class Users(UsersService):
         *,
         id: int,
         principal_1: str | None,
-        body: models.FieldUsersIdPutRequest,
+        body: models.UsersIdPutRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle PUT /users/{id}.

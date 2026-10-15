@@ -23,16 +23,16 @@
   multipart null field part = None
   > GET https://api.example.com/pets?filter%5Bstatus%5D=x
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  absent response members = FieldPetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
+  absent response members = PetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
   > GET https://api.example.com/pets?filter%5Bstatus%5D=x
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  null non-nullable member = FieldPetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
+  null non-nullable member = PetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
   > GET https://api.example.com/pets?filter%5Bstatus%5D=x
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  enum null member = FieldPetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
+  enum null member = PetsGetResponse(root=[Pet(name='a', owner=None, tag=None, nick=None, color=None)])
   > GET https://api.example.com/pets?filter%5Bstatus%5D=x
     [host: api.example.com, accept-encoding: gzip, deflate, accept: application/json] b''
-  enum unknown member ! DecodeError: DecodeError(status_code=200, operation_id='listPets', reason='invalid_value') [operation_id='listPets', body_bytes=b'[{"name":"a","owner":null,"color":"blue"}]', truncated=False, cause=1 validation error for FieldPetsGetResponse
+  enum unknown member ! DecodeError: DecodeError(status_code=200, operation_id='listPets', reason='invalid_value') [operation_id='listPets', body_bytes=b'[{"name":"a","owner":null,"color":"blue"}]', truncated=False, cause=1 validation error for PetsGetResponse
 0.color
   Input should be 'red', 'green' or None [type=enum, input_value='blue', input_type=str]
     For further information visit https://errors.pydantic.dev/<version>/v/enum] invalid_value

@@ -36,7 +36,7 @@ codec_0: Final[TypedDictCodec[models.Pet]] = TypedDictCodec(Choice((), 'kind', (
 codec_1: Final[TypedDictCodec[models.Pet]] = TypedDictCodec(Choice((), 'kind', (('kitty', models.Cat), ('doggo', models.Dog))), MODELS)
 """Codec of /paths/~1pets/post response_body (response 200 application/json)."""
 
-codec_2: Final[TypedDictCodec[models.FieldPetsListGetResponse]] = TypedDictCodec(Items(Choice((), 'kind', (('Cat', models.Cat), ('Dog', models.Dog)))), MODELS)
+codec_2: Final[TypedDictCodec[models.PetsListGetResponse]] = TypedDictCodec(Items(Choice((), 'kind', (('Cat', models.Cat), ('Dog', models.Dog)))), MODELS)
 """Codec of /paths/~1pets~1list/get response_body (response 200 application/json)."""
 
 codec_3: Final[TypedDictCodec[models.Child]] = TypedDictCodec(models.Child, MODELS)

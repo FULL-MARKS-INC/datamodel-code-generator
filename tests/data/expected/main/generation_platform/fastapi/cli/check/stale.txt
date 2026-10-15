@@ -2,25 +2,25 @@
 +++ models.py (expected)
 @@ -51,21 +51,3 @@
  
- class FieldPetsGetResponse(RootModel[list[Pet]]):
+ class PetsGetResponse(RootModel[list[Pet]]):
      root: list[Pet]
 -
 -
--class FieldPetsMineGetResponse(RootModel[list[Pet]]):
+-class PetsMineGetResponse(RootModel[list[Pet]]):
 -    root: list[Pet]
 -
 -
--FieldPetsPetIdGetPathPetIdParameter = TypeAliasType(
--    "FieldPetsPetIdGetPathPetIdParameter", Annotated[int, Field(ge=1)]
+-PetsPetIdGetPathPetIdParameter = TypeAliasType(
+-    "PetsPetIdGetPathPetIdParameter", Annotated[int, Field(ge=1)]
 -)
 -
 -
--FieldPetsPetIdDeletePathPetIdParameter = TypeAliasType(
--    "FieldPetsPetIdDeletePathPetIdParameter", Annotated[int, Field(ge=1)]
+-PetsPetIdDeletePathPetIdParameter = TypeAliasType(
+-    "PetsPetIdDeletePathPetIdParameter", Annotated[int, Field(ge=1)]
 -)
 -
 -
--class FieldStoreInventoryGetResponse(RootModel[dict[str, int]]):
+-class StoreInventoryGetResponse(RootModel[dict[str, int]]):
 -    root: dict[str, int]
 --- server/_generated/contract.py
 +++ server/_generated/contract.py (expected)
@@ -45,7 +45,7 @@
 -    """Plans of the list_my_pets operation."""
 -
 -    RESPONSES: Final = OperationResponses(
--        responses={'200': Declared(media_type='application/json', model=models.FieldPetsMineGetResponse)},
+-        responses={'200': Declared(media_type='application/json', model=models.PetsMineGetResponse)},
 -    )
 -
 -
@@ -70,7 +70,7 @@
 -    """Plans of the get_inventory operation."""
 -
 -    RESPONSES: Final = OperationResponses(
--        responses={'200': Declared(media_type='application/json', model=models.FieldStoreInventoryGetResponse)},
+-        responses={'200': Declared(media_type='application/json', model=models.StoreInventoryGetResponse)},
 -    )
 --- server/application.py
 +++ server/application.py (expected)
@@ -183,7 +183,7 @@
 -        list_my_pets,
 -        methods=['GET'],
 -        status_code=200,
--        response_model=models.FieldPetsMineGetResponse,
+-        response_model=models.PetsMineGetResponse,
 -        response_model_by_alias=True,
 -        response_model_exclude_unset=True,
 -        operation_id='listMyPets',
@@ -289,7 +289,7 @@
 -    @abstractmethod
 -    def list_my_pets(
 -        self,
--    ) -> models.FieldPetsMineGetResponse | HTTPResult[models.FieldPetsMineGetResponse] | Response:
+-    ) -> models.PetsMineGetResponse | HTTPResult[models.PetsMineGetResponse] | Response:
 -        """
 -        Handle GET /pets/mine.
 -        """
@@ -321,7 +321,7 @@
 -    @abstractmethod
 -    def get_inventory(
 -        self,
--    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
+-    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
 -        """
 -        Handle GET /store/inventory.
 -        """
@@ -463,7 +463,7 @@ EXTRA: server/routers/store.py (no longer generated)
 -
 -    def list_my_pets(
 -        self,
--    ) -> models.FieldPetsMineGetResponse | HTTPResult[models.FieldPetsMineGetResponse] | Response:
+-    ) -> models.PetsMineGetResponse | HTTPResult[models.PetsMineGetResponse] | Response:
 -        """
 -        Handle GET /pets/mine.
 -        """
@@ -512,7 +512,7 @@ EXTRA: server/routers/store.py (no longer generated)
 -
 -    def get_inventory(
 -        self,
--    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
+-    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
 -        """
 -        Handle GET /store/inventory.
 -        """

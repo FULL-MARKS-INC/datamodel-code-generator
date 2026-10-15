@@ -21,7 +21,7 @@ def _root(model: object, value: object) -> object:
 
 def services(server: ModuleType, models: ModuleType, calls: list[str]) -> dict[str, dict[str, object]]:
     """Return a service that answers with a bare value or an HTTP result, as the mode asks."""
-    greeting = models.FieldGreetingsGetResponse
+    greeting = models.GreetingsGetResponse
 
     class Default(server.services.DefaultService):
         def get_greeting(self, *, mode: object) -> object:
@@ -50,7 +50,7 @@ def services(server: ModuleType, models: ModuleType, calls: list[str]) -> dict[s
 
         def get_text(self) -> object:
             calls.append("get_text()")
-            return _root(models.FieldTextGetResponse, "hello")
+            return _root(models.TextGetResponse, "hello")
 
         def head_text(self) -> object:
             calls.append("head_text()")
@@ -76,7 +76,7 @@ def services(server: ModuleType, models: ModuleType, calls: list[str]) -> dict[s
 
         def get_note(self, *, empty: object) -> object:
             calls.append(f"get_note(empty={empty!r})")
-            return _root(models.FieldNotesGetResponse, None if empty else "note")
+            return _root(models.NotesGetResponse, None if empty else "note")
 
         def get_chosen(self) -> object:
             calls.append("get_chosen()")

@@ -30,7 +30,7 @@ def calls(kit: Kit) -> Calls:
     """Return calls that send every style with values that need encoding."""
     api, models = kit.api, kit.models
     point, corner = models.Point(x=1, y=-2), models.Point(x=3, y=4)
-    text, kind = api.default.get_header_text, models.FieldHeaderTextGetHeaderXKindParameter
+    text, kind = api.default.get_header_text, models.HeaderTextGetHeaderXKindParameter
     named = {"X_N\u00e4me": "a"}
     return [
         ("get_labels", lambda: api.default.get_labels(name="a b", names=["x", "y"], point=point)),

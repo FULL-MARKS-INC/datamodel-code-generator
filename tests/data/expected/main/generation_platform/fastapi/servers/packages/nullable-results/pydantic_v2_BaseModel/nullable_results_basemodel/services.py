@@ -22,7 +22,7 @@ class DefaultService(Protocol):
         self,
         *,
         case: str,
-    ) -> nullable_results_basemodel_models.FieldTextsGetResponse | HTTPResult[nullable_results_basemodel_models.FieldTextsGetResponse | nullable_results_basemodel_models.FieldTextsGetResponse1 | nullable_results_basemodel_models.Thing | nullable_results_basemodel_models.FieldTextsGetResponse2 | Any | nullable_results_basemodel_models.Color | nullable_results_basemodel_models.Pet | None] | Response:
+    ) -> nullable_results_basemodel_models.TextsGetResponse | HTTPResult[nullable_results_basemodel_models.TextsGetResponse | nullable_results_basemodel_models.TextsGetResponse1 | nullable_results_basemodel_models.Thing | nullable_results_basemodel_models.TextsGetResponse2 | Any | nullable_results_basemodel_models.Color | nullable_results_basemodel_models.Pet | None] | Response:
         """
         Handle GET /texts.
         """
@@ -42,7 +42,7 @@ class DefaultService(Protocol):
         self,
         *,
         case: str,
-    ) -> nullable_results_basemodel_models.FieldListsGetResponse | HTTPResult[nullable_results_basemodel_models.FieldListsGetResponse] | Response:
+    ) -> nullable_results_basemodel_models.ListsGetResponse | HTTPResult[nullable_results_basemodel_models.ListsGetResponse] | Response:
         """
         Handle GET /lists.
         """
@@ -62,7 +62,7 @@ class DefaultService(Protocol):
         self,
         *,
         case: str,
-    ) -> nullable_results_basemodel_models.FieldValuesGetResponse | HTTPResult[nullable_results_basemodel_models.FieldValuesGetResponse] | Response:
+    ) -> nullable_results_basemodel_models.ValuesGetResponse | HTTPResult[nullable_results_basemodel_models.ValuesGetResponse] | Response:
         """
         Handle GET /values.
         """
@@ -102,7 +102,7 @@ class DefaultService(Protocol):
         self,
         *,
         case: str,
-    ) -> nullable_results_basemodel_models.FieldNotesGetResponse | HTTPResult[nullable_results_basemodel_models.FieldNotesGetResponse] | Response:
+    ) -> nullable_results_basemodel_models.NotesGetResponse | HTTPResult[nullable_results_basemodel_models.NotesGetResponse] | Response:
         """
         Handle GET /notes.
         """
@@ -112,8 +112,8 @@ class DefaultService(Protocol):
         self,
         *,
         case: str,
-        body: nullable_results_basemodel_models.FieldMemosPostRequest | None,
-    ) -> nullable_results_basemodel_models.FieldMemosPostResponse | None | HTTPResult[nullable_results_basemodel_models.FieldMemosPostResponse | None] | Response:
+        body: nullable_results_basemodel_models.MemosPostRequest | None,
+    ) -> nullable_results_basemodel_models.MemosPostResponse | None | HTTPResult[nullable_results_basemodel_models.MemosPostResponse | None] | Response:
         """
         Handle POST /memos.
         """

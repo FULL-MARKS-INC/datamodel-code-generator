@@ -12,9 +12,9 @@
  )
  
  
--class FieldOwnersGetResponse(RootModel[list[str]]):
+-class OwnersGetResponse(RootModel[list[str]]):
 -    root: list[str]
-+class FieldStoreInventoryGetResponse(RootModel[dict[str, int]]):
++class StoreInventoryGetResponse(RootModel[dict[str, int]]):
 +    root: dict[str, int]
 --- server/_generated/contract.py (baseline input)
 +++ server/_generated/contract.py (current input)
@@ -37,8 +37,8 @@
 +    """Plans of the get_inventory operation."""
  
      RESPONSES: Final = OperationResponses(
--        responses={'200': Declared(media_type='application/json', model=models.FieldOwnersGetResponse)},
-+        responses={'200': Declared(media_type='application/json', model=models.FieldStoreInventoryGetResponse)},
+-        responses={'200': Declared(media_type='application/json', model=models.OwnersGetResponse)},
++        responses={'200': Declared(media_type='application/json', model=models.StoreInventoryGetResponse)},
      )
 --- server/application.py (baseline input)
 +++ server/application.py (current input)
@@ -131,7 +131,7 @@
 -        limit: Annotated[int, Field(ge=1, le=100), Query(alias='limit', description='Page size of a listing.')] = 20,
 +        limit: Annotated[int, Field(ge=1, le=100), Query(alias='limit', description='Page size.')] = 20,
          tags: Annotated[list[str] | None, Query(alias='tags')] = None,
-         kind: Annotated[models.FieldPetsGetQueryKindParameter | None, Query(alias='kind')] = None,
+         kind: Annotated[models.PetsGetQueryKindParameter | None, Query(alias='kind')] = None,
          X_Request_Id: Annotated[UUID | None, Header(alias='X-Request-Id', convert_underscores=False)] = None,
 --- server/services.py (baseline input)
 +++ server/services.py (current input)
@@ -148,8 +148,8 @@
 -    def list_owners(
 +    def get_inventory(
          self,
--    ) -> models.FieldOwnersGetResponse | HTTPResult[models.FieldOwnersGetResponse] | Response:
-+    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
+-    ) -> models.OwnersGetResponse | HTTPResult[models.OwnersGetResponse] | Response:
++    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
          """
 -        Handle GET /owners.
 +        Handle GET /store/inventory.
@@ -248,7 +248,7 @@ REMOVED: server/routers/owners.py (generated only from baseline input)
 -
 -    def list_owners(
 -        self,
--    ) -> models.FieldOwnersGetResponse | HTTPResult[models.FieldOwnersGetResponse] | Response:
+-    ) -> models.OwnersGetResponse | HTTPResult[models.OwnersGetResponse] | Response:
 -        """
 -        Handle GET /owners.
 +from server.services import StoreService
@@ -259,7 +259,7 @@ REMOVED: server/routers/owners.py (generated only from baseline input)
 +
 +    def get_inventory(
 +        self,
-+    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
++    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
 +        """
 +        Handle GET /store/inventory.
          """

@@ -15,7 +15,7 @@ MODELS: Final[dict[type, Model]] = {
     models.Record: Model((Field('checksum', 'checksum', bytes), Field('image', 'image'), Field('secret', 'secret'))),
 }
 
-codec_0: Final[TypedDictCodec[models.FieldFilesPostQueryDigestParameter]] = TypedDictCodec(bytes, MODELS)
+codec_0: Final[TypedDictCodec[models.FilesPostQueryDigestParameter]] = TypedDictCodec(bytes, MODELS)
 """Codec of /paths/~1files/post parameter (request query digest)."""
 
 codec_1: Final[TypedDictCodec[models.Record]] = TypedDictCodec(models.Record, MODELS)

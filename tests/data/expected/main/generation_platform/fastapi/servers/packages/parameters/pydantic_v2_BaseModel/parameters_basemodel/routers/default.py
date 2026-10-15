@@ -373,7 +373,7 @@ def _add_get_item(
 
     def get_item(
         *,
-        kind: Annotated[parameters_basemodel_models.FieldItemsLevelGetQueryKindParameter | None, Query(alias='kind')] = None,
+        kind: Annotated[parameters_basemodel_models.ItemsLevelGetQueryKindParameter | None, Query(alias='kind')] = None,
         parameters: Annotated[contract.GetItem.Parameters, Depends(contract.GetItem.PARAMETERS)],
     ) -> object:
         return dispatch(

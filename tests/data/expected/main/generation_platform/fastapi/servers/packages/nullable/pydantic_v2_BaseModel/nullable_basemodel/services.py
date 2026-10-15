@@ -21,7 +21,7 @@ class DefaultService(Protocol):
     def post_text(
         self,
         *,
-        body: nullable_basemodel_models.FieldTextsPostRequest,
+        body: nullable_basemodel_models.TextsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /texts.
@@ -31,7 +31,7 @@ class DefaultService(Protocol):
     async def post_list(
         self,
         *,
-        body: nullable_basemodel_models.FieldListsPostRequest,
+        body: nullable_basemodel_models.ListsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /lists.
@@ -41,7 +41,7 @@ class DefaultService(Protocol):
     def post_choice(
         self,
         *,
-        body: nullable_basemodel_models.FieldChoicesPostRequest,
+        body: nullable_basemodel_models.ChoicesPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /choices.
@@ -81,7 +81,7 @@ class DefaultService(Protocol):
     def post_code(
         self,
         *,
-        body: nullable_basemodel_models.FieldCodesPostRequest,
+        body: nullable_basemodel_models.CodesPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /codes.
@@ -91,7 +91,7 @@ class DefaultService(Protocol):
     def post_value(
         self,
         *,
-        body: nullable_basemodel_models.FieldValuesPostRequest,
+        body: nullable_basemodel_models.ValuesPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /values.
@@ -121,7 +121,7 @@ class DefaultService(Protocol):
     def post_id(
         self,
         *,
-        body: nullable_basemodel_models.FieldIdsPostRequest,
+        body: nullable_basemodel_models.IdsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /ids.
@@ -131,7 +131,7 @@ class DefaultService(Protocol):
     def post_draft(
         self,
         *,
-        body: nullable_basemodel_models.FieldDraftsPostRequest | None,
+        body: nullable_basemodel_models.DraftsPostRequest | None,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /drafts.
@@ -141,7 +141,7 @@ class DefaultService(Protocol):
     def post_note(
         self,
         *,
-        body: nullable_basemodel_models.FieldNotesPostRequest | None,
+        body: nullable_basemodel_models.NotesPostRequest | None,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /notes.
@@ -151,7 +151,7 @@ class DefaultService(Protocol):
     def post_form(
         self,
         *,
-        body: nullable_basemodel_models.FieldFormsPostRequest,
+        body: nullable_basemodel_models.FormsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /forms.
@@ -161,7 +161,7 @@ class DefaultService(Protocol):
     def upload(
         self,
         *,
-        body: nullable_basemodel_models.FieldUploadsPostRequest,
+        body: nullable_basemodel_models.UploadsPostRequest,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /uploads.
@@ -171,7 +171,7 @@ class DefaultService(Protocol):
     def post_extended(
         self,
         *,
-        body: nullable_basemodel_models.FieldExtendedPostRequest | None,
+        body: nullable_basemodel_models.ExtendedPostRequest | None,
     ) -> None | HTTPResult[None] | Response:
         """
         Handle POST /extended.

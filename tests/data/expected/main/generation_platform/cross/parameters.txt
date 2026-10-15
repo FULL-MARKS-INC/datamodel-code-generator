@@ -83,12 +83,12 @@ get_menu
   = None
 get_item every parameter
   > GET /items/2?mode=1&ratio=1.5&kind=b&levels=2&levels=2
-  get_item(level=FieldItemsLevelGetPathLevelParameter.integer_2, mode=FieldItemsLevelGetQueryModeParameter.integer_1, ratio=FieldItemsLevelGetQueryRatioParameter.number_1_5, X_Flag=True, kind=FieldItemsLevelGetQueryKindParameter.b, tier=None, levels=[FieldItemsLevelGetQueryLevelsParameterEnum.integer_2, FieldItemsLevelGetQueryLevelsParameterEnum.integer_2])
+  get_item(level=ItemsLevelGetPathLevelParameter.integer_2, mode=ItemsLevelGetQueryModeParameter.integer_1, ratio=ItemsLevelGetQueryRatioParameter.number_1_5, X_Flag=True, kind=ItemsLevelGetQueryKindParameter.b, tier=None, levels=[ItemsLevelGetQueryLevelsParameterEnum.integer_2, ItemsLevelGetQueryLevelsParameterEnum.integer_2])
   < 204 -
   = None
 get_item level
   > GET /items/2
-  get_item(level=FieldItemsLevelGetPathLevelParameter.integer_2, mode=None, ratio=None, X_Flag=None, kind=None, tier=None, levels=None)
+  get_item(level=ItemsLevelGetPathLevelParameter.integer_2, mode=None, ratio=None, X_Flag=None, kind=None, tier=None, levels=None)
   < 204 -
   = None
 get_serving

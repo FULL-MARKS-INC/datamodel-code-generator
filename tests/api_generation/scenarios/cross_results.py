@@ -41,7 +41,7 @@ def services(server: ModuleType, models: ModuleType, record: Recorder) -> dict[s
     texts = {
         "result": lambda: result(200, None, headers={"X-Rate": "5"}),
         "none": lambda: None,
-        "value": lambda: models.FieldTextsGetResponse("abc"),
+        "value": lambda: models.TextsGetResponse("abc"),
     }
     return {
         "default": service(

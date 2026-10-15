@@ -603,24 +603,30 @@ An explicit name of [`--server-operation-names`](cli-reference/target-generation
 never renamed.
 
 A schema written inline, rather than under `components`, takes a model name derived from where it is: its path, its
-method, and its location. The tutorial's inline parameter schemas become these type aliases in `models.py`:
+method, and its location. The path's words are joined in PascalCase without its separators, so `/pets/{petId}` gives
+`PetsPetId`, the root path `/` gives `Root`, and only a path that starts with a digit, such as `/2fa`, is prefixed with
+`Field` to stay a valid name. The tutorial's inline parameter schemas become these type aliases in `models.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.inline-names -->
 <!-- fmt: off -->
 
 ```python
-type FieldPetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
+type PetsGetQueryLimitParameter = Annotated[int, Field(ge=1, le=100)]
 
 
-type FieldPetsPetIdGetPathPetIdParameter = int
+type PetsPetIdGetPathPetIdParameter = int
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.inline-names -->
 
-An inline response schema of `GET /pets` would likewise become `FieldPetsGetResponse`. The method arguments keep their
+An inline response schema of `GET /pets` would likewise become `PetsGetResponse`. The method arguments keep their
 own names, `limit` and `pet_id`, but a body or response model is a class you import. To name such a model, declare its
 schema under `components.schemas` and refer to it with `$ref`, as the tutorial does for `Pet`, `NewPet`, and `Error`.
+A `$ref` beside only annotations, such as `description`, `title`, `examples`, or `x-` extensions, names that model too,
+as it does for a property; one beside keywords that change its values, such as `minLength` or `nullable`, takes a
+derived name. A parameter or body of such a `$ref` has the type and constraints of the component, as a bare `$ref`
+does, so the service receives the component model, such as `Tags(root=[...])` for a `RootModel` component.
 
 ### Return values and `HTTPResult`
 

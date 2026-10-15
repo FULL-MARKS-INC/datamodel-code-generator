@@ -13,34 +13,34 @@ class Filter(BaseModel):
     minAge: conint(ge=0) | None = None
 
 
-class FieldFormsPostRequest(BaseModel):
+class FormsPostRequest(BaseModel):
     name: str
     count: int | None = 1
     tags: list[str] | None = None
 
 
-class FieldNotesPostRequest(RootModel[dict[str, str]]):
+class NotesPostRequest(RootModel[dict[str, str]]):
     root: dict[str, str]
 
 
-class FieldUploadsPostRequest(BaseModel):
+class UploadsPostRequest(BaseModel):
     file: bytes
     note: str | None = None
 
 
-class FieldBatchesPostRequest(BaseModel):
+class BatchesPostRequest(BaseModel):
     files: list[bytes]
     label: str | None = None
 
 
-class FieldSearchesPostRequest(BaseModel):
+class SearchesPostRequest(BaseModel):
     filter: Filter
     filters: list[Filter] | None = None
     tags: list[str] | None = None
     file: bytes | None = None
 
 
-class FieldExtrasPostRequest(BaseModel):
+class ExtrasPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -50,7 +50,7 @@ class FieldExtrasPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraListsPostRequest(BaseModel):
+class ExtraListsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -60,7 +60,7 @@ class FieldExtraListsPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraScoresPostRequest(BaseModel):
+class ExtraScoresPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -70,7 +70,7 @@ class FieldExtraScoresPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraPatternsPostRequest(BaseModel):
+class ExtraPatternsPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -80,7 +80,7 @@ class FieldExtraPatternsPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraProfilesPostRequest(BaseModel):
+class ExtraProfilesPostRequest(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -90,7 +90,7 @@ class FieldExtraProfilesPostRequest(BaseModel):
     name: str | None = None
 
 
-class FieldExtraProfilesPostRequest1(BaseModel):
+class ExtraProfilesPostRequest1(BaseModel):
     model_config = ConfigDict(
         extra='allow',
     )
@@ -110,5 +110,5 @@ class Others(BaseModel):
     base: str | None = None
 
 
-class FieldExtraBasesPostRequest(Others):
+class ExtraBasesPostRequest(Others):
     name: str | None = None

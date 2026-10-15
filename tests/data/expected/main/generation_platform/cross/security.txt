@@ -5,7 +5,7 @@ list_pets with the header key
   authorize(requirement_sets=((('api_key', ()),),), credentials={'api_key': 'key-1'})
   list_pets(principal='principal of api_key')
   < 200 application/json
-  = FieldPetsGetResponse(root=['Mimi'])
+  = PetsGetResponse(root=['Mimi'])
 list_pets with a rejected key
   > GET /v2/pets
   authorize(requirement_sets=((('api_key', ()),),), credentials={'api_key': 'revoked'})

@@ -30,7 +30,7 @@ def _add_post_text(
 
     def post_text(
         *,
-        body: Annotated[nullable_basemodel_models.FieldTextsPostRequest, Depends(contract.PostText.BODY)],
+        body: Annotated[nullable_basemodel_models.TextsPostRequest, Depends(contract.PostText.BODY)],
     ) -> object:
         return dispatch(
             post_text_handler(
@@ -66,7 +66,7 @@ def _add_post_list(
 
     async def post_list(
         *,
-        body: Annotated[nullable_basemodel_models.FieldListsPostRequest, Depends(contract.PostList.BODY)],
+        body: Annotated[nullable_basemodel_models.ListsPostRequest, Depends(contract.PostList.BODY)],
     ) -> object:
         return dispatch(
             await post_list_handler(
@@ -101,7 +101,7 @@ def _add_post_choice(
 
     def post_choice(
         *,
-        body: Annotated[nullable_basemodel_models.FieldChoicesPostRequest, Depends(contract.PostChoice.BODY)],
+        body: Annotated[nullable_basemodel_models.ChoicesPostRequest, Depends(contract.PostChoice.BODY)],
     ) -> object:
         return dispatch(
             post_choice_handler(
@@ -241,7 +241,7 @@ def _add_post_code(
 
     def post_code(
         *,
-        body: Annotated[nullable_basemodel_models.FieldCodesPostRequest, Depends(contract.PostCode.BODY)],
+        body: Annotated[nullable_basemodel_models.CodesPostRequest, Depends(contract.PostCode.BODY)],
     ) -> object:
         return dispatch(
             post_code_handler(
@@ -276,7 +276,7 @@ def _add_post_value(
 
     def post_value(
         *,
-        body: Annotated[nullable_basemodel_models.FieldValuesPostRequest, Depends(contract.PostValue.BODY)],
+        body: Annotated[nullable_basemodel_models.ValuesPostRequest, Depends(contract.PostValue.BODY)],
     ) -> object:
         return dispatch(
             post_value_handler(
@@ -381,7 +381,7 @@ def _add_post_id(
 
     def post_id(
         *,
-        body: Annotated[nullable_basemodel_models.FieldIdsPostRequest, Body(media_type='application/json')],
+        body: Annotated[nullable_basemodel_models.IdsPostRequest, Body(media_type='application/json')],
     ) -> object:
         return dispatch(
             post_id_handler(
@@ -416,7 +416,7 @@ def _add_post_draft(
 
     def post_draft(
         *,
-        body: Annotated[nullable_basemodel_models.FieldDraftsPostRequest | None, Body(media_type='application/json')] = None,
+        body: Annotated[nullable_basemodel_models.DraftsPostRequest | None, Body(media_type='application/json')] = None,
     ) -> object:
         return dispatch(
             post_draft_handler(
@@ -451,7 +451,7 @@ def _add_post_note(
 
     def post_note(
         *,
-        body: Annotated[nullable_basemodel_models.FieldNotesPostRequest | None, Depends(contract.PostNote.BODY)],
+        body: Annotated[nullable_basemodel_models.NotesPostRequest | None, Depends(contract.PostNote.BODY)],
     ) -> object:
         return dispatch(
             post_note_handler(
@@ -486,7 +486,7 @@ def _add_post_form(
 
     def post_form(
         *,
-        body: Annotated[nullable_basemodel_models.FieldFormsPostRequest, Form(media_type='application/x-www-form-urlencoded')],
+        body: Annotated[nullable_basemodel_models.FormsPostRequest, Form(media_type='application/x-www-form-urlencoded')],
     ) -> object:
         return dispatch(
             post_form_handler(
@@ -521,7 +521,7 @@ def _add_upload(
 
     def upload(
         *,
-        body: Annotated[nullable_basemodel_models.FieldUploadsPostRequest, Depends(contract.Upload.BODY)],
+        body: Annotated[nullable_basemodel_models.UploadsPostRequest, Depends(contract.Upload.BODY)],
     ) -> object:
         return dispatch(
             upload_handler(
@@ -556,7 +556,7 @@ def _add_post_extended(
 
     def post_extended(
         *,
-        body: Annotated[nullable_basemodel_models.FieldExtendedPostRequest | None, Depends(contract.PostExtended.BODY)],
+        body: Annotated[nullable_basemodel_models.ExtendedPostRequest | None, Depends(contract.PostExtended.BODY)],
     ) -> object:
         return dispatch(
             post_extended_handler(

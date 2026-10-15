@@ -26,40 +26,40 @@ class Error:
     message: str
 
 
-class FieldGreetingsGetQueryModeParameter(StrEnum):
+class GreetingsGetQueryModeParameter(StrEnum):
     bare = 'bare'
     result = 'result'
     value = 'value'
 
 
-FieldGreetingsGetResponse = TypeAliasType("FieldGreetingsGetResponse", str)
+GreetingsGetResponse = TypeAliasType("GreetingsGetResponse", str)
 
 
-FieldDocumentsIdGetPathIdParameter = TypeAliasType("FieldDocumentsIdGetPathIdParameter", int)
+DocumentsIdGetPathIdParameter = TypeAliasType("DocumentsIdGetPathIdParameter", int)
 
 
-FieldPetsIdGetPathIdParameter = TypeAliasType("FieldPetsIdGetPathIdParameter", int)
+PetsIdGetPathIdParameter = TypeAliasType("PetsIdGetPathIdParameter", int)
 
 
-FieldTextGetResponse = TypeAliasType("FieldTextGetResponse", str)
+TextGetResponse = TypeAliasType("TextGetResponse", str)
 
 
-FieldTextHeadResponse = TypeAliasType("FieldTextHeadResponse", str)
+TextHeadResponse = TypeAliasType("TextHeadResponse", str)
 
 
-FieldBytesGetResponse = TypeAliasType("FieldBytesGetResponse", bytes)
+BytesGetResponse = TypeAliasType("BytesGetResponse", bytes)
 
 
-class FieldProblemsGetQueryModeParameter(StrEnum):
+class ProblemsGetQueryModeParameter(StrEnum):
     bare = 'bare'
     result = 'result'
     invalid = 'invalid'
 
 
-FieldNotesGetQueryEmptyParameter = TypeAliasType("FieldNotesGetQueryEmptyParameter", bool)
+NotesGetQueryEmptyParameter = TypeAliasType("NotesGetQueryEmptyParameter", bool)
 
 
-FieldNotesGetResponse = TypeAliasType("FieldNotesGetResponse", str | None)
+NotesGetResponse = TypeAliasType("NotesGetResponse", str | None)
 
 
-FieldChosenGetResponse = TypeAliasType("FieldChosenGetResponse", str)
+ChosenGetResponse = TypeAliasType("ChosenGetResponse", str)

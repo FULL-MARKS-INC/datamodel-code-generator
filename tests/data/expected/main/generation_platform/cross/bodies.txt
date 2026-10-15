@@ -17,27 +17,27 @@ post_account
   = None
 post_profile profile=a
   > POST /profiles [application/json; profile=a]
-  post_profile(body=FieldProfilesPostRequest(a=1), media_type='application/json; profile=a')
+  post_profile(body=ProfilesPostRequest(a=1), media_type='application/json; profile=a')
   < 204 -
   = None
 post_profile profile=b
   > POST /profiles [application/json; profile=b]
-  post_profile(body=FieldProfilesPostRequest1(b='x'), media_type='application/json; profile=b')
+  post_profile(body=ProfilesPostRequest1(b='x'), media_type='application/json; profile=b')
   < 204 -
   = None
 post_variant JSON
   > POST /variants [application/json]
-  post_variant(body=FieldVariantsPostRequest1(c=True), media_type='application/json')
+  post_variant(body=VariantsPostRequest1(c=True), media_type='application/json')
   < 204 -
   = None
 post_variant profile=v1
   > POST /variants [application/json; profile=v1]
-  post_variant(body=FieldVariantsPostRequest(a=1), media_type='application/json; profile=v1')
+  post_variant(body=VariantsPostRequest(a=1), media_type='application/json; profile=v1')
   < 204 -
   = None
 post_variant form
   > POST /variants [application/x-www-form-urlencoded]
-  post_variant(body=FieldVariantsPostRequest2(tags=['a', 'b']), media_type='application/x-www-form-urlencoded')
+  post_variant(body=VariantsPostRequest2(tags=['a', 'b']), media_type='application/x-www-form-urlencoded')
   < 204 -
   = None
 put_document JSON
@@ -52,7 +52,7 @@ put_document vendor JSON
   = None
 put_document text
   > PUT /documents [text/markdown]
-  put_document(body=FieldDocumentsPutRequest(root='hi'), media_type='text/markdown')
+  put_document(body=DocumentsPutRequest(root='hi'), media_type='text/markdown')
   < 204 -
   = None
 put_archive bytes
@@ -62,7 +62,7 @@ put_archive bytes
   = None
 put_archive text
   > PUT /archives [text/plain]
-  put_archive(body=FieldArchivesPutRequest(root='abc'), media_type='text/plain')
+  put_archive(body=ArchivesPutRequest(root='abc'), media_type='text/plain')
   < 204 -
   = None
 put_blob
@@ -72,22 +72,22 @@ put_blob
   = None
 post_form
   > POST /forms [application/x-www-form-urlencoded]
-  post_form(body=FieldFormsPostRequest(name='n', tags=['a', 'b c'], count=2, extra=5))
+  post_form(body=FormsPostRequest(name='n', tags=['a', 'b c'], count=2, extra=5))
   < 204 -
   = None
 post_native_form
   > POST /native-forms [application/x-www-form-urlencoded]
-  post_native_form(body=FieldNativeFormsPostRequest(name='n', count=1))
+  post_native_form(body=NativeFormsPostRequest(name='n', count=1))
   < 204 -
   = None
 upload
   > POST /uploads [multipart/form-data; boundary=<boundary>]
-  upload(body=FieldUploadsPostRequest(file=b'\x00binary\xff', note='café'))
+  upload(body=UploadsPostRequest(file=b'\x00binary\xff', note='café'))
   < 204 -
   = None
 search
   > POST /searches [multipart/form-data; boundary=<boundary>]
-  search(body=FieldSearchesPostRequest(filter=Filter(color='blue', minAge=3), filters=[Filter(color='a', minAge=None), Filter(color=None, minAge=2)], tags=['a', 'b c'], limit=5))
+  search(body=SearchesPostRequest(filter=Filter(color='blue', minAge=3), filters=[Filter(color='a', minAge=None), Filter(color=None, minAge=2)], tags=['a', 'b c'], limit=5))
   < 204 -
   = None
 search refused parts
@@ -106,17 +106,17 @@ post_choices values
   = None
 post_choice_files text
   > POST /choice-files [multipart/form-data; boundary=<boundary>]
-  post_choice_files(body=FieldChoiceFilesPostRequest(either='plain', level=Level.a, words='s', lists=['x'], file=None))
+  post_choice_files(body=ChoiceFilesPostRequest(either='plain', level=Level.a, words='s', lists=['x'], file=None))
   < 204 -
   = None
 post_choice_files values
   > POST /choice-files [multipart/form-data; boundary=<boundary>]
-  post_choice_files(body=FieldChoiceFilesPostRequest(either=Filter(color='c', minAge=None), level=Level.int_1, words=['a', 'b'], lists=[1, 2], file=None))
+  post_choice_files(body=ChoiceFilesPostRequest(either=Filter(color='c', minAge=None), level=Level.int_1, words=['a', 'b'], lists=[1, 2], file=None))
   < 204 -
   = None
 post_extras
   > POST /extras [multipart/form-data; boundary=<boundary>]
-  post_extras(body=FieldExtrasPostRequest(name='n', first=Filter(color='blue', minAge=None), second=Filter(color=None, minAge=3)))
+  post_extras(body=ExtrasPostRequest(name='n', first=Filter(color='blue', minAge=None), second=Filter(color=None, minAge=3)))
   < 204 -
   = None
 post_extras refused
@@ -125,7 +125,7 @@ post_extras refused
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"greater_than_equal","loc":["body","second","minAge"],"msg":"<msg>"}]} [operation_id='postExtras', status_code=422, body=b'{"detail":[{"type":"greater_than_equal","loc":["body","second","minAge"],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"greater_than_equal","loc":["body","second","minAge"],"msg":"<msg>"}]}', truncated=False]
 post_extra_lists
   > POST /extra-lists [multipart/form-data; boundary=<boundary>]
-  post_extra_lists(body=FieldExtraListsPostRequest(name='n', first=[Filter(color='blue', minAge=None), Filter(color=None, minAge=3)], second=[Filter(color=None, minAge=3)]))
+  post_extra_lists(body=ExtraListsPostRequest(name='n', first=[Filter(color='blue', minAge=None), Filter(color=None, minAge=3)], second=[Filter(color=None, minAge=3)]))
   < 204 -
   = None
 post_extra_lists refused
@@ -134,7 +134,7 @@ post_extra_lists refused
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]} [operation_id='postExtraLists', status_code=422, body=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]}', truncated=False]
 post_extra_counts
   > POST /extra-counts [multipart/form-data; boundary=<boundary>]
-  post_extra_counts(body=FieldExtraCountsPostRequest(name='n', first=1, second=2))
+  post_extra_counts(body=ExtraCountsPostRequest(name='n', first=1, second=2))
   < 204 -
   = None
 post_extra_counts refused
@@ -143,7 +143,7 @@ post_extra_counts refused
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"greater_than_equal","loc":["body","second"],"msg":"<msg>"}]} [operation_id='postExtraCounts', status_code=422, body=b'{"detail":[{"type":"greater_than_equal","loc":["body","second"],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"greater_than_equal","loc":["body","second"],"msg":"<msg>"}]}', truncated=False]
 post_extra_files
   > POST /extra-files [multipart/form-data; boundary=<boundary>]
-  post_extra_files(body=FieldExtraFilesPostRequest(file=b'\x00', name='n', first=[Filter(color='blue', minAge=None), Filter(color=None, minAge=3)], second=[Filter(color=None, minAge=3)]))
+  post_extra_files(body=ExtraFilesPostRequest(file=b'\x00', name='n', first=[Filter(color='blue', minAge=None), Filter(color=None, minAge=3)], second=[Filter(color=None, minAge=3)]))
   < 204 -
   = None
 post_extra_files refused
@@ -152,7 +152,7 @@ post_extra_files refused
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]} [operation_id='postExtraFiles', status_code=422, body=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1,"minAge"],"msg":"<msg>"}]}', truncated=False]
 post_extra_scores
   > POST /extra-scores [application/x-www-form-urlencoded]
-  post_extra_scores(body=FieldExtraScoresPostRequest(name='n', first=[1, 2], second=[3]))
+  post_extra_scores(body=ExtraScoresPostRequest(name='n', first=[1, 2], second=[3]))
   < 204 -
   = None
 post_extra_scores refused
@@ -161,17 +161,17 @@ post_extra_scores refused
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"greater_than_equal","loc":["body","first",1],"msg":"<msg>"}]} [operation_id='postExtraScores', status_code=422, body=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"greater_than_equal","loc":["body","first",1],"msg":"<msg>"}]}', truncated=False]
 post_extra_bases
   > POST /extra-bases [multipart/form-data; boundary=<boundary>]
-  post_extra_bases(body=FieldExtraBasesPostRequest(base='b', name='n', first=Filter(color='blue', minAge=None), second=Filter(color=None, minAge=3)))
+  post_extra_bases(body=ExtraBasesPostRequest(base='b', name='n', first=Filter(color='blue', minAge=None), second=Filter(color=None, minAge=3)))
   < 204 -
   = None
 post_closed_form
   > POST /closed-forms [application/x-www-form-urlencoded]
-  post_closed_form(body=FieldClosedFormsPostRequest(name='n'))
+  post_closed_form(body=ClosedFormsPostRequest(name='n'))
   < 204 -
   = None
 post_closed_parts
   > POST /closed-parts [multipart/form-data; boundary=<boundary>]
-  post_closed_parts(body=FieldClosedPartsPostRequest(name='n'))
+  post_closed_parts(body=ClosedPartsPostRequest(name='n'))
   < 204 -
   = None
 /closed-forms with another member
@@ -194,22 +194,22 @@ post_note null
   = None
 post_note item
   > POST /notes [application/json]
-  post_note(body=FieldNotesPostRequest(root=Item(name='i')))
+  post_note(body=NotesPostRequest(root=Item(name='i')))
   < 204 -
   = None
 post_label null
   > POST /labels [application/json]
-  post_label(body=FieldLabelsPostRequest(root=None))
+  post_label(body=LabelsPostRequest(root=None))
   < 204 -
   = None
 post_label text
   > POST /labels [application/json]
-  post_label(body=FieldLabelsPostRequest(root='a'))
+  post_label(body=LabelsPostRequest(root='a'))
   < 204 -
   = None
 post_label None
   > POST /labels [application/json]
-  post_label(body=FieldLabelsPostRequest(root=None))
+  post_label(body=LabelsPostRequest(root=None))
   < 204 -
   = None
 post_label refused
@@ -222,6 +222,6 @@ post_account None
   ! UnprocessableEntityError: Error code: 422 - {"detail":[{"type":"missing","loc":["body"],"msg":"<msg>"}]} [operation_id='postAccount', status_code=422, body=b'{"detail":[{"type":"missing","loc":["body"],"msg":"<msg>"}]}', body_bytes=b'{"detail":[{"type":"missing","loc":["body"],"msg":"<msg>"}]}', truncated=False]
 post_raw
   > POST /raw [application/json]
-  post_raw(body=FieldRawPostRequest())
+  post_raw(body=RawPostRequest())
   < 204 -
   = None

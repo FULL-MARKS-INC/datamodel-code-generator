@@ -167,7 +167,7 @@ def _add_list_all(
         request: Request,
         page_size: Annotated[int, Field(ge=1, le=100), Query(alias='limit', description='Page size.')] = 20,
         tags: Annotated[list[str] | None, Query(alias='tags')] = None,
-        kind: Annotated[models.FieldPetsGetQueryKindParameter | None, Query(alias='kind')] = None,
+        kind: Annotated[models.PetsGetQueryKindParameter | None, Query(alias='kind')] = None,
         trace: Annotated[UUID | None, Header(alias='X-Request-Id', convert_underscores=False)] = None,
         since: Annotated[AwareDatetime | None, Query(alias='since')] = None,
         session: Annotated[str | None, Cookie(alias='session')] = None,
@@ -190,7 +190,7 @@ def _add_list_all(
         list_all,
         methods=['GET'],
         status_code=200,
-        response_model=models.FieldPetsGetResponse,
+        response_model=models.PetsGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listPets',
@@ -268,7 +268,7 @@ def _add_list_my_pets(
         list_my_pets,
         methods=['GET'],
         status_code=200,
-        response_model=models.FieldPetsMineGetResponse,
+        response_model=models.PetsMineGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='listMyPets',
@@ -430,7 +430,7 @@ def _add_get_inventory(
         get_inventory,
         methods=['GET'],
         status_code=200,
-        response_model=models.FieldStoreInventoryGetResponse,
+        response_model=models.StoreInventoryGetResponse,
         response_model_by_alias=True,
         response_model_exclude_unset=True,
         operation_id='getInventory',
@@ -491,11 +491,11 @@ class AnimalsService(Protocol):
         request: Request,
         page_size: int,
         tags: list[str] | None,
-        kind: models.FieldPetsGetQueryKindParameter | None,
+        kind: models.PetsGetQueryKindParameter | None,
         trace: UUID | None,
         since: AwareDatetime | None,
         session: str | None,
-    ) -> models.FieldPetsGetResponse | HTTPResult[models.FieldPetsGetResponse | models.Error] | Response:
+    ) -> models.PetsGetResponse | HTTPResult[models.PetsGetResponse | models.Error] | Response:
         """
         Handle GET /pets.
         """
@@ -516,7 +516,7 @@ class AnimalsService(Protocol):
         self,
         *,
         request: Request,
-    ) -> models.FieldPetsMineGetResponse | HTTPResult[models.FieldPetsMineGetResponse] | Response:
+    ) -> models.PetsMineGetResponse | HTTPResult[models.PetsMineGetResponse] | Response:
         """
         Handle GET /pets/mine.
         """
@@ -552,7 +552,7 @@ class StoreService(Protocol):
         self,
         *,
         request: Request,
-    ) -> models.FieldStoreInventoryGetResponse | HTTPResult[models.FieldStoreInventoryGetResponse] | Response:
+    ) -> models.StoreInventoryGetResponse | HTTPResult[models.StoreInventoryGetResponse] | Response:
         """
         Handle GET /store/inventory.
         """

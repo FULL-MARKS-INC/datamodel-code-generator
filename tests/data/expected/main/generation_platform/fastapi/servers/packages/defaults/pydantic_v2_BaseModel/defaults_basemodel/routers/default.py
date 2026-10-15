@@ -38,7 +38,7 @@ def _add_get_values(
         words: Annotated[list[Annotated[str, StringConstraints(min_length=1)]], Query(alias='words')] = ['a'],
         X_Level: Annotated[int, Field(ge=0), Header(alias='X-Level', convert_underscores=False)] = 4,
         color: Annotated[defaults_basemodel_models.Color, Query(alias='color')] = defaults_basemodel_models.Color('red'),
-        tone: Annotated[defaults_basemodel_models.FieldValuesGetQueryToneParameter, Query(alias='tone')] = defaults_basemodel_models.FieldValuesGetQueryToneParameter('blue'),
+        tone: Annotated[defaults_basemodel_models.ValuesGetQueryToneParameter, Query(alias='tone')] = defaults_basemodel_models.ValuesGetQueryToneParameter('blue'),
         shade: Annotated[defaults_basemodel_models.Shade, Query(alias='shade')] = defaults_basemodel_models.Shade('dark'),
         colors: Annotated[list[defaults_basemodel_models.Color], Query(alias='colors')] = [defaults_basemodel_models.Color('red')],
         sized: Annotated[Annotated[int, Field(ge=1)] | None, Query(alias='sized')] = None,
