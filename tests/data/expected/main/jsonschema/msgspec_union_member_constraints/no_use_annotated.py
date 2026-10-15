@@ -13,6 +13,9 @@ Short: TypeAlias = str
 NullableShort: TypeAlias = str | None
 
 
+Mixed: TypeAlias = str
+
+
 Pair: TypeAlias = str | int | list[int]
 
 
@@ -35,3 +38,7 @@ class Upload(Struct):
     floor: int | float
     initials: NullableShort
     pair: Pair
+    same: str
+    shared: str
+    apart: str
+    mixed: Mixed

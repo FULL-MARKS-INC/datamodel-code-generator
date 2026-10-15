@@ -9463,6 +9463,89 @@ def test_main_jsonschema_allof_with_true_schema(output_file: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("output_model_type", "stem", "expected_error_type"),
+    [
+        ("pydantic_v2.BaseModel", "pydantic_v2", "extra_forbidden"),
+        ("pydantic_v2.dataclass", "dataclass", "unexpected_keyword_argument"),
+    ],
+)
+def test_main_jsonschema_allof_closed_member(
+    output_file: Path, output_model_type: str, stem: str, expected_error_type: str
+) -> None:
+    """Test an inline allOf member with additionalProperties false closes the combined model.
+
+    Every allOf member must hold, so the closed member rejects the properties it does not declare, whether the other
+    member is an open base class, the closed member sits in a nested inline allOf, or the members are merged into one
+    model with the closed member first.
+    """
+    name = "allof_closed_member"
+    input_path = JSON_SCHEMA_DATA_PATH / f"{name}.json"
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file=f"{name}/{stem}.py",
+        extra_args=[
+            *("--output-model-type", output_model_type, "--formatters", "builtin"),
+            *("--disable-timestamp", "--target-python-version", "3.11"),
+        ],
+        force_exec_validation=True,
+    )
+    validator = Draft202012Validator(json.loads(input_path.read_text(encoding="utf-8")))
+    filters = {"status": "open", "owner": "me"}
+    valid = dict.fromkeys(("closed", "nested", "merged"), filters)
+    validator.validate(valid)
+    for field_name in valid:
+        invalid = valid | {field_name: filters | {"note": "kept"}}
+        with pytest.raises(SchemaValidationError):
+            validator.validate(invalid)
+        assert_generated_model_json_validation(
+            output_file,
+            module_name=f"{name}_{stem}",
+            model_name="Filters",
+            valid_json=json.dumps(valid),
+            invalid_json=json.dumps(invalid),
+            expected_error_type=expected_error_type,
+        )
+
+
+def test_main_jsonschema_allof_closed_member_pattern(output_file: Path) -> None:
+    """Test a closed allOf member with patternProperties keeps the combined model open.
+
+    The member accepts the keys its patterns match, which the model cannot express without schema validators, so
+    closing the model would reject payloads the schema accepts.
+    """
+    input_path = JSON_SCHEMA_DATA_PATH / "allof_closed_member_pattern.json"
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file="allof_closed_member/pattern.py",
+        extra_args=[
+            *("--output-model-type", "pydantic_v2.BaseModel", "--formatters", "builtin"),
+            *("--disable-timestamp", "--target-python-version", "3.11"),
+        ],
+        force_exec_validation=True,
+    )
+    validator = Draft202012Validator(json.loads(input_path.read_text(encoding="utf-8")))
+    valid = {"status": "open", "owner": "me", "x_1": "kept"}
+    invalid = valid | {"status": 3}
+    validator.validate(valid)
+    with pytest.raises(SchemaValidationError):
+        validator.validate(invalid)
+    assert_generated_model_json_validation(
+        output_file,
+        module_name="allof_closed_member_pattern",
+        model_name="PatternFilters",
+        valid_json=json.dumps(valid),
+        invalid_json=json.dumps(invalid),
+        expected_error_type="string_type",
+    )
+
+
 def test_main_jsonschema_ref_to_true_schema(output_file: Path) -> None:
     """Test refs to boolean true schemas are accepted as unconstrained models."""
     run_main_and_assert(
@@ -23419,13 +23502,14 @@ def test_main_msgspec_float_multiple_of(output_file: Path, entrypoint: str) -> N
     assert_output("\n".join(rejected) + "\n", EXPECTED_JSON_SCHEMA_PATH / name / "rejected.txt")
 
 
-@pytest.mark.parametrize("stem", ["msgspec", "no_use_annotated"])
+@pytest.mark.parametrize("stem", ["msgspec", "no_use_annotated", "collapse_root_models"])
 def test_main_msgspec_union_member_constraints(output_file: Path, stem: str) -> None:
     """Test msgspec writes union members of one type without Meta, warns per field, and decodes every member's values.
 
     msgspec checks all members of a type in a union against the constraints of each of them, so a constrained
     member of `bytes | Annotated[bytes, Meta(max_length=3)]` would reject the long bytes the other member accepts.
-    Without `Annotated`, no member has Meta, so the union keeps its members.
+    A member whose constraints every member of its type shares keeps them. Without `Annotated`, no member has Meta,
+    so the union keeps its members. Collapsing a root model moves its warning to the field that inlines it.
     """
     name = "msgspec_union_member_constraints"
     with warnings.catch_warnings(record=True) as recorded_warnings:
@@ -23440,6 +23524,7 @@ def test_main_msgspec_union_member_constraints(output_file: Path, stem: str) -> 
                 *("--output-model-type", "msgspec.Struct", "--formatters", "builtin"),
                 *("--disable-timestamp", "--target-python-version", "3.11"),
                 *(["--no-use-annotated"] if stem == "no_use_annotated" else []),
+                *(["--collapse-root-models"] if stem == "collapse_root_models" else []),
             ],
             force_exec_validation=True,
         )
