@@ -427,7 +427,10 @@ the `total` the page reads. For an offset they are the offsets past `first`, sin
 wherever the traversal started; for a page number they are the items delivered since the start, the only count a page
 number gives, and a page without items ends it too, since no later page can bring the count nearer. A `total` of 0 ends
 at the first page, and a position past the total ends too. `has_more` must read a JSON boolean and `total` a JSON
-integer of at least 0; a header spells `true` or `false`, or decimal digits with an optional `-`, and generation checks
+integer of at least 0, which a number with a fraction or an exponent is only when its text is integral: `1.0` and
+`1e0` count 1 and `9007199254740993.0` counts exactly that, while `9007199254740993.00000000000000000001` is mistyped,
+since the total is read from the body's text rather than from a rounded float. A header spells `true` or `false`, or
+decimal digits with an optional `-`, and generation checks
 the types its declared schema gives. A missing, null, or mistyped value raises `ProtocolDataError`, and a negative
 total, from the body or a header, raises it with the reason `value`. Otherwise an empty page does not end the
 traversal, but one that continues while `page_items_count` counts items would ask for the same position again, so it
@@ -1053,8 +1056,10 @@ auth, as pagination checkpoints do. Errors carry no checkpoint; call the handle'
 `resume(source, state)` starts a new session and never creates the upload again. It checks the call's options, then the
 checkpoint: a value that is not JSON or does not fit the helper raises `ConfigurationError(field_path=("state",))`, and
 one past the server's expiry the reason `expired`. A checkpoint keeps its chunk size, which must not exceed the call's
-`UploadOptions.chunk_bytes`, since an append holds one chunk in memory; it raises `ConfigurationError` with the option's
-`field_path`. Then the saved values each call writes: a value that makes a path segment `.` or `..` raises
+`UploadOptions.chunk_bytes`, since an append holds one chunk in memory; it raises `ConfigurationError` whose
+`field_path` names where that size came from: `("helper_defaults", "files.upload", "chunk_bytes")` for a helper
+named `files.upload` when the client's `helper_defaults` set it and the call's `upload_options` did not, else
+`("upload_options", "chunk_bytes")`, which also covers the 8 MiB default. Then the saved values each call writes: a value that makes a path segment `.` or `..` raises
 `ProtocolDataError`, as if a server gave it; any other saved value is encoded when its request is built. Then the
 source: a one-shot input raises `ConfigurationError` with the reason `wrong_capability`, and a size other than the
 checkpoint's the reason `source_changed`; the source is not read. A completion of unknown outcome raises

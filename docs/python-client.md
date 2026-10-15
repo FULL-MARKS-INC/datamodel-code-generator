@@ -735,6 +735,16 @@ sends JSON `null`. A required parameter, including a path parameter, and an arra
 `DecodeError` whose reason is `unencodable`. [Model codecs](python-client-reference.md#model-codecs) has the full
 conversion rules.
 
+`None` for an optional request body whose schema rejects JSON `null` is sent as `UNSET` is: the request has no body
+and no `Content-Type`, which a server reads as an absent body, and a `media_type` beside it is refused with a
+`ConfigurationError` whose reason is `without_body`. A JSON body whose type admits `null`, such as a nullable schema,
+one without a schema, or `Any`, sends `null`. Generation decides this from the type the models give the body, by the
+same rule the generated FastAPI server reads a body and sends a response by, so every model backend sends the same
+request: an `x-python-type` annotation admits `null` when it writes `None`, `object`, `Any` under any alias, or a
+`Literal` with `None`. The media a call names decides, or the default media without one; an operation with several
+media and no default leaves `None` out when none of them takes `null`, and otherwise needs `media_type`. A text, form,
+or binary body has no `null`, so its `None` is left out.
+
 ### Responses
 
 A method returns the decoded body. Each resource also has three *response views*, the same methods returning more:
@@ -1019,8 +1029,12 @@ An API key or bearer argument takes a string, and an HTTP Basic one a `(username
 as UTF-8, the charset of RFC 7617, which the generated server reads. Each also takes a callable returning its value, which the client calls for each request, so a rotating
 token or a key read from a secret store stays current; a bearer argument also takes an OAuth provider. A callable's
 failure raises `AuthError` with the reason `provider_failed` before the request is sent, and a value of the wrong type
-`ConfigurationError` with the reason `invalid_type`. No environment variables or credentials are discovered by
-default.
+`ConfigurationError` with the reason `invalid_type`. A credential sent in a header, such as `Bearer <token>`, must be
+[header text](python-client-reference.md#model-codecs), as every header value: HTAB, SP, and visible ASCII without
+whitespace at either end, so an empty bearer token, a key with a space at its end, a line break, or `café` raises
+`ConfigurationError` with the reason `invalid_value` and the scheme's argument as `field_path` before sending; a key
+with an inner tab is sent. A cookie credential must be a cookie value: visible ASCII without `"`, `,`, `;`, or `\`. No
+environment variables or credentials are discovered by default.
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.howto.auth -->
 <!-- fmt: off -->

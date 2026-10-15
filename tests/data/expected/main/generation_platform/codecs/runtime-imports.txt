@@ -1,7 +1,7 @@
 __init__.py: -
 client/__init__.py: -
 client/arguments.py: __future__, collections.abc, typing
-client/auth.py: .client, .errors, .security, .urls, __future__, base64, collections.abc, httpx2, re, typing
+client/auth.py: ..model_codecs.parameters, .client, .errors, .security, .urls, __future__, base64, collections.abc, httpx2, re, typing
 client/bodies.py: .content, .errors, .logical, __future__, collections.abc, inspect, io, os, pathlib, typing, typing_extensions
 client/body_sources.py: .bodies, .content, .errors, .logical, __future__, collections.abc, typing
 client/client.py: ..model_codecs.errors, ..model_codecs.parameters, ..model_codecs.unset, .content, .errors, .logical, .media, .native, .operations, .options, .paths, .positions, .raw, .responses, .retry, .timing, .urls, __future__, collections.abc, contextlib, dataclasses, functools, httpx2, re, typing, typing_extensions, urllib.parse, uuid
@@ -49,7 +49,7 @@ protocols/errors.py: ..client.errors, ..client.responses, .records, .references,
 protocols/links.py: __future__, collections.abc, re, string, typing
 protocols/options.py: ..client.errors, ..client.timing, ..model_codecs.unset, .origins, __future__, collections.abc, dataclasses, inspect, types, typing, typing_extensions
 protocols/origins.py: ..client.urls, .records, __future__, dataclasses
-protocols/pagination.py: ..client.errors, ..client.logical, ..client.operations, ..client.options, ..client.responses, ..client.timing, ..client.urls, ..model_codecs.media, ..model_codecs.unset, .client, .errors, .links, .options, .records, .references, .values, .writes, __future__, collections.abc, dataclasses, decimal, enum, hashlib, re, threading, types, typing, typing_extensions, urllib.parse
+protocols/pagination.py: ..client.errors, ..client.logical, ..client.operations, ..client.options, ..client.responses, ..client.timing, ..client.urls, ..model_codecs.media, ..model_codecs.unset, .client, .errors, .links, .options, .records, .references, .values, .writes, __future__, collections.abc, dataclasses, decimal, enum, hashlib, json, re, threading, types, typing, typing_extensions, urllib.parse
 protocols/polling.py: ..client.errors, ..client.logical, ..client.operations, ..client.options, ..client.responses, ..client.retry, ..client.timing, ..model_codecs.media, ..model_codecs.unset, .client, .errors, .options, .pagination, .records, .references, .resume, .values, .writes, __future__, collections.abc, dataclasses, datetime, enum, threading, types, typing, typing_extensions
 protocols/public_keys.py: .records, .signatures, .webhook_keys, __future__, collections.abc, cryptography.exceptions, cryptography.hazmat.primitives.asymmetric.ed25519, cryptography.hazmat.primitives.asymmetric.padding, cryptography.hazmat.primitives.asymmetric.rsa, cryptography.hazmat.primitives.hashes, typing
 protocols/records.py: ..client.responses, ..model_codecs.media, __future__, collections.abc, dataclasses, json, re, typing, typing_extensions

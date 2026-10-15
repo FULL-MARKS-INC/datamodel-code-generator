@@ -17,6 +17,7 @@ from datamodel_code_generator._client.config import absolute
 from datamodel_code_generator._client.model_facts import ALIASES
 from datamodel_code_generator._client.naming import HELPER_ARGUMENTS, RESERVED_ARGUMENTS, RESERVED_MEMBERS
 from datamodel_code_generator._client.security import CredentialSpec, SecurityPlanner
+from datamodel_code_generator._openapi_codec_plan import takes_null
 from datamodel_code_generator._openapi_wire_plan import (
     STYLED,
     body_kind,
@@ -123,12 +124,13 @@ class MediaSpec:
     declared member, and `extra` any other part, which no plan allows when the schema allows no other properties.
     One sent or read whole has `parts`: of a response, how each member is read, and of a body, the members it
     writes as JSON. Its `additional_part` plans any other part: of a response, how it is read, and of a body, that
-    it is written as JSON.
+    it is written as JSON. A sent JSON body is `null` when its schema admits JSON null, as its model types it.
     """
 
     media_type: str
     kind: MediaKind
     use: TypeUseBinding | None
+    null: bool = False
     fields: tuple[FieldPlan, ...] = ()
     additional: FieldPlan | None = None
     encoded: tuple[ParameterPlan, ...] = ()
@@ -753,6 +755,10 @@ class Planner:
             self.problems.append(_problem("E_METADATA_REQUIRED", message, declaration.use_site))
         return media_type
 
+    def _takes_null(self, use: TypeUseBinding | None) -> bool:
+        """Return whether a JSON body's type admits null, as the server decides it: no schema, or a type that does."""
+        return use is None or takes_null(use.type, self.facts.symbols, self.facts.members)
+
     def media(self, operation: OperationContract, declaration: WireDeclaration, *, request: bool) -> MediaSpec:
         """Return one media declaration with its normalized type, kind, type use, and form member plans."""
         media_type = self._declared(operation, declaration)
@@ -804,6 +810,7 @@ class Planner:
             media_type=media_type,
             kind=kind,
             use=use,
+            null=request and kind == "json" and self._takes_null(use),
             fields=fields,
             additional=additional,
             encoded=encoded,
