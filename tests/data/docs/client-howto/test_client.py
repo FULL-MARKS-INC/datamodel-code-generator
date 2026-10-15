@@ -3,7 +3,7 @@ from collections.abc import Iterator
 import httpx2
 import pytest
 
-from client import Client
+from app.client import Client
 from shelter import describe
 
 PETS = {"/v1/pets/1": {"id": 1, "name": "Mimi", "tag": "cat"}}

@@ -256,11 +256,11 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="standard-py312-20260909",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_server=ServerType.FastAPI,
-    server_output=Path("server"),
-    server_package="server",
-    server_model_package="models",
+    server_output=Path("app/server"),
+    server_package="app.server",
+    server_model_package="app.models",
     server_handler_mode=ServerHandlerMode.Async,
     server_body_modes={"/paths/~1upload/post": "request"},
 )
@@ -272,9 +272,9 @@ generate(
 With an `output`, `generate()` writes the models and the package together and returns `None`; for a server, it also
 writes each missing module of the `services` package beside the package once, with stubs, as the command line does.
 Without one, it writes nothing but the model metadata and a remote lock update, no stubs among them, and returns
-`GeneratedModules` with every model and package file, each under the path its import path implies: `server_model_package="models"` gives `("models.py",)`, or
-`("models", "__init__.py")` and the other modules of modular models, and `server_package="server"` gives
-`("server", "application.py")`, `("server", "README.md")`, and so on. These are the files a run with `output` and
+`GeneratedModules` with every model and package file, each under the path its import path implies: `server_model_package="app.models"` gives `("app", "models.py")`, or
+`("app", "models", "__init__.py")` and the other modules of modular models, and `server_package="app.server"` gives
+`("app", "server", "application.py")`, `("app", "server", "README.md")`, and so on. These are the files a run with `output` and
 `server_output` in the working directory writes; `server_output` is not used. The run renders the files in a private
 directory of the working directory, which it removes afterwards, so the working directory must be writable. `load_pyproject_config()` takes the
 server and client keys of `pyproject.toml` too, so a config it loads with `overrides={"output": None}` returns the

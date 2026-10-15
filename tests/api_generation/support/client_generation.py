@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import inspect
 import json
 import re
 import shutil
 import warnings
 from functools import partial
 from importlib.resources import files
+from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
@@ -16,6 +19,7 @@ from datamodel_code_generator import DataModelType, Error, GenerateConfig, Inval
 from datamodel_code_generator.enums import OpenAPIScope
 from datamodel_code_generator.format import Formatter
 from tests.api_generation.support.backends import backend_settings
+from tests.api_generation.support.generated_packages import generated_root, import_generated
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -690,7 +694,7 @@ def _regenerate(source: Path, root: Path) -> list[str]:
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always", UserWarning)
         generate_client(root / "api.yaml", root, "pets", "pydantic_v2.BaseModel")
-    paths = sorted(path.relative_to(root) for path in root.rglob("*") if path.is_file())
+    paths = sorted((path.relative_to(root) for path in root.rglob("*") if path.is_file()), key=Path.as_posix)
     return [
         *(f"  file {path.as_posix()}" for path in paths if "_runtime" not in path.parts),
         f"  runtime files {sum('_runtime' in path.parts for path in paths)}",
@@ -738,3 +742,53 @@ def client_regeneration_report(root: Path) -> str:
         f"{all(_written_as_text(path, scratch) for path in files if path != extensions)}"
     )
     return "\n".join(lines).replace(root.resolve().as_posix(), "<root>") + "\n"
+
+
+def client_readme_report(case_name: str, root: Path) -> str:
+    """Run the examples a generated client's README shows before its operations as far as they run without an API.
+
+    Each example parses and imports what it imports from the generated package. A client is created with the first URL
+    the example gives, and each call the example makes of a method it reaches from the client, such as a resource's
+    method or a protocol helper's `connect` or `open`, is looked up on that client in source order, with its arguments
+    bound to the method's signature, `...` standing for each value, so that an unknown or a missing keyword fails.
+    """
+    case = _case(case_name)
+    _prepare_input(case, root)
+    _run(case, "pydantic_v2.BaseModel", root, case.get("model", {}))
+    readme = (root / PACKAGE / "README.md").read_text(encoding="utf-8").partition("\n## Operations\n")[0]
+    lines = [f"# {case_name}"]
+    with generated_root(root, PACKAGE, "models"):
+        client_class = import_generated(PACKAGE).Client
+        for index, block in enumerate(re.findall(r"^```python\n(.*?)^```$", readme, re.MULTILINE | re.DOTALL), 1):
+            tree = ast.parse(block)
+            imports = [node for node in tree.body if isinstance(node, ast.Import | ast.ImportFrom)]
+            namespace: dict[str, Any] = {}
+            exec(compile(ast.Module(imports, []), "README.md", "exec"), namespace)
+            nodes = sorted(
+                (node for node in ast.walk(tree) if isinstance(node, ast.Constant | ast.Call)),
+                key=lambda node: (node.lineno, node.col_offset),
+            )
+            url = next(node.value for node in nodes if isinstance(node, ast.Constant) and "://" in str(node.value))
+            calls = [
+                (path, node)
+                for node in nodes
+                if isinstance(node, ast.Call) and (path := _client_attribute(node.func)) is not None
+            ]
+            found = []
+            with client_class(base_url=url) as client:
+                for path, node in calls:
+                    method = attrgetter(path)(client)
+                    keywords = [item.arg for item in node.keywords]
+                    inspect.signature(method).bind(*[...] * len(node.args), **dict.fromkeys(keywords, ...))
+                    found.append(f"client.{path}({', '.join(f'{keyword}=...' for keyword in keywords)})")
+            lines.append(f"example {index}: imports {sorted(set(namespace) - {'__builtins__'})}, calls {found}")
+    return "\n".join(lines) + "\n"
+
+
+def _client_attribute(node: ast.expr) -> str | None:
+    """Return the dotted attribute an expression reaches from the name `client`, or None for any other expression."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    return ".".join(reversed(parts)) if parts and isinstance(node, ast.Name) and node.id == "client" else None

@@ -200,7 +200,7 @@ def _next_steps(config: ClientGenerationConfig, plan: ClientPlan) -> NextSteps:
     """Return the README and code that calls the first operation in a client's context."""
     call = f"client.{spec.resource}.{spec.name}(...)" if (spec := next(iter(plan.operations), None)) else "..."
     return NextSteps(
-        readme=Path("_generated_docs", "README.md"),
+        readme=Path("README.md"),
         usage=f"from {config.package} import Client\n\nwith Client(base_url=...) as client:\n    {call}",
     )
 

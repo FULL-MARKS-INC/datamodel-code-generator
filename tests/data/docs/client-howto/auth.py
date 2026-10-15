@@ -1,5 +1,5 @@
-from client import Client
-from client.errors import ConfigurationError
+from app.client import Client
+from app.client.errors import ConfigurationError
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:

@@ -37,7 +37,18 @@ def _models(case: dict[str, Any], package: str) -> str:
     return f"{package}.models" if case.get("nested") else f"{package}_models"
 
 
+def home(root: Path, package: str) -> Path:
+    """Make the directory that holds a backend's server package, since one parent package holds one server package."""
+    (directory := root / f"{package}-home").mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def _generate(case: dict[str, Any], backend: str, root: Path, package: str) -> None:
+    """Generate a backend's server in `root`, with a `services` package that each generation writes anew.
+
+    The cases build their routers from handwritten services instead.
+    """
+    shutil.rmtree(root / "services", ignore_errors=True)
     for name in case.get("files", ()):
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / name, root / name)
@@ -216,26 +227,28 @@ def fastapi_server_report(
     lines = [f"# {case_name}"]
     packages: dict[str, dict[tuple[str, ...], str]] = {}
     documents: dict[tuple[str, ...], str] = {}
-    monkeypatch.syspath_prepend(str(root))
     package_snapshots = {
         f"{case_name.replace('-', '_')}_{backend.rpartition('.')[2].lower()}"
         for backend in case.get("package_snapshots", case.get("backends", ["pydantic_v2.BaseModel"]))
     }
     for backend in case.get("backends", ["pydantic_v2.BaseModel"]):
         package = f"{case_name.replace('-', '_')}_{backend.rpartition('.')[2].lower()}"
+        monkeypatch.syspath_prepend(str(directory := home(root, package)))
         lines.append(f"serve {backend}")
         if (previous := case.get("previous")) is not None:
-            _generate({**case, "input": previous}, backend, root, package)
+            _generate({**case, "input": previous}, backend, directory, package)
         try:
             with warnings.catch_warnings(record=True) as recorded:
                 warnings.simplefilter("always", LeftoverFilesWarning)
-                _generate(case, backend, root, package)
+                _generate(case, backend, directory, package)
         except RuntimeError as error:
             lines.append(f"  {formatter_refusal(error)}")
             continue
         lines.extend(f"{item.category.__name__}: {item.message}" for item in recorded)
-        packages[name := backend.replace(".", "_")] = _generated(root, package, package_snapshots)
-        documents.update(((name, *parts), text) for parts, text in _documents(root, package, package_snapshots).items())
+        packages[name := backend.replace(".", "_")] = _generated(directory, package, package_snapshots)
+        documents.update(
+            ((name, *parts), text) for parts, text in _documents(directory, package, package_snapshots).items()
+        )
         try:
             server, models = _import(package, _models(case, package))
             calls: list[str] = []
@@ -254,10 +267,13 @@ def fastapi_server_report(
                     for request in app_case.get("requests", ()):
                         _exchange(client, request, calls, lines)
             lines.extend(
-                f"stale {name}: file {(root / package / name).is_file()}; imported "
+                f"stale {name}: file {(directory / package / name).is_file()}; imported "
                 f"{'.'.join((package, *Path(name).with_suffix('').parts)) in sys.modules}"
                 for name in case.get("stale", ())
             )
         finally:
             forget_generated(package)
-    return "\n".join(lines).replace(root.resolve().as_posix(), "<root>") + "\n", packages, documents
+    report = "\n".join(lines)
+    for directory in sorted(root.glob("*-home")):
+        report = report.replace(directory.resolve().as_posix(), "<root>")
+    return report.replace(root.resolve().as_posix(), "<root>") + "\n", packages, documents

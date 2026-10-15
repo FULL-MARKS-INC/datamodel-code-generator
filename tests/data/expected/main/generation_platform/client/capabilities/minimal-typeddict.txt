@@ -31,7 +31,6 @@ total 23 modules
 public files
   publication_client/__init__.py
   publication_client/errors.py
-  publication_client/model_codecs.py
   publication_client/options.py
   publication_client/resources/__init__.py
   publication_client/resources/pets/__init__.py

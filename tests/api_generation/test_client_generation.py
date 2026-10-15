@@ -328,6 +328,7 @@ def test_client_helper_spellings(first: str, second: str, tmp_path: Path) -> Non
         "uploads",
         "streams",
         "ndjson",
+        "ndjson-split",
         "stream-resume",
         "sockets",
         "caching",
@@ -368,6 +369,7 @@ def test_client_documentation(case: str, tmp_path: Path) -> None:
         "retry-unknown-field",
         "compression-values",
         "compression-invalid",
+        "reserved-type-name",
     ],
 )
 def test_client_config(case: str, tmp_path: Path) -> None:

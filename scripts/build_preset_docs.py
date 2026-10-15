@@ -348,11 +348,11 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="{preset_name}",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_server=ServerType.FastAPI,
-    server_output=Path("server"),
-    server_package="server",
-    server_model_package="models",
+    server_output=Path("app/server"),
+    server_package="app.server",
+    server_model_package="app.models",
 )
 ```
 """

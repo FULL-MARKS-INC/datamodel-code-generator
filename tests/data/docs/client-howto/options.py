@@ -1,7 +1,7 @@
 import httpx2
 
-from client import Client
-from client.options import RequestOptions, ServerSelection
+from app.client import Client
+from app.client.options import RequestOptions, ServerSelection
 from fake import http_client
 
 with Client(

@@ -17,8 +17,8 @@ check
 tree
 generate
   Next steps: implement the stubs in services/default.py, then run the server:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md
@@ -74,8 +74,8 @@ tree
   5 runtime modules ['present']
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md
@@ -142,8 +142,8 @@ tree
   5 runtime modules ['present']
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md
@@ -199,8 +199,8 @@ tree
   5 runtime modules ['present']
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md
@@ -267,8 +267,8 @@ tree
   5 runtime modules ['present']
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md
@@ -324,8 +324,8 @@ tree
   5 runtime modules ['present']
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   server/README.md

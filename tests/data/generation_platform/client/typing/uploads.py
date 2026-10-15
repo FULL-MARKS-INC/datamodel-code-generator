@@ -13,7 +13,7 @@ from pets.protocols import (
     UploadProgress,
     UploadSource,
 )
-from pets.model_codecs import JSONValue
+from pets.types import JSONValue
 from pets.types.files import CompleteFileResponse
 from pets_models import FilesPostHeaderTusResumableParameter
 from typing_extensions import assert_type

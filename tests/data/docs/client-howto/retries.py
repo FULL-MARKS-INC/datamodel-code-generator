@@ -1,5 +1,5 @@
-from client import Client
-from client.options import Clock, RetryOptions
+from app.client import Client
+from app.client.options import Clock, RetryOptions
 from fake import http_client
 
 waits: list[float] = []

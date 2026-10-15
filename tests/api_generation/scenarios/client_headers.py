@@ -309,8 +309,8 @@ def _text_outcome(call: Callable[[], object]) -> str:
 def native_boundaries(package: ModuleType, lines: list[str]) -> None:
     """Decode content headers natively and assemble a nullable model body from its fields."""
     types = importlib.import_module(f"{package.__name__}.types.native_headers")
-    codecs = importlib.import_module(f"{package.__name__}.model_codecs")
-    lines.append(f"  public codec exports {codecs.__all__}")
+    exported = importlib.import_module(f"{package.__name__}.types")
+    lines.append(f"  public type exports {exported.__all__}")
     exchange = Exchange(lines)
     with exchange.client() as http, package.Client(http_client=http) as api:
         for label, header in (

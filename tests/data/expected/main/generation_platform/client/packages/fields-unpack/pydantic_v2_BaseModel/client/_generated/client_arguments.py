@@ -13,8 +13,8 @@ from typing_extensions import NotRequired, TypedDict
 
 from .._runtime.client.arguments import Keywords
 from ..bodies import AsyncMultipartBody, MultipartBody
-from ..model_codecs import JSONValue
 from ..options import UNSET, RequestOptions
+from ..types import JSONValue
 
 
 class Operation0Arguments(TypedDict):

@@ -1,7 +1,7 @@
 import asyncio
 
-from client import AsyncClient
-from models import NewPet
+from app.client import AsyncClient
+from app.models import NewPet
 
 
 async def main() -> None:

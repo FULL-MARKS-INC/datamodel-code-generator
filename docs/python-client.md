@@ -12,7 +12,7 @@ operation, such as `client.pets.get_pet(pet_id=1)`. It sends requests with
 servers, parameters, bodies, responses, errors, and authentication.
 
 ```text
-openapi.yaml ──► datamodel-codegen ──► models.py, client/    generated, overwritten on every run
+openapi.yaml ──► datamodel-codegen ──► app/models.py, app/client/    generated, overwritten on every run
                                             ▲
                                             │ import, call client.<resource>.<operation>(...)
                                        your code and tests    yours, never touched
@@ -132,6 +132,13 @@ its `operationId`, on the resource of its first tag, `pets`.
 
 ### 2. Generate the client
 
+Everything goes into one application package, `app`, as in the [server quick start](fastapi-server.md#2-generate-the-server):
+create it with an empty `app/__init__.py`.
+
+```bash
+mkdir -p app && touch app/__init__.py
+```
+
 Put the settings in `pyproject.toml` and run `datamodel-codegen` without arguments, or pass them as options:
 
 === "pyproject.toml"
@@ -146,11 +153,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
     openapi-scopes = ["schemas", "api"]
     output-model-type = "pydantic_v2.BaseModel"
     preset = "standard-py312-20260909"
-    output = "models.py"
+    output = "app/models.py"
     generate-client = "httpx2"
-    client-output = "client"
-    client-package = "client"
-    client-model-package = "models"
+    client-output = "app/client"
+    client-package = "app.client"
+    client-model-package = "app.models"
     ```
 
     <!-- fmt: on -->
@@ -169,11 +176,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
       --openapi-scopes schemas api \
       --output-model-type pydantic_v2.BaseModel \
       --preset standard-py312-20260909 \
-      --output models.py \
+      --output app/models.py \
       --generate-client httpx2 \
-      --client-output client \
-      --client-package client \
-      --client-model-package models
+      --client-output app/client \
+      --client-package app.client \
+      --client-model-package app.models
     ```
 
     <!-- fmt: on -->
@@ -190,14 +197,14 @@ steps: a call of the first operation in a client's context, and the README of th
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of client to your project:
+Add the runtime dependencies of app.client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
 Next steps: call the API with the client:
-  from client import Client
+  from app.client import Client
 
   with Client(base_url=...) as client:
       client.pets.list_pets(...)
-See client/_generated_docs/README.md.
+See app/client/README.md.
 ```
 
 <!-- fmt: on -->
@@ -208,53 +215,57 @@ the `datamodel-code-generator[httpx2]` extra, which only fetches remote schemas 
 only the minimum version of each package, so uv adds the latest release, and it grows with what the document uses,
 such as `httpx2[ws]` for WebSocket helpers or `cryptography` for public-key webhook signatures.
 
-The run wrote the models and the `client` package:
+The run wrote the models and the `app.client` package:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.tree -->
 <!-- fmt: off -->
 
 ```text
-client/
+app/
 ├── __init__.py
-├── _generated/
-├── _generated_docs/
-├── _runtime/
-├── errors.py
-├── model_codecs.py
-├── options.py
-├── py.typed
-├── resources/
+├── client/
+│   ├── README.md
 │   ├── __init__.py
-│   └── pets/
-│       └── __init__.py
-├── responses.py
-└── types/
-    ├── __init__.py
-    └── pets/
-        └── __init__.py
-models.py
+│   ├── _generated/
+│   ├── _generated_docs/
+│   ├── _runtime/
+│   ├── errors.py
+│   ├── options.py
+│   ├── py.typed
+│   ├── resources/
+│   │   ├── __init__.py
+│   │   └── pets/
+│   │       └── __init__.py
+│   ├── responses.py
+│   └── types/
+│       ├── __init__.py
+│       └── pets/
+│           └── __init__.py
+└── models.py
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.tree -->
 
-`client/__init__.py` exports `Client` and `AsyncClient`, `resources/` and `types/` hold a package for each resource, and
-`errors.py`, `options.py`, and `responses.py` are the public modules you import from. `_generated/` and `_runtime/`
-hold the plans and the runtime the package imports, and `_generated_docs/` a README that lists every operation.
-Every file here is overwritten on each run, so keep your own code outside `client/`.
+`app/client/__init__.py` exports `Client` and `AsyncClient`, `resources/` and `types/` hold a package for each resource,
+`types/__init__.py` exports `JSONValue`, the type of an argument that takes any JSON value, and `errors.py`,
+`options.py`, and `responses.py` are the public modules you import from. `_generated/` and `_runtime/`
+hold the plans and the runtime the package imports. `README.md` shows how to call the package and lists the method of
+every operation with its signature, and `_generated_docs/runtime.md` is the runtime reference it links to.
+Every file here is overwritten on each run, so keep your own code outside `app/client/`.
 
 ### 3. Call the API
 
-Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn server.main:app`, or any server
+Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn app.server.main:app`, or any server
 that implements the document at `http://localhost:8000`. Then save `call.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.call -->
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
-from models import NewPet
+from app.client import Client
+from app.client.errors import NotFoundError
+from app.models import NewPet
 
 with Client() as client:
     pet = client.pets.create_pet(body=NewPet(name="Mimi", tag="cat"))
@@ -291,7 +302,7 @@ operation's parameters as keyword arguments and its body as `body=`, sends the r
 decoded into its model, such as `Pet`. A declared error status raises an exception that carries the decoded error
 body, such as `NotFoundError` for the `404` of `get_pet`.
 
-The method of `get_pet`, from `client/resources/pets/_sync.py`, shows what a call takes:
+The method of `get_pet`, from `app/client/resources/pets/_sync.py`, shows what a call takes:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.method -->
 <!-- fmt: off -->
@@ -332,8 +343,8 @@ and the second takes the [settings of one call](#configure-the-client).
 ```python
 import asyncio
 
-from client import AsyncClient
-from models import NewPet
+from app.client import AsyncClient
+from app.models import NewPet
 
 
 async def main() -> None:
@@ -363,7 +374,7 @@ Use `async with` to close it, and await each call.
 ### Recap
 
 - The OpenAPI document is the source: the models, the resources, and the methods come from it.
-- `datamodel-codegen` regenerates every file of `models.py` and `client/` on each run.
+- `datamodel-codegen` regenerates every file of `app/models.py` and `app/client/` on each run.
 - `Client` and `AsyncClient` send with HTTPX2 to the document's servers; each tag is a resource and each operation a
   method with keyword arguments.
 - A method returns the decoded model and raises a typed exception for an error status.
@@ -596,10 +607,10 @@ def http_client() -> httpx2.Client:
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.options import UNSET
+from app.client import Client
+from app.client.options import UNSET
 from fake import http_client
-from models import NewPet
+from app.models import NewPet
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
     print(client.pets.get_pet(pet_id=1))
@@ -722,7 +733,7 @@ A method returns the decoded body. Each resource also has three *response views*
 <!-- fmt: off -->
 
 ```python
-from client import Client
+from app.client import Client
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -816,8 +827,8 @@ A setting a call leaves unset inherits from the nearest view, then the client. T
 ```python
 import httpx2
 
-from client import Client
-from client.options import RequestOptions, ServerSelection
+from app.client import Client
+from app.client.options import RequestOptions, ServerSelection
 from fake import http_client
 
 with Client(
@@ -913,8 +924,8 @@ example shows them:
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.options import Clock, RetryOptions
+from app.client import Client
+from app.client.options import Clock, RetryOptions
 from fake import http_client
 
 waits: list[float] = []
@@ -1005,8 +1016,8 @@ default.
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import ConfigurationError
+from app.client import Client
+from app.client.errors import ConfigurationError
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -1086,7 +1097,7 @@ from collections.abc import Generator
 
 import httpx2
 
-from client import Client
+from app.client import Client
 from fake import http_client
 
 
@@ -1146,8 +1157,8 @@ the background or is persisted. The shelter's `oauth` scheme declares a client c
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.auth import OauthClientCredentials
+from app.client import Client
+from app.client.auth import OauthClientCredentials
 from fake import http_client
 
 provider = OauthClientCredentials(client_id="shelter-cli", client_secret="pa55", scopes=("pets.read",))
@@ -1218,8 +1229,8 @@ the token request and its client authentication. A provider's `clock=Clock(...)`
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import APIConnectionError, APIStatusError, NotFoundError
+from app.client import Client
+from app.client.errors import APIConnectionError, APIStatusError, NotFoundError
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -1285,8 +1296,8 @@ Test your own code against an `httpx2.MockTransport` instead of a server: pass a
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
+from app.client import Client
+from app.client.errors import NotFoundError
 
 
 def describe(client: Client, pet_id: int) -> str:
@@ -1311,7 +1322,7 @@ from collections.abc import Iterator
 import httpx2
 import pytest
 
-from client import Client
+from app.client import Client
 from shelter import describe
 
 PETS = {"/v1/pets/1": {"id": 1, "name": "Mimi", "tag": "cat"}}
@@ -1363,12 +1374,12 @@ them as extra files, and a generation that leaves such `.py` files in place name
 `generate()` calls. Silence exactly this warning with
 `warnings.simplefilter("ignore", datamodel_code_generator.LeftoverFilesWarning)` around `generate()`, or with
 `ignore::datamodel_code_generator.LeftoverFilesWarning` in pytest's `filterwarnings`. Keep your own code outside
-the package, because `--check` treats every `.py` file under `--client-output` as generated. The models can live inside the package, such as `--output client/models.py` with
-`--client-model-package client.models`, as for the [server package](fastapi-server.md#the-generated-package).
+the package, because `--check` treats every `.py` file under `--client-output` as generated. The models can live inside the package, such as `--output app/client/models.py` with
+`--client-model-package app.client.models`, as for the [server package](fastapi-server.md#the-generated-package).
 
 `--check` compares without writing and prints the differences as for models, and `--output-format json`
 emits the model generation and check payloads, as with `--generate-server`; their `target` names the package and
-the runtime dependencies of the `uv add` notice, such as `{"package": "client", "dependencies": ["httpx2>=2.13.0",
+the runtime dependencies of the `uv add` notice, such as `{"package": "app.client", "dependencies": ["httpx2>=2.13.0",
 "typing-extensions>=4.16", "pydantic>=2.14.0"]}`. The generation payload adds the next steps of the notice: the
 package `readme`, with a path relative like those of `files`, and `usage`, the code that calls the first operation.
 `--diff-against` and `--watch` also work
@@ -1427,8 +1438,8 @@ stops with `Error: The client target needs --use-missing-sentinel with --target-
 does for `pydantic_v2.BaseModel` when the options are set:
 
 ```python
-from client import Client
-from models import NewPet
+from app.client import Client
+from app.models import NewPet
 from pydantic import MISSING
 
 with Client() as client:
@@ -1563,11 +1574,11 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="standard-py312-20260909",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_client=ClientType.HTTPX2,
-    client_output=Path("client"),
-    client_package="client",
-    client_model_package="models",
+    client_output=Path("app/client"),
+    client_package="app.client",
+    client_model_package="app.models",
     client_body_arguments=ClientBodyArguments.Both,
     client_operations={"/paths/~1pets/get": {"runtime": {"request_id_header": "X-Request-Id"}}},
 )

@@ -2,6 +2,7 @@
 
 Import `Client` and `AsyncClient` from `client` and the records below from
 `client.options`. Async calls require asyncio.
+The [README](../README.md) of the package shows how to call its operations.
 
 ## Layered options and budgets
 

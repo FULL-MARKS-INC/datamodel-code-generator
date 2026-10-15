@@ -20,7 +20,7 @@ instead of repeating them.
 ## What changes
 
 - **Generated code and your code are separate.** fcg writes a `main.py` whose function bodies you fill in. dcg writes a
-  `server/` package with the routes, the request handling, and one *service Protocol* (a `typing.Protocol` class) per
+  `app/server/` package with the routes, the request handling, and one *service Protocol* (a `typing.Protocol` class) per
   group of operations. You implement the Protocols in a module of your own and pass the objects to `create_app`.
 - **You can regenerate at any time.** Every file of the package is overwritten on each run and nothing in it is meant
   to be edited, so there is nothing to merge when the document changes.
@@ -53,18 +53,18 @@ instead of repeating them.
       --openapi-scopes schemas api \
       --output-model-type pydantic_v2.BaseModel \
       --preset standard-py312-20260909 \
-      --output models.py \
+      --output app/models.py \
       --generate-server fastapi \
-      --server-output server \
-      --server-package server \
-      --server-model-package models
+      --server-output app/server \
+      --server-package app.server \
+      --server-model-package app.models
     ```
 
     <!-- fmt: on -->
 
     <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-code-generator-migration.command -->
 
-    The run writes `models.py` and the `server/` package, as the
+    The run writes `app/models.py` and the `app/server/` package, as the
     [tutorial](fastapi-server.md#2-generate-the-server) shows. The same settings fit in `pyproject.toml`, which is
     also on that page.
 
@@ -241,8 +241,10 @@ them and write the JSON file before the run.
 
 You do not have to move an application at once. Generate the package beside the old code, with another
 `--server-output` and `--server-package` than any module that you already have, and include the router of a group in
-your existing FastAPI application. With the default `routers` layout, each router module `server/routers/<group>.py` has its own `build_router`, which
-takes the service of that group only, so you move one group at a time. The old routes keep working.
+your existing FastAPI application. With the default `routers` layout, each router module `app/server/routers/<group>.py` has its own `build_router`, which
+takes the service of that group only, so you move one group at a time. The old routes keep working. fcg wrote
+`models.py` into its `--output` directory too: if that is `app`, point `--output` and `--server-model-package` at another
+module so that the two models do not overwrite each other.
 
 [Use your own FastAPI app](fastapi-server.md#use-your-own-fastapi-app) shows `build_router` in an application of your
 own. Three things apply while old and new routes share an application:
@@ -266,9 +268,9 @@ checkers point at the implementations to update.
   file would change, and 2 for an error. A run without a timestamp, which `--disable-timestamp` or a preset gives you,
   reproduces every byte; see [Check in CI](fastapi-server.md#check-in-ci).
 - **Delete stale router modules.** Generation overwrites every generated file but does not delete one. After you remove
-  a tag from the document, its `server/routers/<group>.py` stays, and `--check` lists it as no longer generated. Delete
+  a tag from the document, its `app/server/routers/<group>.py` stays, and `--check` lists it as no longer generated. Delete
   it by hand.
-- **Keep your code outside the package**, in the `services` modules that `main.py` imports, which generation writes
+- **Keep your code outside the package**, in the `app/services` modules that `app/server/main.py` imports, which generation writes
   once with stubs. `--check` also reports any other `.py` file under `--server-output`.
 - **Watch the document.** `--watch` regenerates on every change of the input and needs the `watch` extra,
   `datamodel-code-generator[watch]`; see [Compare and watch](fastapi-server.md#compare-and-watch).

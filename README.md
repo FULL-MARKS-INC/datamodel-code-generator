@@ -249,6 +249,8 @@ From one OpenAPI document, `--generate-server fastapi` writes a FastAPI server p
 an HTTPX2 client package, in the same run as the models. The models stay the runtime contract: routes and client
 methods take and return the generated models, so the server and the client parse and produce the same classes you already
 use. Every generated file is regenerated on each run; keep your own code outside the generated packages.
+The commands put everything in one application package, `app`: the generated `app/models.py`, `app/server/`, and
+`app/client/`, and your `app/services/`, so no generic top-level name such as `models` or `server` is taken.
 
 This example is the [FastAPI server tutorial](https://datamodel-code-generator.koxudaxi.dev/fastapi-server/#quick-start), and the tests of this project run it as shown.
 
@@ -349,31 +351,34 @@ components:
 <!-- fmt: off -->
 
 ```bash
-# FastAPI server package in server/
-datamodel-codegen \
-  --input openapi.yaml \
-  --input-file-type openapi \
-  --openapi-scopes schemas api \
-  --output-model-type pydantic_v2.BaseModel \
-  --preset standard-py312-20260909 \
-  --output models.py \
-  --generate-server fastapi \
-  --server-output server \
-  --server-package server \
-  --server-model-package models
+# The application package app, which the generated packages go into
+mkdir -p app && touch app/__init__.py
 
-# HTTPX2 client package in client/
+# FastAPI server package in app/server/
 datamodel-codegen \
   --input openapi.yaml \
   --input-file-type openapi \
   --openapi-scopes schemas api \
   --output-model-type pydantic_v2.BaseModel \
   --preset standard-py312-20260909 \
-  --output models.py \
+  --output app/models.py \
+  --generate-server fastapi \
+  --server-output app/server \
+  --server-package app.server \
+  --server-model-package app.models
+
+# HTTPX2 client package in app/client/
+datamodel-codegen \
+  --input openapi.yaml \
+  --input-file-type openapi \
+  --openapi-scopes schemas api \
+  --output-model-type pydantic_v2.BaseModel \
+  --preset standard-py312-20260909 \
+  --output app/models.py \
   --generate-client httpx2 \
-  --client-output client \
-  --client-package client \
-  --client-model-package models
+  --client-output app/client \
+  --client-package app.client \
+  --client-model-package app.models
 ```
 
 <!-- fmt: on -->
@@ -387,20 +392,20 @@ package to stderr:
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of server to your project:
+Add the runtime dependencies of app.server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
-Next steps: implement the stubs in services/pets.py, then run the server:
-  uv add uvicorn && uv run uvicorn server.main:app --reload
-or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
-See server/README.md.
-Add the runtime dependencies of client to your project:
+Next steps: implement the stubs in app/services/pets.py, then run the server:
+  uv add uvicorn && uv run uvicorn app.server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev --entrypoint app.server.main:app
+See app/server/README.md.
+Add the runtime dependencies of app.client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
 Next steps: call the API with the client:
-  from client import Client
+  from app.client import Client
 
   with Client(base_url=...) as client:
       client.pets.list_pets(...)
-See client/_generated_docs/README.md.
+See app/client/README.md.
 ```
 
 <!-- fmt: on -->
@@ -412,38 +417,18 @@ See client/_generated_docs/README.md.
 <!-- fmt: off -->
 
 ```text
-models.py
-server/
-├── README.md
+app/
 ├── __init__.py
-├── _generated/
-├── _runtime/
-├── application.py
-├── main.py
-├── py.typed
-├── routers/
-└── services.py
-services/
-├── __init__.py
-└── pets.py
-client/
-├── __init__.py
-├── _generated/
-├── _generated_docs/
-├── _runtime/
-├── errors.py
-├── model_codecs.py
-├── options.py
-├── py.typed
-├── resources/
-├── responses.py
-└── types/
+├── models.py
+├── server/
+├── services/
+└── client/
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: readme.server-client.tree -->
 
-**Implement the server** in `services/pets.py`, which generation wrote once with stubs, by replacing the stubs of the
+**Implement the server** in `app/services/pets.py`, which generation wrote once with stubs, by replacing the stubs of the
 `Pets` class that subclasses the generated service Protocol; type checkers report a missing method or a mismatched
 signature:
 
@@ -451,9 +436,9 @@ signature:
 <!-- fmt: off -->
 
 ```python
-import models
-from server import HTTPResult
-from server.services import PetsService
+from app import models
+from app.server import HTTPResult
+from app.server.services import PetsService
 
 
 class Pets(PetsService):
@@ -479,7 +464,7 @@ class Pets(PetsService):
 
 ```bash
 uv add uvicorn
-uv run uvicorn server.main:app
+uv run uvicorn app.server.main:app
 ```
 
 **Call it with the client** in `call.py`, which sends to the document's server URL by default:
@@ -488,9 +473,9 @@ uv run uvicorn server.main:app
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
-from models import NewPet
+from app.client import Client
+from app.client.errors import NotFoundError
+from app.models import NewPet
 
 with Client() as client:
     pet = client.pets.create_pet(body=NewPet(name="Mimi", tag="cat"))

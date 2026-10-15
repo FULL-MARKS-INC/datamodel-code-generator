@@ -8,8 +8,9 @@
 This page is the reference behind [Python Client Generation](python-client.md): how the generated methods are
 declared, how values are converted, and the full rules of timeouts, retries, request bodies, redirects, templates,
 and errors. The guide covers the common cases with tested examples; come here for the precise rules of one setting.
-The [protocol helpers](python-client-helpers.md) have a page of their own. In the examples, `client` is the generated
-package, as in the guide's quick start.
+The [protocol helpers](python-client-helpers.md) have a page of their own. In the examples, the generated package is
+`client` and its models are `models`, in the project root; in the guide's quick start they are `app.client` and
+`app.models`, inside the application package `app`.
 
 ## Signature style
 
@@ -658,7 +659,7 @@ impossible date, such as one with a leap second, is ignored. The two-digit year 
 is at most 50 years after receipt, as RFC 9110 reads it; a year below 100 in another form is read as 1969 to 2068.
 Without a valid hint, bounded exponential backoff applies. Retry waits consume the same logical budget as sending and
 decoding. `RetryOptions(respect_retry_after=False)` is an explicit application policy override, disclosed in every
-generated README, `client/_generated_docs/README.md`; it is never silently embedded in generated defaults.
+generated README, `client/README.md`; it is never silently embedded in generated defaults.
 
 ```python
 from client import Client
@@ -933,7 +934,7 @@ into SDK requests; its `Accept-Encoding` is.
 The client templates come from [`--custom-template-dir`](cli-reference/template-customization.md#custom-template-dir),
 as model templates do: the files of its `client` directory replace the builtin roles of the same name:
 `facade.jinja2` (the package initializers and the public modules `options`, `errors`, `responses`, `auth`, `bodies`,
-`model_codecs`, and `protocols`, and the webhook packages' initializers and `webhooks/keys.py`), `client.jinja2` (`_client.py` and `_async_client.py`), `resource.jinja2` (each
+and `protocols`, and the webhook packages' initializers and `webhooks/keys.py`), `client.jinja2` (`_client.py` and `_async_client.py`), `resource.jinja2` (each
 resource's `_sync.py` and `_async.py`), `types.jinja2` (each resource's `types/<resource>/_operations.py`),
 `arguments.jinja2` (`_generated/client_arguments.py`), `operations.jinja2` (`_operations.py`), `security.jinja2`
 (`_generated/security.py`), `model_bindings.jinja2` (`_generated/model_bindings.py`), `helper_plans.jinja2`

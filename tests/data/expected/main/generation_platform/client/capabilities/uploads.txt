@@ -51,7 +51,6 @@ public files
   publication_client/__init__.py
   publication_client/bodies.py
   publication_client/errors.py
-  publication_client/model_codecs.py
   publication_client/options.py
   publication_client/protocols/__init__.py
   publication_client/resources/__init__.py

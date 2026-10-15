@@ -196,6 +196,11 @@ class ServerSpec:
     url: str
     variables: tuple[tuple[str, str, tuple[str, ...]], ...] = ()
 
+    @property
+    def default_url(self) -> str:
+        """Return the URL a call sends to without a server selection: each variable at its default."""
+        return _defaulted(self.url, self.variables).rstrip("/")
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class FieldArgument:

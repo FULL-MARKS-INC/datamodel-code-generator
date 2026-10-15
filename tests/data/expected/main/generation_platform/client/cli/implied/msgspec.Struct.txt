@@ -7,5 +7,5 @@ Next steps: call the API with the client:
 
   with Client(base_url=...) as client:
       client.pets.list_pets(...)
-See client/_generated_docs/README.md.
+See client/README.md.
 models equal those of a model-only run given --use-msgspec-tagged-unions --use-msgspec-nullable-enum-alias: True

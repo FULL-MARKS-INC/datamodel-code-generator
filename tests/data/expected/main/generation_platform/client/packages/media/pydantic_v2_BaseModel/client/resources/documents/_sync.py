@@ -13,9 +13,9 @@ import models
 
 from ... import _operations
 from ..._runtime.client.client import ClientCore
-from ...model_codecs import JSONValue
 from ...options import UNSET, RequestOptions
 from ...responses import RawResponse, Response
+from ...types import JSONValue
 from ...types.documents import (
     ReadDocumentResponse,
     ReplaceNoteResponse,

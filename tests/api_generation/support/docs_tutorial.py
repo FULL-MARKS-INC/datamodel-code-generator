@@ -27,12 +27,12 @@ if TYPE_CHECKING:
 SERVER_URL = "http://localhost:8000"
 RUNNING = re.compile(r"Uvicorn running on (\S+)")
 DURATION = re.compile(r" in \d+(?:\.\d+)?s\b")
-NOISY_VARIABLES = frozenset({"COLUMNS", "FORCE_COLOR", "PYTEST_ADDOPTS", "PY_COLORS"})
+NOISY_VARIABLES = frozenset({"COLUMNS", "FORCE_COLOR", "PYTEST_ADDOPTS", "PYTEST_XDIST_WORKER", "PY_COLORS"})
 
 
 @dataclass(frozen=True, slots=True)
 class Project:
-    """A generated documentation project: its directory, the dependency notice, and the files generation wrote."""
+    """A generated documentation project: its directory, the dependency notice, and the files it added."""
 
     root: Path
     notice: str
@@ -54,8 +54,9 @@ def generate_project(
 ) -> Project:
     """Copy a documentation project, point its document at the server URL, and run `datamodel-codegen` in it.
 
-    The project's scripts get the newest standard preset its guide renders in place of the placeholder. The files of
-    its `implementation` directory then replace the stubs generation wrote, as a user implements them.
+    A reader creates `app/__init__.py` to make `app` a package, so it is among the files the project adds. The project's
+    scripts get the newest standard preset its guide renders in place of the placeholder. The files of its
+    `implementation` directory then replace the stubs generation wrote, as a user implements them.
     """
     shutil.copytree(source, root)
     for script in root.glob("*.py"):
@@ -64,6 +65,8 @@ def generate_project(
     document.write_text(document.read_text(encoding="utf-8").replace(SERVER_URL, server_url), encoding="utf-8")
     (root / "pyproject.toml").write_text(f"{pyproject_table(arguments)}\n", encoding="utf-8")
     copied = _listing(root)
+    (root / "app").mkdir(exist_ok=True)
+    (root / "app/__init__.py").touch()
     monkeypatch.chdir(root)
     capsys.readouterr()
     run_main_with_args([], use_builtin_default_formatter=False)
@@ -91,10 +94,13 @@ def run_tests(root: Path, *tests: str) -> str:
 
 
 @contextmanager
-def serve(root: Path) -> Iterator[str]:
-    """Serve a project's generated entrypoint, `server.main:app`, with uvicorn on a free port, yielding its URL."""
+def serve(root: Path, *arguments: str) -> Iterator[str]:
+    """Serve an application with uvicorn on a free port from a directory, yielding its URL.
+
+    The arguments name the application, such as `app.server.main:app`, and any options, such as `--app-dir`.
+    """
     with subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "server.main:app", "--port", "0"],
+        [sys.executable, "-m", "uvicorn", *arguments, "--port", "0"],
         cwd=root,
         env=_environment(),
         stdout=subprocess.DEVNULL,

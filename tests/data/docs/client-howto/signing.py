@@ -4,7 +4,7 @@ from collections.abc import Generator
 
 import httpx2
 
-from client import Client
+from app.client import Client
 from fake import http_client
 
 

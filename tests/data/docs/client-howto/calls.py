@@ -1,7 +1,7 @@
-from client import Client
-from client.options import UNSET
+from app.client import Client
+from app.client.options import UNSET
 from fake import http_client
-from models import NewPet
+from app.models import NewPet
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
     print(client.pets.get_pet(pet_id=1))

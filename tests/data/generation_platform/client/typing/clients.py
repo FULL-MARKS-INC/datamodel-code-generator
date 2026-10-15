@@ -23,7 +23,7 @@ from pets.bodies import (
     MultipartData,
     SyncBinaryBody,
 )
-from pets.model_codecs import JSONValue
+from pets.types import JSONValue
 from pets.errors import (
     APIConnectionError,
     APIStatusError,

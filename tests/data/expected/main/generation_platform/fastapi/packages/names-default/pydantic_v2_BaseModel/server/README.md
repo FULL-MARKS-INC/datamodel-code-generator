@@ -6,13 +6,11 @@ Generation overwrites every file of the package, as it does the models: keep you
 
 FastAPI server generation is experimental.
 The server supports the `pydantic_v2.BaseModel` and `pydantic_v2.dataclass` model backends, while client generation supports all five.
-Custom templates, base classes, and Python types stay within these two backends.
 
 ## Next steps
 
 `main.py` serves the application: it imports your implementation of each router group from the `services` package beside this package, and passes them to `create_app`.
 Generation writes each of these modules that is missing, with a stub for each method that raises `NotImplementedError`, and never overwrites or deletes one.
-The `services` package belongs to this server alone: put another server package under a parent package of its own.
 
 | Module | File | Defines |
 | --- | --- | --- |
@@ -144,6 +142,22 @@ class Untagged(UntaggedService):
         raise NotImplementedError
 ```
 
+## Dependencies
+
+The package needs these distributions at run time:
+
+- `fastapi>=0.141.1`
+- `pydantic>=2.14.0`
+- `typing-extensions>=4.16`
+
+Add them to your project with the command each generation prints:
+
+```console
+uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
+```
+
+Running the application also needs an ASGI server: `uvicorn`, or `fastapi[standard]` for `fastapi dev`, as in [Next steps](#next-steps).
+
 ## Operations
 
 | Service | Method | HTTP method | Path | Operation reference |
@@ -159,35 +173,45 @@ class Untagged(UntaggedService):
 
 `services.py` declares a Protocol for each router group, with an abstract method for each operation of the group.
 A method takes the operation's arguments as keywords, with `None` for an optional parameter or body the request omits, and returns the value to send, an `HTTPResult` with another declared status, headers, or both, or a `Response` sent as it is.
-`main.py` passes an instance of each group's class to `create_app` under the group's name; tests, and applications that build their services with arguments such as a database pool, call `create_app` themselves.
+`main.py` passes an instance of each group's class to `create_app` under the group's name.
 Subclass the Protocol, so that type checkers report a missing or mismatched method and Python refuses to create an instance while a method is missing; any other object with the same methods is checked where you pass it.
 The package looks each method up when it registers the routes, and refuses a coroutine function where the operation's handler mode needs a plain method, or the reverse, and a method that cannot take the keyword arguments of its operation; type checkers check their types.
 
+Call `create_app` yourself to pass other instances.
+Tests pass fakes, as this pytest test does with FastAPI's `TestClient`, which needs `httpx2`: each fake subclasses your class of its group and overrides the methods the test calls.
+An application that builds its services with arguments, such as a database pool or settings, calls `create_app` in a module of its own and runs that module's application instead of `main.py`'s.
+
 ```python
+from fastapi.testclient import TestClient
+
 from server import create_app
-from server.services import DefaultService, Default1Service, Default2Service, UntaggedService
+from services.default import Default
+from services.default_1 import Default1
+from services.default_2 import Default2
+from services.untagged import Untagged
 
 
-class Default(DefaultService):
-    """Implement `list_defaults`."""
+class FakeDefault(Default):
+    """Override the methods the test calls, such as `list_defaults`."""
 
 
-class Default1(Default1Service):
-    """Implement `ping`."""
+class FakeDefault1(Default1):
+    """Override the methods the test calls, such as `ping`."""
 
 
-class Default2(Default2Service):
-    """Implement `list_upper_defaults`."""
+class FakeDefault2(Default2):
+    """Override the methods the test calls, such as `list_upper_defaults`."""
 
 
-class Untagged(UntaggedService):
-    """Implement `list_untagged`."""
+class FakeUntagged(Untagged):
+    """Override the methods the test calls, such as `list_untagged`."""
 
 
-app = create_app(default=Default(), default_1=Default1(), default_2=Default2(), untagged=Untagged())
+def test_app() -> None:
+    with TestClient(create_app(default=FakeDefault(), default_1=FakeDefault1(), default_2=FakeDefault2(), untagged=FakeUntagged())) as client:
+        ...
 ```
 
-Run the application with any ASGI server, such as `uvicorn app:app` for a module named `app.py`.
 `create_app` passes its other keyword arguments, such as `lifespan`, `middleware`, or `dependencies`, to `FastAPI`, over the title, version, and other metadata of the source document.
 To keep your own `FastAPI` application, include the router:
 
@@ -195,8 +219,12 @@ To keep your own `FastAPI` application, include the router:
 from fastapi import FastAPI
 
 from server import build_router
+from services.default import Default
+from services.default_1 import Default1
+from services.default_2 import Default2
+from services.untagged import Untagged
 
-app = FastAPI(lifespan=lifespan, exception_handlers=exception_handlers)
+app = FastAPI()
 app.include_router(build_router(default=Default(), default_1=Default1(), default_2=Default2(), untagged=Untagged()))
 ```
 
@@ -233,5 +261,9 @@ Run the same generation again whenever the OpenAPI document changes; the `--chec
 Generation overwrites every generated file, restoring any you edited or deleted, and never deletes one: delete the modules of removed operations yourself, which `--check` lists as extra files.
 When an operation is added, removed, or changed, its method in `services.py` changes with it, so type checkers point at the implementations to update, and Python refuses to create an instance of a subclass that lacks a new method.
 Generation writes only the missing modules of `services`: a new router group gets its module with stubs, and the module of a renamed or removed group stays for you to move or delete.
+The `services` package belongs to this server alone, as the docstring of its `__init__.py` records: generation refuses another server package beside this one, in a later run or in the same batch, since that package would import its implementations from it too, whatever the docstring says.
+Put each server package under a parent package of its own.
+A server package renamed or moved within the parent package, or spelled from another import root, takes the package over while no other generated server package is beside it, and generation rewrites the docstring to name it, as `--check` reports and a notice says.
+After a take-over, the modules of `services` still import the server package they were written for, as in `from <old package>.services import ...`: update those imports to `server` yourself, since generation never rewrites them.
 Each generation prints the `uv add` command that adds the runtime dependencies of the package to your project;
 run it again when a new version of datamodel-code-generator changes them.

@@ -1,4 +1,4 @@
-from client import Client
+from app.client import Client
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:

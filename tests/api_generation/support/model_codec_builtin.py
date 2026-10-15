@@ -129,7 +129,6 @@ class GeneratedCodecs:
         self.name = name
         import_generated_codecs(name, root)
         self.bindings = importlib.import_module(f"{name}._generated.model_bindings")
-        self.public = importlib.import_module(f"{name}.model_codecs")
         self.media = importlib.import_module(f"{name}._runtime.model_codecs.media")
         self.uses = _uses(root, name)
 

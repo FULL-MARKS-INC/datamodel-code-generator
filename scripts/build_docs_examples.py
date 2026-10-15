@@ -31,6 +31,7 @@ DOCS_PROJECTS = TEST_DATA / "docs"
 EXPECTED_DOCS_PROJECTS = TEST_DATA / "expected" / "docs"
 TUTORIAL = DOCS_PROJECTS / "tutorial"
 EXPECTED_TUTORIAL = EXPECTED_DOCS_PROJECTS / "tutorial"
+TUTORIAL_SERVICE = TUTORIAL / "implementation" / "app" / "services" / "pets.py"
 HOWTO = DOCS_PROJECTS / "howto"
 EXPECTED_HOWTO = EXPECTED_DOCS_PROJECTS / "howto"
 CLIENT_HOWTO = DOCS_PROJECTS / "client-howto"
@@ -43,21 +44,21 @@ API_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
         "--generate-server",
         "fastapi",
         "--server-output",
-        "server",
+        "app/server",
         "--server-package",
-        "server",
+        "app.server",
         "--server-model-package",
-        "models",
+        "app.models",
     ),
     "client": (
         "--generate-client",
         "httpx2",
         "--client-output",
-        "client",
+        "app/client",
         "--client-package",
-        "client",
+        "app.client",
         "--client-model-package",
-        "models",
+        "app.models",
     ),
 }
 DOCS_PROJECT_OPTIONS: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -189,7 +190,7 @@ def api_quick_start_arguments(target: str) -> tuple[str, ...]:
         "--preset",
         newest_preset(),
         "--output",
-        "models.py",
+        "app/models.py",
         *API_TARGET_OPTIONS[target],
     )
 
@@ -439,13 +440,19 @@ def api_overview_examples(page: str, path: Path) -> tuple[DocsExample, ...]:
                 "commands",
                 lambda: fenced(
                     "bash",
-                    "\n\n".join(
-                        f"# {title}\n{command(api_quick_start_arguments(target))}"
-                        for target, title in (
-                            ("server", "FastAPI server package in server/"),
-                            ("client", "HTTPX2 client package in client/"),
-                        )
-                    ),
+                    "\n\n".join((
+                        (
+                            "# The application package app, which the generated packages go into\n"
+                            "mkdir -p app && touch app/__init__.py"
+                        ),
+                        *(
+                            f"# {title}\n{command(api_quick_start_arguments(target))}"
+                            for target, title in (
+                                ("server", "FastAPI server package in app/server/"),
+                                ("client", "HTTPX2 client package in app/client/"),
+                            )
+                        ),
+                    )),
                 ),
             ),
             (
@@ -471,7 +478,7 @@ def api_overview_examples(page: str, path: Path) -> tuple[DocsExample, ...]:
                     ),
                 ),
             ),
-            ("app", lambda: fenced("python", read_text(TUTORIAL / "implementation" / "services" / "pets.py"))),
+            ("app", lambda: fenced("python", read_text(TUTORIAL_SERVICE))),
             ("call", lambda: fenced("python", read_text(TUTORIAL / "call.py"))),
             ("output", lambda: fenced("text", read_text(EXPECTED_TUTORIAL / "call.txt").removeprefix("exit 0\n"))),
         )
@@ -480,7 +487,7 @@ def api_overview_examples(page: str, path: Path) -> tuple[DocsExample, ...]:
 
 def fastapi_server_examples() -> tuple[DocsExample, ...]:
     """Return the tutorial and how-to examples of docs/fastapi-server.md, rendered from the tested projects."""
-    app, test = HOWTO / "app.py", HOWTO / "test_app.py"
+    app, test = HOWTO / "app" / "main.py", HOWTO / "test_app.py"
     return tuple(
         DocsExample(example_id=f"fastapi-server.{name}", path=DOCS / "fastapi-server.md", render=render)
         for name, render in (
@@ -494,19 +501,19 @@ def fastapi_server_examples() -> tuple[DocsExample, ...]:
             ("tutorial.tree", lambda: fenced("text", file_tree(read_text(EXPECTED_TUTORIAL / "files.txt")))),
             (
                 "tutorial.services",
-                lambda: fenced("python", read_python_output(EXPECTED_TUTORIAL / "server/services.py")),
+                lambda: fenced("python", read_python_output(EXPECTED_TUTORIAL / "app/server/services.py")),
             ),
-            ("tutorial.app", lambda: fenced("python", read_text(TUTORIAL / "implementation" / "services" / "pets.py"))),
+            ("tutorial.app", lambda: fenced("python", read_text(TUTORIAL_SERVICE))),
             ("tutorial.test", lambda: fenced("python", read_text(TUTORIAL / "test_app.py"))),
             (
                 "tutorial.inline-names",
                 lambda: fenced(
-                    "python", excerpt(EXPECTED_TUTORIAL / "models.py", "type PetsGetQuery", "type PetsPetIdGet")
+                    "python", excerpt(EXPECTED_TUTORIAL / "app/models.py", "type PetsGetQuery", "type PetsPetIdGet")
                 ),
             ),
             ("howto.openapi", lambda: details("openapi.yaml", "yaml", read_text(HOWTO / "openapi.yaml"))),
             ("howto.pyproject", lambda: fenced("toml", pyproject_table(DOCS_PROJECT_OPTIONS["howto"][1]))),
-            ("howto.services", lambda: fenced("python", read_python_output(EXPECTED_HOWTO / "server/services.py"))),
+            ("howto.services", lambda: fenced("python", read_python_output(EXPECTED_HOWTO / "app/server/services.py"))),
             ("howto.errors", lambda: fenced("python", blocks(app, "    def get_photo("))),
             ("howto.async", lambda: fenced("python", blocks(app, "    async def upload_photo("))),
             (
@@ -518,11 +525,11 @@ def fastapi_server_examples() -> tuple[DocsExample, ...]:
                 "howto.app",
                 lambda: fenced(
                     "python",
-                    f"{blocks(app, 'from fastapi import', 'from server import')}\n\n\n{excerpt(app, 'app = ')}",
+                    f"{blocks(app, 'from fastapi import', 'from app.server import')}\n\n\n{excerpt(app, 'app = ')}",
                 ),
             ),
             ("howto.notice", lambda: fenced("text", read_text(EXPECTED_HOWTO / "notice.txt"))),
-            ("howto.models", lambda: fenced("python", excerpt(EXPECTED_HOWTO / "models.py", "class PhotoUpload("))),
+            ("howto.models", lambda: fenced("python", excerpt(EXPECTED_HOWTO / "app/models.py", "class PhotoUpload("))),
             (
                 "howto.tests",
                 lambda: fenced("python", excerpt(test, "def test_upload_and_get_photo(", "def test_credentials(")),
@@ -572,7 +579,8 @@ def python_client_examples() -> tuple[DocsExample, ...]:
             (
                 "tutorial.method",
                 lambda: fenced(
-                    "python", blocks(EXPECTED_TUTORIAL / "client/resources/pets/_sync.py", "    def get_pet(", limit=1)
+                    "python",
+                    blocks(EXPECTED_TUTORIAL / "app/client/resources/pets/_sync.py", "    def get_pet(", limit=1),
                 ),
             ),
             ("tutorial.call", lambda: fenced("python", read_text(TUTORIAL / "call.py"))),

@@ -1,6 +1,6 @@
-from client import Client
-from client.errors import NotFoundError
-from models import NewPet
+from app.client import Client
+from app.client.errors import NotFoundError
+from app.models import NewPet
 
 with Client() as client:
     pet = client.pets.create_pet(body=NewPet(name="Mimi", tag="cat"))

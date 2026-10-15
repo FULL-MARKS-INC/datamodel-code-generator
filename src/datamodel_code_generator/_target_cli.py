@@ -7,7 +7,7 @@ import sys
 import traceback
 from functools import partial
 from itertools import starmap
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from datamodel_code_generator import Error, InvalidClassNameError
@@ -34,7 +34,7 @@ def run_target(  # noqa: PLR0913, PLR0917
     namespace: Namespace,
     config: Any,
     pyproject_path: Path | None,
-    batch: list[tuple[str, PlannedTarget, str]] | None = None,
+    batch: list[tuple[str, PlannedTarget, str | None]] | None = None,
     lock: Any = None,
     job: str = "",
     implied: dict[str, Any] | None = None,
@@ -44,8 +44,9 @@ def run_target(  # noqa: PLR0913, PLR0917
 
     A model setting the target needs but the config lacks is refused like a model option conflict, before the run. A
     batch `job` appends the planned target to the targets its `batch` has planned instead of publishing it, and its
-    models record into the batch's remote `lock`. A single run publishes its target as a batch of one, so a failed
-    publication is reported as for the model runs that publish through the same journal.
+    models record into the batch's remote `lock`; a job that checks its target appends it without a notice, so that
+    later jobs are refused the server packages it plans as when they write them. A single run publishes its target as
+    a batch of one, so a failed publication is reported as for the model runs that publish through the same journal.
 
     The config already holds the settings the target `implied`, which no option, key, or preset set; the JSON payloads
     name them under `target.implied`. After a run that succeeds, stderr shows how to set the `announced` ones: the
@@ -140,7 +141,7 @@ def _run(  # noqa: PLR0913, PLR0917
     namespace: Namespace,
     config: Any,
     pyproject_path: Path | None,
-    batch: list[tuple[str, PlannedTarget, str]] | None,
+    batch: list[tuple[str, PlannedTarget, str | None]] | None,
     lock: Any,
     job: str,
     implied: dict[str, Any],
@@ -158,7 +159,6 @@ def _run(  # noqa: PLR0913, PLR0917
         implied_conflict,
         plan_target,
         prepare_target,
-        render_target,
     )
     from datamodel_code_generator._target_selection import target_of  # noqa: PLC0415
 
@@ -173,7 +173,10 @@ def _run(  # noqa: PLR0913, PLR0917
     implied_conflict(config, implied, generator)
     notice = _implied_notice(announced, args, config, namespace, pyproject_path, job)
     if config.check:
-        project = render_target(source, model_config=effective, config=target, generator=generator)
+        planned = plan_target(source, model_config=effective, config=target, generator=generator, job=job)
+        if batch is not None:
+            _join(batch, job, planned, None)
+        project = planned.project
         comparison = _compare_target(project, config.output, target.output, config.encoding)
         _write_comparison_output(comparison, namespace.output_format, target=_target_payload(target, project, implied))
         _print_notice(notice)
@@ -198,10 +201,12 @@ def _run(  # noqa: PLR0913, PLR0917
     json_output = namespace.output_format == "json"
     if batch is not None:
         timestamp = next((earlier.timestamp for _, earlier, _ in batch if earlier.timestamp is not None), None)
-        planned = plan_target(source, model_config=effective, config=target, generator=generator, timestamp=timestamp)
+        planned = plan_target(
+            source, model_config=effective, config=target, generator=generator, timestamp=timestamp, job=job
+        )
+        _join(batch, job, planned, _next_step(target, planned.project, notice))
         if json_output:
             print(_target_json(planned.project, config.output, config.encoding, target, implied))  # noqa: T201
-        batch.append((job, planned, _next_step(target, planned.project, notice)))
         return _OK
     planned = plan_target(source, model_config=effective, config=target, generator=generator, publish=True)
     project = planned.project
@@ -215,15 +220,27 @@ def _run(  # noqa: PLR0913, PLR0917
     return _OK
 
 
-def publish_targets(files: Iterable[StagedFile], targets: Sequence[tuple[str, PlannedTarget, str]]) -> None:
+def _join(
+    batch: list[tuple[str, PlannedTarget, str | None]], job: str, planned: PlannedTarget, notice: str | None
+) -> None:
+    """Append a job's planned target to its batch, refusing a server package that shares an earlier job's services."""
+    from datamodel_code_generator._api_generation import check_shared_services  # noqa: PLC0415
+
+    check_shared_services(job, planned, ((earlier, target) for earlier, target, _ in batch))
+    batch.append((job, planned, notice))
+
+
+def publish_targets(files: Iterable[StagedFile], targets: Sequence[tuple[str, PlannedTarget, str | None]]) -> None:
     """Publish the staged files of a batch and the targets its jobs planned through one journal.
 
-    Each target's dependency notice follows the publication on stderr, as after a single run.
+    Each target's dependency notice follows the publication on stderr, as after a single run. A target that a job
+    only checked has no notice and is not published.
     """
     from datamodel_code_generator._api_generation import publish_planned  # noqa: PLC0415
 
-    publish_planned(files, [(job, planned) for job, planned, _ in targets])
-    for _, _, notice in targets:
+    written = [(job, planned, notice) for job, planned, notice in targets if notice is not None]
+    publish_planned(files, [(job, planned) for job, planned, _ in written])
+    for _, _, notice in written:
         print(notice, file=sys.stderr)  # noqa: T201
 
 
@@ -264,6 +281,7 @@ def _target_json(
 ) -> str:
     """Emit rendered model and target text, read like their published files, with the existing generation payload.
 
+    The files include the initializer of a `services` package a server takes over, whose docstring the run rewrites.
     As in the model payload, a path is relative to the model output directory; a file outside it has an absolute path.
     The payload's target names the package, its runtime dependencies, and the next steps with paths of the same base.
     """
@@ -277,6 +295,7 @@ def _target_json(
         generation_output_json,
     )
 
+    taken = _taken_over(project)
     artifacts = [
         (
             artifact.path,
@@ -284,7 +303,7 @@ def _target_json(
             encoding if artifact.kind == "model" or artifact.path.suffix in {".py", ".pyi"} else "utf-8",
         )
         for artifact in project.artifacts
-        if artifact.kind in {"model", "target"} and (content := artifact.content) is not None
+        if (artifact.kind in {"model", "target"} or artifact is taken) and (content := artifact.content) is not None
     ]
     base = _payload_base(project, models)
     files = [
@@ -340,8 +359,10 @@ def _compare_target(
 ) -> OutputComparison:
     """Compare rendered text and Python output roots through the model comparison path.
 
-    Labels stay relative to the working directory; each difference names its file like the generation payload. With
-    a `baseline` rendered from another input, the comparison is an input diff against its files instead of the output.
+    Labels stay relative to the working directory; each difference names its file like the generation payload. The
+    initializer of a `services` package a server takes over is compared at its path, as the docstring the run rewrites.
+    With a `baseline` rendered from another input, the comparison is an input diff against its files instead of the
+    output.
     """
     from tempfile import TemporaryDirectory  # noqa: PLC0415
 
@@ -362,6 +383,7 @@ def _compare_target(
             (staged := _existing(artifact.path, baseline_root)).parent.mkdir(parents=True, exist_ok=True)
             staged.write_bytes(artifact.content)
         rendered = [*project.artifacts, *(() if baseline is None else baseline.artifacts)]
+        comparisons: list[tuple[Path, Path, bool, str]] = []
         for kind, output, is_directory in (("model", models, base == models), ("target", target, True)):
             if not is_directory and not any(artifact.kind == kind for artifact in rendered):
                 continue
@@ -383,31 +405,60 @@ def _compare_target(
                 if is_directory and path.suffix != ".py":
                     non_python.append((staged, path, encoding if artifact.kind == "model" else "utf-8"))
             _stage_implementations(project, output if is_directory and baseline is None else None, staged_root)
-            comparisons = [(staged_root if is_directory else staged_root / output.name, output, is_directory, encoding)]
+            comparisons.append((
+                staged_root if is_directory else staged_root / output.name,
+                output,
+                is_directory,
+                encoding,
+            ))
             comparisons.extend((staged, path, False, codec) for staged, path, codec in non_python)
-            for generated, actual, directory_output, codec in comparisons:
-                try:
-                    compared = _compare_generated_outputs(
-                        generated,
-                        _existing(actual, baseline_root),
-                        codec,
-                        OutputComparisonOptions(
-                            is_directory_output=directory_output,
-                            input_diff=baseline is not None,
-                            single_file_display_path=_shown(actual),
-                            directory_display_path=_shown(actual),
-                        ),
-                    )
-                except UnicodeError as error:
-                    message = f"{_shown(actual)}: Output is not text in encoding {codec!r}: {error}"
-                    raise Error(message) from error
-                differences.extend(
-                    difference.model_copy(update={"path": shown(cwd / difference.path, base).as_posix()})
-                    for difference in compared.differences
+        comparisons.extend(() if baseline is not None else _staged_take_over(project, staging / "services", encoding))
+        for generated, actual, directory_output, codec in comparisons:
+            try:
+                compared = _compare_generated_outputs(
+                    generated,
+                    _existing(actual, baseline_root),
+                    codec,
+                    OutputComparisonOptions(
+                        is_directory_output=directory_output,
+                        input_diff=baseline is not None,
+                        single_file_display_path=_shown(actual),
+                        directory_display_path=_shown(actual),
+                    ),
                 )
-                if content := compared.content:
-                    contents.append(content if content.endswith("\n") else content + "\n")
+            except UnicodeError as error:
+                message = f"{_shown(actual)}: Output is not text in encoding {codec!r}: {error}"
+                raise Error(message) from error
+            differences.extend(
+                difference.model_copy(update={"path": shown(cwd / difference.path, base).as_posix()})
+                for difference in compared.differences
+            )
+            if content := compared.content:
+                contents.append(content if content.endswith("\n") else content + "\n")
     return OutputComparison(differences=differences, content="".join(contents))
+
+
+def _staged_take_over(project: GeneratedProject, staging: Path, encoding: str) -> list[tuple[Path, Path, bool, str]]:
+    """Stage the initializer of a `services` package a server takes over, to compare it with the file at its path."""
+    if (taken := _taken_over(project)) is None:
+        return []
+    staging.mkdir()
+    (staged := staging / taken.path.name).write_bytes(taken.content)
+    return [(staged, taken.path, False, encoding)]
+
+
+def _taken_over(project: GeneratedProject) -> GeneratedArtifact | None:
+    """Return the initializer of the `services` package a server takes over, which the run writes although it exists.
+
+    Every other implementation the run writes is a module that is missing.
+    """
+    if project.next_steps.taken_over is None:
+        return None
+    return next(
+        artifact
+        for artifact in project.artifacts
+        if artifact.kind == "implementation" and artifact.action == "write" and artifact.path.name == "__init__.py"
+    )
 
 
 def _generated(project: GeneratedProject) -> Iterator[GeneratedArtifact]:
@@ -447,12 +498,19 @@ def _existing(path: Path, baseline_root: Path | None) -> Path:
 def _next_step(target: TargetConfig, project: GeneratedProject, implied: str | None) -> str:
     """Return the uv command that adds the generated package's runtime dependencies, then what to do next.
 
-    The notice of the settings the target implied, if any, comes first. A server names the modules to implement,
-    marking those the run creates, and how to run its entrypoint; a client shows a call of its first operation. Both
-    name their README.
+    The notice of the settings the target implied, if any, comes first. A server that takes a `services` package over
+    says so, since the modules of the package still import the server package it took it from. A server names the
+    modules to implement, marking those the run creates, and how to run its entrypoint; a client shows a call of its
+    first operation. Both name their README.
     """
     arguments = " ".join(f'"{dependency}"' for dependency in project.dependencies)
     lines = [f"Add the runtime dependencies of {target.package} to your project:", f"  uv add {arguments}"]
+    if (taken := _taken_over(project)) is not None:
+        old, new = project.next_steps.taken_over, target.package
+        lines.append(
+            f"{_shown(taken.path)} now names {new} instead of {old}: "
+            f"update the imports of the services modules from {old} to {new}."
+        )
     return "\n".join((*((implied,) if implied else ()), *lines, *_steps(project.next_steps)))
 
 
@@ -470,12 +528,31 @@ def _steps(steps: NextSteps) -> list[str]:
         f"implement the stubs in {created}{f' (your services: {kept})' if kept else ''}, then " if created else ""
     )
     yours = f" with your services in {kept}" if kept and not created else ""
+    app, run = _run_commands(cast("str", steps.app), _shown(cast("Path", steps.entrypoint)))
     return [
         f"Next steps: {implement}run the server{yours}:",
-        f"  uv add uvicorn && uv run uvicorn {steps.app} --reload",
-        f'or: uv add "fastapi[standard]" && uv run fastapi dev {_shown(cast("Path", steps.entrypoint))}',
+        f"  uv add uvicorn && uv run uvicorn {app} --reload",
+        f'or: uv add "fastapi[standard]" && uv run {run}',
         f"See {readme}.",
     ]
+
+
+def _run_commands(app: str, entrypoint: str) -> tuple[str, str]:
+    """Return the uvicorn arguments and the `fastapi dev` command that import a server's application.
+
+    The import root is the package directory without the package's dotted parts, relative to the working directory;
+    uvicorn adds it with `--app-dir`. `fastapi dev` imports a top-level package from the path of `main.py`, and a
+    nested one, whose parent may lack an initializer, by its import string from the import root. Paths are quoted for
+    the shell where they need it.
+    """
+    from shlex import quote  # noqa: PLC0415
+
+    parts = PurePosixPath(entrypoint).parent.parts
+    depth = app.partition(":")[0].count(".")
+    root = quote(str(PurePosixPath(*parts[: max(len(parts) - depth, 0)], *[".."] * (depth - len(parts)))))
+    app_dir, directory = (f"--app-dir {root} ", f"--directory {root} ") if root != "." else ("", "")
+    run = f"fastapi dev {quote(entrypoint)}" if depth == 1 else f"{directory}fastapi dev --entrypoint {app}"
+    return f"{app_dir}{app}", run
 
 
 def _base(config: Any, namespace: Namespace, pyproject_path: Path | None, field: str) -> Path:

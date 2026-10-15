@@ -2,14 +2,19 @@
 
 A nested server package, `app.server`, imports its implementations from `app.services`; a top-level one, `secured`,
 from the top-level `services` package, under another name for a class whose name another group's class takes. Each
-step imports the entrypoint afresh and reports its application or error.
+step imports the entrypoint afresh and reports its application or error. The same servers run the Python examples of
+their READMEs, and a generated server is served with the commands its run notice prints.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
+import re
+import shlex
 import shutil
 import sys
+import urllib.request
 from typing import TYPE_CHECKING, Any
 
 from fastapi.testclient import TestClient
@@ -17,6 +22,7 @@ from fastapi.testclient import TestClient
 from datamodel_code_generator import generate
 from datamodel_code_generator.enums import OpenAPIScope
 from datamodel_code_generator.format import Formatter
+from tests.api_generation.support.docs_tutorial import run_python, run_tests, serve
 from tests.api_generation.support.fastapi_generation import SOURCE
 from tests.api_generation.support.generated_packages import forget_generated, import_generated
 
@@ -25,6 +31,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 USER = SOURCE / "entrypoint"
+PYTHON = re.compile(r"^```python\n(.*?)^```$", re.MULTILINE | re.DOTALL)
+SECURED_NAMES = {"tag:public": "service", "default": "operations"}
 MODEL: dict[str, Any] = {
     "input_file_type": "openapi",
     "target_python_version": "3.11",
@@ -132,8 +140,7 @@ def fastapi_entrypoint_report(root: Path) -> tuple[str, dict[tuple[str, ...], st
     finally:
         sys.path.remove(str(nested))
     lines.append("# top-level server package secured, whose groups service and operations both name a class Operations")
-    names = {"tag:public": "service", "default": "operations"}
-    _generate(secured, "server-security.yaml", "secured", "secured_models", server_router_names=names)
+    _generate(secured, "server-security.yaml", "secured", "secured_models", server_router_names=SECURED_NAMES)
     lines.append(f"stubs: {_tree(secured / 'services', secured)}")
     stubs.update(
         (path.relative_to(root).parts, path.read_text(encoding="utf-8"))
@@ -147,3 +154,52 @@ def fastapi_entrypoint_report(root: Path) -> tuple[str, dict[tuple[str, ...], st
     finally:
         sys.path.remove(str(secured))
     return "\n".join(lines) + "\n", stubs
+
+
+def readme_examples_report(root: Path) -> str:
+    """Run the Python examples of the READMEs of an unsecured and a secured server as a reader copies them.
+
+    The test example runs with pytest as printed: its fakes subclass the classes of the modules generation wrote with
+    stubs. The example of the router builds its application, whose routes the report lists.
+    """
+    lines: list[str] = []
+    for name, source, package, models, settings in (
+        ("nested", "pets.yaml", "app.server", "app.models", {}),
+        ("secured", "server-security.yaml", "secured", "secured_models", {"server_router_names": SECURED_NAMES}),
+    ):
+        (directory := root / name).mkdir()
+        _generate(directory, source, package, models, **settings)
+        readme = directory.joinpath(*package.split("."), "README.md").read_text(encoding="utf-8")
+        test, router = PYTHON.findall(readme.partition("\n## Implementing the services\n")[2].partition("\n## ")[0])
+        (directory / "test_readme.py").write_text(test, encoding="utf-8")
+        (directory / "router_app.py").write_text(f"{router}\nprint(sorted(app.openapi()['paths']))\n", encoding="utf-8")
+        lines.extend((
+            f"# {package}",
+            "test example:",
+            run_tests(directory, "test_readme.py"),
+            "router example:",
+            run_python(directory, "router_app.py"),
+        ))
+    return "\n".join(lines)
+
+
+def run_commands_report(root: Path, notice: str) -> str:
+    """Serve a generated server with each command of its run notice, reporting the title of the document it serves.
+
+    uvicorn runs with the arguments the notice prints. fastapi-cli is not a test dependency, so uvicorn serves the
+    import string of `fastapi dev --entrypoint` from the directory that `uv run --directory` names, as `fastapi dev`
+    would import it there.
+    """
+    lines: list[str] = []
+    for line in notice.splitlines():
+        if not (command := line.partition("&& uv run ")[2]):
+            continue
+        arguments = shlex.split(command)
+        directory, served = root, [argument for argument in arguments[1:] if argument != "--reload"]
+        if arguments[0] != "uvicorn":
+            directory = root / arguments[1] if arguments[0] == "--directory" else root
+            served = [arguments[arguments.index("--entrypoint") + 1]]
+        with serve(directory, *served) as url, urllib.request.urlopen(f"{url}/openapi.json") as response:
+            title = json.load(response)["info"]["title"]
+        lines.append(f"{command}\n  serves {title!r} from {directory.relative_to(root).as_posix()}")
+    return "\n".join(lines) + "\n"

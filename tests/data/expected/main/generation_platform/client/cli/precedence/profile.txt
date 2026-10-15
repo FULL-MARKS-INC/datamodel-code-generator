@@ -6,7 +6,7 @@ Next steps: call the API with the client:
 
   with Client(base_url=...) as client:
       client.pets.list_all(...)
-See client/_generated_docs/README.md.
+See client/README.md.
 # client/resources/pets/_sync.py
 list_all(**kwargs)
 create_pet(**kwargs)

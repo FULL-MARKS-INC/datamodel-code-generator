@@ -15,9 +15,9 @@ import models
 from ... import _operations
 from ..._runtime.client.client import AsyncClientCore
 from ...bodies import AsyncMultipartBody
-from ...model_codecs import JSONValue
 from ...options import UNSET, RequestOptions
 from ...responses import AsyncRawResponse, Response
+from ...types import JSONValue
 from ...types.default import (
     CreateOwnerResponse,
     CreatePetResponse,

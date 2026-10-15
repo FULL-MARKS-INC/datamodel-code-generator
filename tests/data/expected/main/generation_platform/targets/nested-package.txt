@@ -1,8 +1,8 @@
 # nested-package
 generate
   Next steps: implement the stubs in models/services/store.py, then run the server:
-    uv add uvicorn && uv run uvicorn example.models.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev models/server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.models.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.models.server.main:app
   See models/server/README.md.
 tree
   models/__init__.py

@@ -115,6 +115,8 @@ From one OpenAPI document, `--generate-server fastapi` writes a FastAPI server p
 an HTTPX2 client package, in the same run as the models. The models stay the runtime contract: routes and client
 methods take and return the generated models, so the server and the client parse and produce the same classes you already
 use. Every generated file is regenerated on each run; keep your own code outside the generated packages.
+The commands put everything in one application package, `app`: the generated `app/models.py`, `app/server/`, and
+`app/client/`, and your `app/services/`, so no generic top-level name such as `models` or `server` is taken.
 
 This example is the [FastAPI server tutorial](fastapi-server.md#quick-start), and the tests of this project run it as shown.
 
@@ -215,31 +217,34 @@ components:
 <!-- fmt: off -->
 
 ```bash
-# FastAPI server package in server/
-datamodel-codegen \
-  --input openapi.yaml \
-  --input-file-type openapi \
-  --openapi-scopes schemas api \
-  --output-model-type pydantic_v2.BaseModel \
-  --preset standard-py312-20260909 \
-  --output models.py \
-  --generate-server fastapi \
-  --server-output server \
-  --server-package server \
-  --server-model-package models
+# The application package app, which the generated packages go into
+mkdir -p app && touch app/__init__.py
 
-# HTTPX2 client package in client/
+# FastAPI server package in app/server/
 datamodel-codegen \
   --input openapi.yaml \
   --input-file-type openapi \
   --openapi-scopes schemas api \
   --output-model-type pydantic_v2.BaseModel \
   --preset standard-py312-20260909 \
-  --output models.py \
+  --output app/models.py \
+  --generate-server fastapi \
+  --server-output app/server \
+  --server-package app.server \
+  --server-model-package app.models
+
+# HTTPX2 client package in app/client/
+datamodel-codegen \
+  --input openapi.yaml \
+  --input-file-type openapi \
+  --openapi-scopes schemas api \
+  --output-model-type pydantic_v2.BaseModel \
+  --preset standard-py312-20260909 \
+  --output app/models.py \
   --generate-client httpx2 \
-  --client-output client \
-  --client-package client \
-  --client-model-package models
+  --client-output app/client \
+  --client-package app.client \
+  --client-model-package app.models
 ```
 
 <!-- fmt: on -->
@@ -253,20 +258,20 @@ package to stderr:
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of server to your project:
+Add the runtime dependencies of app.server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
-Next steps: implement the stubs in services/pets.py, then run the server:
-  uv add uvicorn && uv run uvicorn server.main:app --reload
-or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
-See server/README.md.
-Add the runtime dependencies of client to your project:
+Next steps: implement the stubs in app/services/pets.py, then run the server:
+  uv add uvicorn && uv run uvicorn app.server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev --entrypoint app.server.main:app
+See app/server/README.md.
+Add the runtime dependencies of app.client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
 Next steps: call the API with the client:
-  from client import Client
+  from app.client import Client
 
   with Client(base_url=...) as client:
       client.pets.list_pets(...)
-See client/_generated_docs/README.md.
+See app/client/README.md.
 ```
 
 <!-- fmt: on -->
@@ -278,38 +283,18 @@ See client/_generated_docs/README.md.
 <!-- fmt: off -->
 
 ```text
-models.py
-server/
-├── README.md
+app/
 ├── __init__.py
-├── _generated/
-├── _runtime/
-├── application.py
-├── main.py
-├── py.typed
-├── routers/
-└── services.py
-services/
-├── __init__.py
-└── pets.py
-client/
-├── __init__.py
-├── _generated/
-├── _generated_docs/
-├── _runtime/
-├── errors.py
-├── model_codecs.py
-├── options.py
-├── py.typed
-├── resources/
-├── responses.py
-└── types/
+├── models.py
+├── server/
+├── services/
+└── client/
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: index.server-client.tree -->
 
-**Implement the server** in `services/pets.py`, which generation wrote once with stubs, by replacing the stubs of the
+**Implement the server** in `app/services/pets.py`, which generation wrote once with stubs, by replacing the stubs of the
 `Pets` class that subclasses the generated service Protocol; type checkers report a missing method or a mismatched
 signature:
 
@@ -317,9 +302,9 @@ signature:
 <!-- fmt: off -->
 
 ```python
-import models
-from server import HTTPResult
-from server.services import PetsService
+from app import models
+from app.server import HTTPResult
+from app.server.services import PetsService
 
 
 class Pets(PetsService):
@@ -345,7 +330,7 @@ class Pets(PetsService):
 
 ```bash
 uv add uvicorn
-uv run uvicorn server.main:app
+uv run uvicorn app.server.main:app
 ```
 
 **Call it with the client** in `call.py`, which sends to the document's server URL by default:
@@ -354,9 +339,9 @@ uv run uvicorn server.main:app
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
-from models import NewPet
+from app.client import Client
+from app.client.errors import NotFoundError
+from app.models import NewPet
 
 with Client() as client:
     pet = client.pets.create_pet(body=NewPet(name="Mimi", tag="cat"))
@@ -10311,11 +10296,11 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="standard-py312-20260909",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_server=ServerType.FastAPI,
-    server_output=Path("server"),
-    server_package="server",
-    server_model_package="models",
+    server_output=Path("app/server"),
+    server_package="app.server",
+    server_model_package="app.models",
     server_handler_mode=ServerHandlerMode.Async,
     server_body_modes={"/paths/~1upload/post": "request"},
 )
@@ -10327,9 +10312,9 @@ generate(
 With an `output`, `generate()` writes the models and the package together and returns `None`; for a server, it also
 writes each missing module of the `services` package beside the package once, with stubs, as the command line does.
 Without one, it writes nothing but the model metadata and a remote lock update, no stubs among them, and returns
-`GeneratedModules` with every model and package file, each under the path its import path implies: `server_model_package="models"` gives `("models.py",)`, or
-`("models", "__init__.py")` and the other modules of modular models, and `server_package="server"` gives
-`("server", "application.py")`, `("server", "README.md")`, and so on. These are the files a run with `output` and
+`GeneratedModules` with every model and package file, each under the path its import path implies: `server_model_package="app.models"` gives `("app", "models.py")`, or
+`("app", "models", "__init__.py")` and the other modules of modular models, and `server_package="app.server"` gives
+`("app", "server", "application.py")`, `("app", "server", "README.md")`, and so on. These are the files a run with `output` and
 `server_output` in the working directory writes; `server_output` is not used. The run renders the files in a private
 directory of the working directory, which it removes afterwards, so the working directory must be writable. `load_pyproject_config()` takes the
 server and client keys of `pyproject.toml` too, so a config it loads with `overrides={"output": None}` returns the
@@ -11871,10 +11856,10 @@ stubs and never overwrites. Type checkers and Python check that your code implem
 document changes, you regenerate the package and fix what they report.
 
 ```text
-openapi.yaml ──► datamodel-codegen ──► models.py, server/    generated, overwritten on every run
-                         │                  ▲  server/main.py imports services/
+openapi.yaml ──► datamodel-codegen ──► app/models.py, app/server/    generated, overwritten on every run
+                         │                  ▲  app/server/main.py imports app/services/
                          │ once, with stubs │ import, subclass the service Protocols
-                         └─────────────► services/            yours, never overwritten
+                         └─────────────► app/services/               yours, never overwritten
 ```
 
 Coming from fastapi-code-generator? See [Migrating from fastapi-code-generator](fastapi-code-generator-migration.md).
@@ -11993,6 +11978,15 @@ The bodies and responses refer to schemas under `components`, so their models ta
 
 ### 2. Generate the server
 
+Everything goes into one application package, `app`. Create it with an empty `app/__init__.py`, which makes `app` a
+package; keeping the generated packages inside your application package, instead of as top-level packages such as
+`models` or `server`, avoids generic top-level names that collide easily with other projects and libraries, and shows
+at a glance what is generated and what is yours:
+
+```bash
+mkdir -p app && touch app/__init__.py
+```
+
 Put the settings in `pyproject.toml` and run `datamodel-codegen` without arguments, or pass them as options:
 
 === "pyproject.toml"
@@ -12007,11 +12001,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
     openapi-scopes = ["schemas", "api"]
     output-model-type = "pydantic_v2.BaseModel"
     preset = "standard-py312-20260909"
-    output = "models.py"
+    output = "app/models.py"
     generate-server = "fastapi"
-    server-output = "server"
-    server-package = "server"
-    server-model-package = "models"
+    server-output = "app/server"
+    server-package = "app.server"
+    server-model-package = "app.models"
     ```
 
     <!-- fmt: on -->
@@ -12030,11 +12024,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
       --openapi-scopes schemas api \
       --output-model-type pydantic_v2.BaseModel \
       --preset standard-py312-20260909 \
-      --output models.py \
+      --output app/models.py \
       --generate-server fastapi \
-      --server-output server \
-      --server-package server \
-      --server-model-package models
+      --server-output app/server \
+      --server-package app.server \
+      --server-model-package app.models
     ```
 
     <!-- fmt: on -->
@@ -12051,12 +12045,12 @@ next steps:
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of server to your project:
+Add the runtime dependencies of app.server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16"
-Next steps: implement the stubs in services/pets.py, then run the server:
-  uv add uvicorn && uv run uvicorn server.main:app --reload
-or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
-See server/README.md.
+Next steps: implement the stubs in app/services/pets.py, then run the server:
+  uv add uvicorn && uv run uvicorn app.server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev --entrypoint app.server.main:app
+See app/server/README.md.
 ```
 
 <!-- fmt: on -->
@@ -12068,43 +12062,45 @@ it grows with what the document uses: `python-multipart` for forms, `email-valid
 refused with `Error:` and exit code 2; leave it unset or use `2.14`, which `--use-missing-sentinel` requires (see
 [Requirements](#requirements)).
 
-The run wrote the models, the `server` package, and, once, the `services` package with a stub for you to
+The run wrote the models, the `app.server` package, and, once, the `app.services` package with a stub for you to
 implement:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.tree -->
 <!-- fmt: off -->
 
 ```text
-models.py
-server/
-├── README.md
+app/
 ├── __init__.py
-├── _generated/
-├── _runtime/
-├── application.py
-├── main.py
-├── py.typed
-├── routers/
+├── models.py
+├── server/
+│   ├── README.md
 │   ├── __init__.py
-│   └── pets.py
-└── services.py
-services/
-├── __init__.py
-└── pets.py
+│   ├── _generated/
+│   ├── _runtime/
+│   ├── application.py
+│   ├── main.py
+│   ├── py.typed
+│   ├── routers/
+│   │   ├── __init__.py
+│   │   └── pets.py
+│   └── services.py
+└── services/
+    ├── __init__.py
+    └── pets.py
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.tree -->
 
-`models.py` holds the models, `server/services.py` the service Protocol you implement next, `server/routers/` the
-routes, and `server/main.py` the application. The rest is described in
-[The generated package](#the-generated-package). Every file of `models.py` and `server/` is overwritten on each run, so
-keep your own code outside `server/`: generation writes `services/pets.py` only while it is missing, and never
-overwrites or deletes it.
+`app/models.py` holds the models, `app/server/services.py` the service Protocol you implement next,
+`app/server/routers/` the routes, and `app/server/main.py` the application. The rest is described in
+[The generated package](#the-generated-package). Every file of `app/models.py` and `app/server/` is overwritten on each
+run, so keep your own code outside `app/server/`: generation writes `app/services/pets.py` only while it is missing,
+and never overwrites or deletes it.
 
 ### 3. Read the service Protocol
 
-`server/services.py` declares one *service Protocol* for each router group: a `typing.Protocol` class with an
+`app/server/services.py` declares one *service Protocol* for each router group: a `typing.Protocol` class with an
 abstract method for each operation.
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.services -->
@@ -12118,7 +12114,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Protocol
 
-import models
+from app import models
 from fastapi.responses import Response
 
 from ._runtime.server.responses import HTTPResult
@@ -12174,16 +12170,16 @@ A method returns one of three things:
 
 ### 4. Implement the operations
 
-Generation wrote `services/pets.py` with a class `Pets` that subclasses `PetsService` and a stub for each method,
+Generation wrote `app/services/pets.py` with a class `Pets` that subclasses `PetsService` and a stub for each method,
 which raises `NotImplementedError`. Replace the stubs with the business logic:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.app -->
 <!-- fmt: off -->
 
 ```python
-import models
-from server import HTTPResult
-from server.services import PetsService
+from app import models
+from app.server import HTTPResult
+from app.server.services import PetsService
 
 
 class Pets(PetsService):
@@ -12211,15 +12207,15 @@ class Pets(PetsService):
 match its operation, and Python refuses to create `Pets()` while a method is missing.
 `HTTPResult(404, models.Error(...))` sends the `404` response that `get_pet` declares, validated by its `Error` model.
 
-Each router group has its module in `services`, named after the group's router module, with a class named after its
-Protocol without the `Service` suffix; a document with security schemes adds `services/authorize.py` with the
-`authorize` function. The package README lists them under *Next steps*. `server/main.py` imports them and calls
+Each router group has its module in `app/services`, named after the group's router module, with a class named after its
+Protocol without the `Service` suffix; a document with security schemes adds `app/services/authorize.py` with the
+`authorize` function. The package README lists them under *Next steps*. `app/server/main.py` imports them and calls
 `create_app`, which takes one service for each router group, under the group's name, and returns a FastAPI
 application. In short, it does this:
 
 ```python
-from server import create_app
-from services.pets import Pets
+from app.server import create_app
+from app.services.pets import Pets
 
 app = create_app(pets=Pets())
 ```
@@ -12228,13 +12224,16 @@ app = create_app(pets=Pets())
 
 ```bash
 uv add uvicorn
-uv run uvicorn server.main:app --reload
+uv run uvicorn app.server.main:app --reload
 ```
 
-Run it from the directory that holds the top-level package; for a `src` layout, add `--app-dir src`. FastAPI's own
-command runs it too, after `uv add "fastapi[standard]"`: `uv run fastapi dev server/main.py`.
+Run it from the directory that holds the top-level package, `app`; for a `src` layout, add `--app-dir src`, which the
+next steps printed after generation add for you. FastAPI's own command runs it too, after
+`uv add "fastapi[standard]"`. For a nested package such as `app.server`, it takes the import string:
+`uv run fastapi dev --entrypoint app.server.main:app`, which the next steps printed too, with `uv run --directory src`
+for a `src` layout.
 
-A missing `services` module or class stops the start with an `ImportError` that names the file to write where it
+A missing `app.services` module or class stops the start with an `ImportError` that names the file to write where it
 belongs, a package's `__init__.py` for a group you implement as a package; an import error inside your module, such
 as a missing dependency, is raised as it is. A method whose signature cannot take the keyword arguments of its
 operation stops the start with a `TypeError` that names the class, the method, and the argument; the check reads the
@@ -12254,7 +12253,7 @@ FastAPI's `TestClient` calls the application without a server:
 ```python
 from fastapi.testclient import TestClient
 
-from server.main import app
+from app.server.main import app
 
 client = TestClient(app)
 
@@ -12282,10 +12281,10 @@ uv run pytest test_app.py
 ### Recap
 
 - The OpenAPI document is the source: the models, the routes, and the service Protocols come from it.
-- `datamodel-codegen` regenerates every file of `models.py` and `server/` on each run.
-- Your code lives in `services/`, outside the package, and subclasses the service Protocols, so type checkers keep it
+- `datamodel-codegen` regenerates every file of `app/models.py` and `app/server/` on each run.
+- Your code lives in `app/services/`, outside the generated package, and subclasses the service Protocols, so type checkers keep it
   in step with the document; generation writes a missing module once, with stubs.
-- `server/main.py` builds the application from your services with `create_app`, which tests and applications of your
+- `app/server/main.py` builds the application from your services with `create_app`, which tests and applications of your
   own can call with other instances.
 - To call the server from Python, generate a client from the same document; see the
   [overview](index.md#generate-a-fastapi-server-or-an-http-client-experimental) and
@@ -12397,7 +12396,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Protocol
 
-import models
+from app import models
 from fastapi import Request
 from fastapi.responses import Response
 from typing_extensions import TypeVar
@@ -12461,7 +12460,7 @@ never renamed.
 A schema written inline, rather than under `components`, takes a model name derived from where it is: its path, its
 method, and its location. The path's words are joined in PascalCase without its separators, so `/pets/{petId}` gives
 `PetsPetId`, the root path `/` gives `Root`, and only a path that starts with a digit, such as `/2fa`, is prefixed with
-`Field` to stay a valid name. The tutorial's inline parameter schemas become these type aliases in `models.py`:
+`Field` to stay a valid name. The tutorial's inline parameter schemas become these type aliases in `app/models.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: fastapi-server.tutorial.inline-names -->
 <!-- fmt: off -->
@@ -12489,7 +12488,7 @@ does, so the service receives the component model, such as `Tags(root=[...])` fo
 A service method returns the value of its primary response. FastAPI validates and serializes it with the route's
 `response_model` when the response is JSON, by alias and leaving out unset fields.
 
-`HTTPResult(status_code, body, headers)`, imported from the generated package (`from server import HTTPResult`), sends
+`HTTPResult(status_code, body, headers)`, imported from the generated package (`from app.server import HTTPResult`), sends
 another status or extra headers. For a status the operation declares, exactly, by its range such as `4XX`, or by
 `default`, the package validates and serializes the body with that response's model and default media type, as
 `get_pet` in the [quick start](#4-implement-the-operations) does.
@@ -12669,12 +12668,12 @@ FastAPI reads forms with `python-multipart`, which the dependency notice adds fo
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of server to your project:
+Add the runtime dependencies of app.server to your project:
   uv add "fastapi>=0.141.1" "pydantic>=2.14.0" "typing-extensions>=4.16" "python-multipart>=0.0.32"
-Next steps: implement the stubs in services/photos.py, services/authorize.py, then run the server:
-  uv add uvicorn && uv run uvicorn server.main:app --reload
-or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
-See server/README.md.
+Next steps: implement the stubs in app/services/photos.py, app/services/authorize.py, then run the server:
+  uv add uvicorn && uv run uvicorn app.server.main:app --reload
+or: uv add "fastapi[standard]" && uv run fastapi dev --entrypoint app.server.main:app
+See app/server/README.md.
 ```
 
 <!-- fmt: on -->
@@ -12715,9 +12714,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials
 
-from models import Photo, PhotoUpload
-from server import Credentials, RequirementSets, build_router, serve_source_openapi, validation_error_handler
-from server.services import PhotosService
+from app.models import Photo, PhotoUpload
+from app.server import Credentials, RequirementSets, build_router, serve_source_openapi, validation_error_handler
+from app.server.services import PhotosService
 
 
 app = FastAPI()
@@ -12803,11 +12802,11 @@ imports, with `created` true for each module this run wrote with stubs. Their pa
 
 ```json
 "target": {
-  "package": "server",
+  "package": "app.server",
   "dependencies": ["fastapi>=0.141.1", "pydantic>=2.14.0", "typing-extensions>=4.16"],
   "readme": "server/README.md",
-  "entrypoint": {"app": "server.main:app", "path": "server/main.py"},
-  "implementation": [{"module": "services.pets", "name": "Pets", "path": "services/pets.py", "created": true}]
+  "entrypoint": {"app": "app.server.main:app", "path": "server/main.py"},
+  "implementation": [{"module": "app.services.pets", "name": "Pets", "path": "services/pets.py", "created": true}]
 }
 ```
 
@@ -13001,21 +13000,22 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="standard-py312-20260909",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_server=ServerType.FastAPI,
-    server_output=Path("server"),
-    server_package="server",
-    server_model_package="models",
+    server_output=Path("app/server"),
+    server_package="app.server",
+    server_model_package="app.models",
 )
 ```
 <!-- END AUTO-GENERATED FASTAPI PYTHON API -->
 
 It publishes the models and the package together and returns `None`, like model generation. Without an `output`, it
 needs no `server_output`, returns every model and server file as `GeneratedModules`, under the paths their import paths
-imply, such as `("models.py",)` and `("server", "application.py")`, and writes nothing but the model metadata and a
-remote lock update; see [Generating a Server or Client Package](using_as_module.md#generating-a-server-or-client-package).
-With an `output`, it writes the missing modules of `services` with stubs, as the command line does; without one, it
-writes and returns none.
+imply, such as `("app", "models.py")` and `("app", "server", "application.py")`, and writes nothing but the model
+metadata and a remote lock update; see
+[Generating a Server or Client Package](using_as_module.md#generating-a-server-or-client-package).
+With an `output`, it writes the missing modules of `app.services` with stubs, as the command line does; without one,
+it writes and returns none.
 
 `load_pyproject_config()` reads the server keys of `pyproject.toml`, whose paths and operation documents resolve
 against its directory. Invalid settings, bindings, and template failures raise `datamodel_code_generator.Error` with
@@ -13076,11 +13076,11 @@ job cannot share its `output`. The server jobs of a batch write one generation t
 The batch publishes the server packages together with the models of every job once all jobs succeed, and publishes
 nothing when a job fails or when jobs generate different models for a shared `output`; the `uv add` notice and the
 next steps of each package follow the publication on stderr. A parent package holds one server: two server jobs
-whose packages share a directory would import their implementations from one `services` module, so the batch refuses
-them and writes nothing. `--check` compares every job as a single run does and exits with 1 when any of them would
-change. With `--output-format json`, a server job adds the generation or check payload of a single
-server run to the batch document, with file paths relative to that job's model output directory. `--all-jobs
---watch` regenerates the batch, server jobs included, whenever an input any job read changes.
+whose packages share a parent package would import their implementations from one `services` package, so the batch
+refuses them and writes nothing, whatever router groups they have. `--check` compares every job as a single run
+does and exits with 1 when any of them would change. With `--output-format json`, a server job adds the generation or
+check payload of a single server run to the batch document, with file paths relative to that job's model output
+directory. `--all-jobs --watch` regenerates the batch, server jobs included, whenever an input any job read changes.
 
 ### The generated package
 
@@ -13096,11 +13096,20 @@ server run to the batch document, with file paths relative to that job's model o
 
 Keep the service implementations and the `authorize` callback in the `services` package beside the server package,
 which `main.py` imports: `services` beside `server`, `app/services` for `--server-package app.server`, written by
-generation only while a module is missing. Each stub names the server package it was written for. The `services`
-package belongs to one server: give each server package a parent package of its own. Generation refuses a module
-named `services.py` beside the server package, a module of yours or the models, since Python would import only one
-of it and the `services` package. An application of your own, such as one with a `lifespan`, also belongs
-outside the package and calls `create_app` itself. `--check` treats every `.py` file under `--server-output` as
+generation only while a module is missing. Each stub names the server package it was written for, and the docstring
+of `services/__init__.py` records the server package that owns the `services` package. One parent package holds one
+server package: generation refuses a second server package beside a generated one, in a later run or in the same
+batch, since its `main.py` would import the same `services` package, whatever its directory, whether its `main.py` is
+still there, and whatever the docstring of `services/__init__.py` says; give each server package a parent package of
+its own, or delete the directory of the other one when it is no longer used. A server package that you rename or move
+within its parent package, or name from another import root, such as `app.server` after `src.app.server`, takes the
+`services` package over while no other generated server package is beside it. Generation then rewrites the name in the
+docstring, `--check` reports the change, and the run prints a notice that names both packages. Generation never
+rewrites the modules of the `services` package, which still import the server package they were written for, such as
+`from app.server.services import PetsService` after a rename to `app.api`: update those imports yourself.
+Generation also refuses a module named `services.py` beside the server package, a module of yours or the models, since
+Python would import only one of it and the `services` package. An application of your own, such as one with a
+`lifespan`, also belongs outside the package and calls `create_app` itself. `--check` treats every `.py` file under `--server-output` as
 generated, lists a file that is no longer generated as an extra file, and a file at a path the package needs is
 overwritten.
 
@@ -13440,11 +13449,11 @@ datamodel-codegen \
   --openapi-scopes schemas api \
   --output-model-type pydantic_v2.BaseModel \
   --preset standard-py312-20260909 \
-  --output models.py \
+  --output app/models.py \
   --generate-server fastapi \
-  --server-output server \
-  --server-package server \
-  --server-model-package models \
+  --server-output app/server \
+  --server-package app.server \
+  --server-model-package app.models \
   --custom-template-dir templates \
   --extra-template-data extra.json
 ```
@@ -13465,7 +13474,7 @@ module's import block:
 | `implementation.jinja2` | `imports`, `protocol`, `services`, `entrypoint`, `name`, `base`, `methods`, `protocol_methods` |
 | `main.jinja2` | `imports`, `app`, `services`, `implementations`, `missing`, `table`, `create_app`, `arguments` |
 | `openapi.jinja2` | none |
-| `readme.jinja2` | `title`, `package`, `model_package`, `backend`, `operations`, `services`, `protocols`, `services_package`, `owned`, `app`, `arguments`, `schemes`, `forms`, `raw_request` |
+| `readme.jinja2` | `title`, `package`, `model_package`, `backend`, `operations`, `services`, `services_package`, `owned`, `app`, `top_level`, `arguments`, `fakes`, `dependencies`, `schemes`, `forms`, `raw_request` |
 | `router.jinja2` | `imports`, `docstring`, `routes`, `api_router`, `wiring`, `final`, `literal`, `templated`, `builder`, `group`, `build`, `services`, `settings` |
 | `security.jinja2` | `imports`, `schemes`, `exports` |
 | `services.jinja2` | `imports`, `typevar`, `abstract`, `protocol_type`, `protocols` |
@@ -13515,7 +13524,7 @@ operation, such as `client.pets.get_pet(pet_id=1)`. It sends requests with
 servers, parameters, bodies, responses, errors, and authentication.
 
 ```text
-openapi.yaml ──► datamodel-codegen ──► models.py, client/    generated, overwritten on every run
+openapi.yaml ──► datamodel-codegen ──► app/models.py, app/client/    generated, overwritten on every run
                                             ▲
                                             │ import, call client.<resource>.<operation>(...)
                                        your code and tests    yours, never touched
@@ -13635,6 +13644,13 @@ its `operationId`, on the resource of its first tag, `pets`.
 
 ### 2. Generate the client
 
+Everything goes into one application package, `app`, as in the [server quick start](fastapi-server.md#2-generate-the-server):
+create it with an empty `app/__init__.py`.
+
+```bash
+mkdir -p app && touch app/__init__.py
+```
+
 Put the settings in `pyproject.toml` and run `datamodel-codegen` without arguments, or pass them as options:
 
 === "pyproject.toml"
@@ -13649,11 +13665,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
     openapi-scopes = ["schemas", "api"]
     output-model-type = "pydantic_v2.BaseModel"
     preset = "standard-py312-20260909"
-    output = "models.py"
+    output = "app/models.py"
     generate-client = "httpx2"
-    client-output = "client"
-    client-package = "client"
-    client-model-package = "models"
+    client-output = "app/client"
+    client-package = "app.client"
+    client-model-package = "app.models"
     ```
 
     <!-- fmt: on -->
@@ -13672,11 +13688,11 @@ Put the settings in `pyproject.toml` and run `datamodel-codegen` without argumen
       --openapi-scopes schemas api \
       --output-model-type pydantic_v2.BaseModel \
       --preset standard-py312-20260909 \
-      --output models.py \
+      --output app/models.py \
       --generate-client httpx2 \
-      --client-output client \
-      --client-package client \
-      --client-model-package models
+      --client-output app/client \
+      --client-package app.client \
+      --client-model-package app.models
     ```
 
     <!-- fmt: on -->
@@ -13693,14 +13709,14 @@ steps: a call of the first operation in a client's context, and the README of th
 <!-- fmt: off -->
 
 ```text
-Add the runtime dependencies of client to your project:
+Add the runtime dependencies of app.client to your project:
   uv add "httpx2>=2.13.0" "typing-extensions>=4.16" "pydantic>=2.14.0"
 Next steps: call the API with the client:
-  from client import Client
+  from app.client import Client
 
   with Client(base_url=...) as client:
       client.pets.list_pets(...)
-See client/_generated_docs/README.md.
+See app/client/README.md.
 ```
 
 <!-- fmt: on -->
@@ -13711,53 +13727,57 @@ the `datamodel-code-generator[httpx2]` extra, which only fetches remote schemas 
 only the minimum version of each package, so uv adds the latest release, and it grows with what the document uses,
 such as `httpx2[ws]` for WebSocket helpers or `cryptography` for public-key webhook signatures.
 
-The run wrote the models and the `client` package:
+The run wrote the models and the `app.client` package:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.tree -->
 <!-- fmt: off -->
 
 ```text
-client/
+app/
 ├── __init__.py
-├── _generated/
-├── _generated_docs/
-├── _runtime/
-├── errors.py
-├── model_codecs.py
-├── options.py
-├── py.typed
-├── resources/
+├── client/
+│   ├── README.md
 │   ├── __init__.py
-│   └── pets/
-│       └── __init__.py
-├── responses.py
-└── types/
-    ├── __init__.py
-    └── pets/
-        └── __init__.py
-models.py
+│   ├── _generated/
+│   ├── _generated_docs/
+│   ├── _runtime/
+│   ├── errors.py
+│   ├── options.py
+│   ├── py.typed
+│   ├── resources/
+│   │   ├── __init__.py
+│   │   └── pets/
+│   │       └── __init__.py
+│   ├── responses.py
+│   └── types/
+│       ├── __init__.py
+│       └── pets/
+│           └── __init__.py
+└── models.py
 ```
 
 <!-- fmt: on -->
 <!-- END AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.tree -->
 
-`client/__init__.py` exports `Client` and `AsyncClient`, `resources/` and `types/` hold a package for each resource, and
-`errors.py`, `options.py`, and `responses.py` are the public modules you import from. `_generated/` and `_runtime/`
-hold the plans and the runtime the package imports, and `_generated_docs/` a README that lists every operation.
-Every file here is overwritten on each run, so keep your own code outside `client/`.
+`app/client/__init__.py` exports `Client` and `AsyncClient`, `resources/` and `types/` hold a package for each resource,
+`types/__init__.py` exports `JSONValue`, the type of an argument that takes any JSON value, and `errors.py`,
+`options.py`, and `responses.py` are the public modules you import from. `_generated/` and `_runtime/`
+hold the plans and the runtime the package imports. `README.md` shows how to call the package and lists the method of
+every operation with its signature, and `_generated_docs/runtime.md` is the runtime reference it links to.
+Every file here is overwritten on each run, so keep your own code outside `app/client/`.
 
 ### 3. Call the API
 
-Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn server.main:app`, or any server
+Start the server of the [server quick start](fastapi-server.md#5-run-it) with `uv run uvicorn app.server.main:app`, or any server
 that implements the document at `http://localhost:8000`. Then save `call.py`:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.call -->
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
-from models import NewPet
+from app.client import Client
+from app.client.errors import NotFoundError
+from app.models import NewPet
 
 with Client() as client:
     pet = client.pets.create_pet(body=NewPet(name="Mimi", tag="cat"))
@@ -13794,7 +13814,7 @@ operation's parameters as keyword arguments and its body as `body=`, sends the r
 decoded into its model, such as `Pet`. A declared error status raises an exception that carries the decoded error
 body, such as `NotFoundError` for the `404` of `get_pet`.
 
-The method of `get_pet`, from `client/resources/pets/_sync.py`, shows what a call takes:
+The method of `get_pet`, from `app/client/resources/pets/_sync.py`, shows what a call takes:
 
 <!-- BEGIN AUTO-GENERATED DOC EXAMPLE: python-client.tutorial.method -->
 <!-- fmt: off -->
@@ -13835,8 +13855,8 @@ and the second takes the [settings of one call](#configure-the-client).
 ```python
 import asyncio
 
-from client import AsyncClient
-from models import NewPet
+from app.client import AsyncClient
+from app.models import NewPet
 
 
 async def main() -> None:
@@ -13866,7 +13886,7 @@ Use `async with` to close it, and await each call.
 ### Recap
 
 - The OpenAPI document is the source: the models, the resources, and the methods come from it.
-- `datamodel-codegen` regenerates every file of `models.py` and `client/` on each run.
+- `datamodel-codegen` regenerates every file of `app/models.py` and `app/client/` on each run.
 - `Client` and `AsyncClient` send with HTTPX2 to the document's servers; each tag is a resource and each operation a
   method with keyword arguments.
 - A method returns the decoded model and raises a typed exception for an error status.
@@ -14099,10 +14119,10 @@ def http_client() -> httpx2.Client:
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.options import UNSET
+from app.client import Client
+from app.client.options import UNSET
 from fake import http_client
-from models import NewPet
+from app.models import NewPet
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
     print(client.pets.get_pet(pet_id=1))
@@ -14225,7 +14245,7 @@ A method returns the decoded body. Each resource also has three *response views*
 <!-- fmt: off -->
 
 ```python
-from client import Client
+from app.client import Client
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -14319,8 +14339,8 @@ A setting a call leaves unset inherits from the nearest view, then the client. T
 ```python
 import httpx2
 
-from client import Client
-from client.options import RequestOptions, ServerSelection
+from app.client import Client
+from app.client.options import RequestOptions, ServerSelection
 from fake import http_client
 
 with Client(
@@ -14416,8 +14436,8 @@ example shows them:
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.options import Clock, RetryOptions
+from app.client import Client
+from app.client.options import Clock, RetryOptions
 from fake import http_client
 
 waits: list[float] = []
@@ -14508,8 +14528,8 @@ default.
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import ConfigurationError
+from app.client import Client
+from app.client.errors import ConfigurationError
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -14589,7 +14609,7 @@ from collections.abc import Generator
 
 import httpx2
 
-from client import Client
+from app.client import Client
 from fake import http_client
 
 
@@ -14649,8 +14669,8 @@ the background or is persisted. The shelter's `oauth` scheme declares a client c
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.auth import OauthClientCredentials
+from app.client import Client
+from app.client.auth import OauthClientCredentials
 from fake import http_client
 
 provider = OauthClientCredentials(client_id="shelter-cli", client_secret="pa55", scopes=("pets.read",))
@@ -14721,8 +14741,8 @@ the token request and its client authentication. A provider's `clock=Clock(...)`
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import APIConnectionError, APIStatusError, NotFoundError
+from app.client import Client
+from app.client.errors import APIConnectionError, APIStatusError, NotFoundError
 from fake import http_client
 
 with Client(bearer="s3cret", http_client=http_client()) as client:
@@ -14788,8 +14808,8 @@ Test your own code against an `httpx2.MockTransport` instead of a server: pass a
 <!-- fmt: off -->
 
 ```python
-from client import Client
-from client.errors import NotFoundError
+from app.client import Client
+from app.client.errors import NotFoundError
 
 
 def describe(client: Client, pet_id: int) -> str:
@@ -14814,7 +14834,7 @@ from collections.abc import Iterator
 import httpx2
 import pytest
 
-from client import Client
+from app.client import Client
 from shelter import describe
 
 PETS = {"/v1/pets/1": {"id": 1, "name": "Mimi", "tag": "cat"}}
@@ -14866,12 +14886,12 @@ them as extra files, and a generation that leaves such `.py` files in place name
 `generate()` calls. Silence exactly this warning with
 `warnings.simplefilter("ignore", datamodel_code_generator.LeftoverFilesWarning)` around `generate()`, or with
 `ignore::datamodel_code_generator.LeftoverFilesWarning` in pytest's `filterwarnings`. Keep your own code outside
-the package, because `--check` treats every `.py` file under `--client-output` as generated. The models can live inside the package, such as `--output client/models.py` with
-`--client-model-package client.models`, as for the [server package](fastapi-server.md#the-generated-package).
+the package, because `--check` treats every `.py` file under `--client-output` as generated. The models can live inside the package, such as `--output app/client/models.py` with
+`--client-model-package app.client.models`, as for the [server package](fastapi-server.md#the-generated-package).
 
 `--check` compares without writing and prints the differences as for models, and `--output-format json`
 emits the model generation and check payloads, as with `--generate-server`; their `target` names the package and
-the runtime dependencies of the `uv add` notice, such as `{"package": "client", "dependencies": ["httpx2>=2.13.0",
+the runtime dependencies of the `uv add` notice, such as `{"package": "app.client", "dependencies": ["httpx2>=2.13.0",
 "typing-extensions>=4.16", "pydantic>=2.14.0"]}`. The generation payload adds the next steps of the notice: the
 package `readme`, with a path relative like those of `files`, and `usage`, the code that calls the first operation.
 `--diff-against` and `--watch` also work
@@ -14930,8 +14950,8 @@ stops with `Error: The client target needs --use-missing-sentinel with --target-
 does for `pydantic_v2.BaseModel` when the options are set:
 
 ```python
-from client import Client
-from models import NewPet
+from app.client import Client
+from app.models import NewPet
 from pydantic import MISSING
 
 with Client() as client:
@@ -15066,11 +15086,11 @@ generate(
     openapi_scopes=[OpenAPIScope.Schemas, OpenAPIScope.Api],
     output_model_type=DataModelType.PydanticV2BaseModel,
     preset="standard-py312-20260909",
-    output=Path("models.py"),
+    output=Path("app/models.py"),
     generate_client=ClientType.HTTPX2,
-    client_output=Path("client"),
-    client_package="client",
-    client_model_package="models",
+    client_output=Path("app/client"),
+    client_package="app.client",
+    client_model_package="app.models",
     client_body_arguments=ClientBodyArguments.Both,
     client_operations={"/paths/~1pets/get": {"runtime": {"request_id_header": "X-Request-Id"}}},
 )
@@ -15125,6 +15145,9 @@ This page covers the helper file first, then each helper kind: [pagination](#pag
 [webhook verification](#webhook-verification-helpers). The [records, options, and exceptions](#records-options-and-exceptions)
 the helpers share come last. Read [Python Client Generation](python-client.md) first: helpers build on the generated
 client and its settings.
+
+The examples name the generated package `client` and its models `models`, in the project root; in the guide's quick
+start they are `app.client` and `app.models`, inside the application package `app`.
 
 Terms used throughout:
 
@@ -17435,8 +17458,9 @@ Source: https://datamodel-code-generator.koxudaxi.dev/python-client-reference/
 This page is the reference behind [Python Client Generation](python-client.md): how the generated methods are
 declared, how values are converted, and the full rules of timeouts, retries, request bodies, redirects, templates,
 and errors. The guide covers the common cases with tested examples; come here for the precise rules of one setting.
-The [protocol helpers](python-client-helpers.md) have a page of their own. In the examples, `client` is the generated
-package, as in the guide's quick start.
+The [protocol helpers](python-client-helpers.md) have a page of their own. In the examples, the generated package is
+`client` and its models are `models`, in the project root; in the guide's quick start they are `app.client` and
+`app.models`, inside the application package `app`.
 
 ## Signature style
 
@@ -18085,7 +18109,7 @@ impossible date, such as one with a leap second, is ignored. The two-digit year 
 is at most 50 years after receipt, as RFC 9110 reads it; a year below 100 in another form is read as 1969 to 2068.
 Without a valid hint, bounded exponential backoff applies. Retry waits consume the same logical budget as sending and
 decoding. `RetryOptions(respect_retry_after=False)` is an explicit application policy override, disclosed in every
-generated README, `client/_generated_docs/README.md`; it is never silently embedded in generated defaults.
+generated README, `client/README.md`; it is never silently embedded in generated defaults.
 
 ```python
 from client import Client
@@ -18360,7 +18384,7 @@ into SDK requests; its `Accept-Encoding` is.
 The client templates come from [`--custom-template-dir`](cli-reference/template-customization.md#custom-template-dir),
 as model templates do: the files of its `client` directory replace the builtin roles of the same name:
 `facade.jinja2` (the package initializers and the public modules `options`, `errors`, `responses`, `auth`, `bodies`,
-`model_codecs`, and `protocols`, and the webhook packages' initializers and `webhooks/keys.py`), `client.jinja2` (`_client.py` and `_async_client.py`), `resource.jinja2` (each
+and `protocols`, and the webhook packages' initializers and `webhooks/keys.py`), `client.jinja2` (`_client.py` and `_async_client.py`), `resource.jinja2` (each
 resource's `_sync.py` and `_async.py`), `types.jinja2` (each resource's `types/<resource>/_operations.py`),
 `arguments.jinja2` (`_generated/client_arguments.py`), `operations.jinja2` (`_operations.py`), `security.jinja2`
 (`_generated/security.py`), `model_bindings.jinja2` (`_generated/model_bindings.py`), `helper_plans.jinja2`
@@ -18505,7 +18529,7 @@ instead of repeating them.
 ## What changes
 
 - **Generated code and your code are separate.** fcg writes a `main.py` whose function bodies you fill in. dcg writes a
-  `server/` package with the routes, the request handling, and one *service Protocol* (a `typing.Protocol` class) per
+  `app/server/` package with the routes, the request handling, and one *service Protocol* (a `typing.Protocol` class) per
   group of operations. You implement the Protocols in a module of your own and pass the objects to `create_app`.
 - **You can regenerate at any time.** Every file of the package is overwritten on each run and nothing in it is meant
   to be edited, so there is nothing to merge when the document changes.
@@ -18538,18 +18562,18 @@ instead of repeating them.
       --openapi-scopes schemas api \
       --output-model-type pydantic_v2.BaseModel \
       --preset standard-py312-20260909 \
-      --output models.py \
+      --output app/models.py \
       --generate-server fastapi \
-      --server-output server \
-      --server-package server \
-      --server-model-package models
+      --server-output app/server \
+      --server-package app.server \
+      --server-model-package app.models
     ```
 
     <!-- fmt: on -->
 
     <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-code-generator-migration.command -->
 
-    The run writes `models.py` and the `server/` package, as the
+    The run writes `app/models.py` and the `app/server/` package, as the
     [tutorial](fastapi-server.md#2-generate-the-server) shows. The same settings fit in `pyproject.toml`, which is
     also on that page.
 
@@ -18726,8 +18750,10 @@ them and write the JSON file before the run.
 
 You do not have to move an application at once. Generate the package beside the old code, with another
 `--server-output` and `--server-package` than any module that you already have, and include the router of a group in
-your existing FastAPI application. With the default `routers` layout, each router module `server/routers/<group>.py` has its own `build_router`, which
-takes the service of that group only, so you move one group at a time. The old routes keep working.
+your existing FastAPI application. With the default `routers` layout, each router module `app/server/routers/<group>.py` has its own `build_router`, which
+takes the service of that group only, so you move one group at a time. The old routes keep working. fcg wrote
+`models.py` into its `--output` directory too: if that is `app`, point `--output` and `--server-model-package` at another
+module so that the two models do not overwrite each other.
 
 [Use your own FastAPI app](fastapi-server.md#use-your-own-fastapi-app) shows `build_router` in an application of your
 own. Three things apply while old and new routes share an application:
@@ -18751,9 +18777,9 @@ checkers point at the implementations to update.
   file would change, and 2 for an error. A run without a timestamp, which `--disable-timestamp` or a preset gives you,
   reproduces every byte; see [Check in CI](fastapi-server.md#check-in-ci).
 - **Delete stale router modules.** Generation overwrites every generated file but does not delete one. After you remove
-  a tag from the document, its `server/routers/<group>.py` stays, and `--check` lists it as no longer generated. Delete
+  a tag from the document, its `app/server/routers/<group>.py` stays, and `--check` lists it as no longer generated. Delete
   it by hand.
-- **Keep your code outside the package**, in the `services` modules that `main.py` imports, which generation writes
+- **Keep your code outside the package**, in the `app/services` modules that `app/server/main.py` imports, which generation writes
   once with stubs. `--check` also reports any other `.py` file under `--server-output`.
 - **Watch the document.** `--watch` regenerates on every change of the input and needs the `watch` extra,
   `datamodel-code-generator[watch]`; see [Compare and watch](fastapi-server.md#compare-and-watch).

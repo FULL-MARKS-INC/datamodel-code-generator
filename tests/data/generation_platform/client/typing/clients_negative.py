@@ -94,7 +94,7 @@ def misuse_multipart(
     files: PetsPetIdFilesGetPathPetIdParameter,
 ) -> None:
     from pets.bodies import AsyncMultipartBody, FieldPart, FilePart, MultipartBody, MultipartData
-    from pets.model_codecs import JSONValue
+    from pets.types import JSONValue
 
     part = FilePart("f", stream)
     MultipartBody[str]((part,))  # error

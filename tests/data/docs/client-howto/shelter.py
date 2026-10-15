@@ -1,5 +1,5 @@
-from client import Client
-from client.errors import NotFoundError
+from app.client import Client
+from app.client.errors import NotFoundError
 
 
 def describe(client: Client, pet_id: int) -> str:

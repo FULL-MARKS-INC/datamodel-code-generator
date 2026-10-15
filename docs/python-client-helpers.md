@@ -17,6 +17,9 @@ This page covers the helper file first, then each helper kind: [pagination](#pag
 the helpers share come last. Read [Python Client Generation](python-client.md) first: helpers build on the generated
 client and its settings.
 
+The examples name the generated package `client` and its models `models`, in the project root; in the guide's quick
+start they are `app.client` and `app.models`, inside the application package `app`.
+
 Terms used throughout:
 
 - A *selector* reads a value from a response: a JSON pointer into its body, a header, or its status.

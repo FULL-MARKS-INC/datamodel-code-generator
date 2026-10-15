@@ -106,7 +106,9 @@ class GeneratedArtifact:
     """Carry one generated file: its bytes, and whether writing them changes the file at its path.
 
     An `implementation` is a module of the user's that generation writes with stubs only while it is missing; one that
-    exists is kept, without content.
+    exists is kept, without content, but for the initializer of a `services` package another server package left,
+    whose docstring generation rewrites to name the server package that takes the package over, as the project's
+    `next_steps.taken_over` says.
     """
 
     path: Path
@@ -133,7 +135,8 @@ class NextSteps:
     """What to do with a generated package: its README, and a server's entrypoint and implementations or a client's use.
 
     `app` is the import string of a server's ASGI application, defined in the `entrypoint` module, and `usage` is code
-    that calls a client.
+    that calls a client. `taken_over` names the server package whose `services` package a server takes over: the run
+    rewrites the docstring of the package's initializer, an `implementation` it writes although the file exists.
     """
 
     readme: Path
@@ -141,6 +144,7 @@ class NextSteps:
     entrypoint: Path | None = None
     implementations: tuple[Implementation, ...] = ()
     usage: str | None = None
+    taken_over: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

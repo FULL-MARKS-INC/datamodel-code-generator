@@ -626,7 +626,7 @@ def test_client_cli_pydantic_dependency(
         skip_code_validation=True,
     )
     models = Path("models.py").read_text(encoding="utf-8").splitlines(keepends=True)
-    readme = Path("client", "_generated_docs", "README.md").read_text(encoding="utf-8").splitlines(keepends=True)
+    readme = Path("client", "README.md").read_text(encoding="utf-8").splitlines(keepends=True)
     assert_output(
         "".join((
             capsys.readouterr().err,
@@ -970,12 +970,14 @@ def test_client_cli_leftover_files(
 def test_client_cli_leftover_files_jobs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Warn once for each job of a batch about the files its own package holds, not those beside or inside another.
 
-    Files that are not Python modules, and those of a `__pycache__` directory, are not reported, as in a check.
+    Files that are not Python modules, and those of a `__pycache__` directory, are not reported, as in a check: the
+    README that earlier development builds wrote into `_generated_docs/` stays unreported.
     """
     monkeypatch.chdir(tmp_path)
     _copy(tmp_path, "pyproject-shared-models-jobs.toml")
     run_main_with_args(["--all-jobs"])
-    for name in ("old.py", "server/old.py", "server/notes.md", "client/old.py", "client/__pycache__/old.py"):
+    names = ("old.py", "server/old.py", "server/notes.md", "client/old.py", "client/__pycache__/old.py")
+    for name in (*names, "client/_generated_docs/README.md"):
         (path := tmp_path / name).parent.mkdir(exist_ok=True)
         path.touch()
     with warnings.catch_warnings(record=True) as recorded:

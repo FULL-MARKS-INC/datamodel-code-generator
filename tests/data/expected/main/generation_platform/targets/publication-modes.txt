@@ -2,8 +2,8 @@
 chmod . 0750
 generate
   Next steps: implement the stubs in services/pets.py, services/store.py, services/default.py, then run the server:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   models.py
@@ -33,8 +33,8 @@ mode server/README.md: 0640
 chmod models.py 0604
 generate
   Next steps: run the server with your services in services/default.py:
-    uv add uvicorn && uv run uvicorn example.server.main:app --reload
-  or: uv add "fastapi[standard]" && uv run fastapi dev server/main.py
+    uv add uvicorn && uv run uvicorn --app-dir .. example.server.main:app --reload
+  or: uv add "fastapi[standard]" && uv run --directory .. fastapi dev --entrypoint example.server.main:app
   See server/README.md.
 tree
   models.py

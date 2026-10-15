@@ -1,5 +1,5 @@
-from client import Client
-from client.auth import OauthClientCredentials
+from app.client import Client
+from app.client.auth import OauthClientCredentials
 from fake import http_client
 
 provider = OauthClientCredentials(client_id="shelter-cli", client_secret="pa55", scopes=("pets.read",))

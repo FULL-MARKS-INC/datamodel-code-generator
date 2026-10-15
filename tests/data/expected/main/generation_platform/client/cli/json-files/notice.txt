@@ -5,4 +5,4 @@ Next steps: call the API with the client:
 
   with Client(base_url=...) as client:
       client.pets.find_all(...)
-See <project>/client/_generated_docs/README.md.
+See <project>/client/README.md.
