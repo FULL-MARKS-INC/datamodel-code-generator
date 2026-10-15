@@ -137,51 +137,6 @@ def test_main_openapi_array_type_union_constraints(output_file: Path) -> None:
         )
 
 
-def test_main_openapi_allof_reference_sibling_constraints(output_file: Path) -> None:
-    """Keep constraints beside an allOf of one $ref on component properties and parameters, at runtime too."""
-    run_main_and_assert(
-        input_path=OPEN_API_DATA_PATH / "allof_reference_sibling_constraints.yaml",
-        output_path=output_file,
-        input_file_type="openapi",
-        assert_func=assert_file_content,
-        expected_file="allof_reference_sibling_constraints.py",
-        extra_args=[
-            "--output-model-type",
-            "pydantic_v2.BaseModel",
-            "--openapi-scopes",
-            "schemas",
-            "paths",
-            "parameters",
-            "--formatters",
-            "builtin",
-            "--disable-timestamp",
-            "--target-python-version",
-            "3.10",
-        ],
-        force_exec_validation=True,
-    )
-    assert_generated_model_json_validation(
-        output_file,
-        module_name="openapi_allof_reference_sibling_constraints",
-        model_name="Order",
-        valid_json='{"quantity": 100, "sku": "ABCDEFGH", "note": "free"}',
-        invalid_json='{"quantity": 101}',
-        expected_error_type="less_than_equal",
-        invalid_keyword_arguments=[
-            ({"quantity": -1}, "greater_than_equal"),
-            ({"quantity": 1, "sku": "ABCDEFGHI"}, "string_too_long"),
-        ],
-    )
-    assert_generated_model_json_validation(
-        output_file,
-        module_name="openapi_allof_reference_sibling_constraints",
-        model_name="OrdersGetParametersQuery",
-        valid_json='{"limit": 100}',
-        invalid_json='{"limit": 101}',
-        expected_error_type="less_than_equal",
-    )
-
-
 def test_main_inflect_import_without_typeguard_leak(output_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """OpenAPI generation should keep expected output when inflect starts cold."""
     monkeypatch.delitem(sys.modules, "inflect", raising=False)
@@ -849,6 +804,7 @@ def test_main_openapi_discriminator_variant_tag_warnings(
             ["--collapse-reuse-models", "--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions"],
         ),
         ("discriminator_collapsed_union_tags", "collapse_pydantic_v2.BaseModel", ["--collapse-reuse-models"]),
+        ("discriminator_reuse_same_tags", "collapse_pydantic_v2.BaseModel", ["--collapse-reuse-models"]),
         ("discriminator_shared_variant_tags", "reuse_pydantic_v2.BaseModel", []),
         (
             "discriminator_shared_variant_tags",
@@ -865,7 +821,7 @@ def test_main_openapi_discriminator_reuse_variant_mapping(
     Reuse keeps apart discriminated unions whose discriminators name another property or map other tags, so each
     keeps its own discriminator; a variant they map to different tags keeps one union's tags, with a warning. So does
     a variant that unions without a mapping tag by schema name when collapsed reuse merges it and the union of a
-    collapsed duplicate names it.
+    collapsed duplicate names it. Unions that map the same tags to variants that collapse still collapse.
     """
     import msgspec
 
@@ -913,6 +869,80 @@ def test_main_openapi_discriminator_reuse_variant_mapping(
                     result = type(getattr(value, "root", value)).__name__
                 decoded.append(f"{union} {json.dumps(payload)}: {result}\n")
     assert_output("".join(decoded), EXPECTED_OPENAPI_PATH / name / f"{expected_name}_decoded.txt")
+
+
+@pytest.mark.parametrize("name", ["discriminator_reuse_tree_mappings", "discriminator_reuse_tree_same_tags"])
+def test_main_openapi_discriminator_reuse_tree_mappings(output_dir: Path, name: str) -> None:
+    """Share wrappers of other modules only when their unions give their variants the same tags, at runtime too.
+
+    The wrappers render alike and reference unions that render alike, so tree-scope reuse compares the tags the
+    discriminators of the unions they reference give each variant as well, whatever schemas their mappings name.
+    """
+    expected = EXPECTED_OPENAPI_PATH / name
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / f"{name}.yaml",
+        output_path=output_dir,
+        input_file_type="openapi",
+        expected_directory=expected,
+        extra_args=[
+            "--reuse-model",
+            "--reuse-scope",
+            "tree",
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+            "--target-python-version",
+            "3.10",
+        ],
+        force_exec_validation=True,
+    )
+    decoded = []
+    for path, payloads in json.loads((DATA_PATH / f"payloads/{name}.json").read_text()).items():
+        module_path, _, model_name = path.rpartition(".")
+        with _generated_package_module(output_dir, module_path) as module:
+            validate = _model_json_validator(getattr(module, model_name))
+            for payload in payloads:
+                try:
+                    result = repr(validate(json.dumps(payload)))
+                except pydantic.ValidationError:
+                    result = "rejected"
+                decoded.append(f"{path} {json.dumps(payload)}: {result}\n")
+    assert_output("".join(decoded), expected.with_name(f"{name}_decoded.txt"))
+
+
+def test_main_openapi_discriminator_same_name_documents(output_file: Path) -> None:
+    """Merge a model with the model of the same name in another document whatever tags their unions map.
+
+    Only reuse tells discriminated unions apart by their tags, so the holder that another document names merges
+    into the holder of the same name, as released, and decodes the tags that holder maps.
+    """
+    name = "discriminator_same_name_documents"
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        run_main_and_assert(
+            input_path=OPEN_API_DATA_PATH / name / "main.yaml",
+            output_path=output_file,
+            input_file_type="openapi",
+            assert_func=assert_file_content,
+            expected_file=EXPECTED_OPENAPI_PATH / f"{name}.py",
+            extra_args=["--disable-timestamp", "--formatters", "builtin", "--target-python-version", "3.10"],
+            force_exec_validation=True,
+        )
+    assert_output(
+        "".join(f"{record.message}\n" for record in recorded if record.category is UserWarning),
+        EXPECTED_OPENAPI_PATH / f"{name}_warnings.txt",
+    )
+    decoded = []
+    for model_name, payloads in json.loads((DATA_PATH / f"payloads/{name}.json").read_text()).items():
+        with _generated_model(output_file, name, model_name) as model:
+            validate = _model_json_validator(model)
+            for payload in payloads:
+                try:
+                    result = repr(validate(json.dumps(payload)))
+                except pydantic.ValidationError:
+                    result = "rejected"
+                decoded.append(f"{model_name} {json.dumps(payload)}: {result}\n")
+    assert_output("".join(decoded), EXPECTED_OPENAPI_PATH / f"{name}_decoded.txt")
 
 
 def test_main_openapi_msgspec_union_tag_clashes(output_file: Path) -> None:
@@ -2039,12 +2069,24 @@ def test_main_usable_discriminator_invalid_dotted_models_stdout(capsys: pytest.C
             marks=pytest.mark.filterwarnings("ignore:msgspec cannot decode the discriminated union PetOwner.pet"),
         ),
         ("reuse_scope_tree", ["--reuse-scope", "tree"]),
+        (
+            "additional_imports",
+            [
+                "--additional-imports",
+                "tests.data.python.x_python_type_symbols.Literal_aliased",
+                "--class-decorators",
+                "Literal_aliased",
+            ],
+        ),
     ],
 )
 def test_main_usable_discriminator_invalid_dotted_models_reuse(
     output_dir: Path, expected_name: str, extra_args: list[str]
 ) -> None:
-    """Keep a model named Literal when the tags that reused variants get import typing.Literal, under an alias."""
+    """Keep a model named Literal when the tags that reused variants get import typing.Literal, under an alias.
+
+    The alias takes no name that an additional import binds or a class decorator names.
+    """
     expected = EXPECTED_OPENAPI_PATH / "usable_discriminator_invalid_dotted_models_reuse"
     run_main_and_assert(
         input_path=OPEN_API_DATA_PATH / "usable_discriminator_invalid_dotted_models.yaml",

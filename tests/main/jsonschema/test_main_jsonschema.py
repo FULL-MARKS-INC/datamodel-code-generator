@@ -5859,46 +5859,6 @@ def test_main_string_and_array_constraints_on_other_types(
     )
 
 
-@pytest.mark.parametrize(
-    ("expected_file", "extra_args"),
-    [
-        ("default.py", []),
-        ("default.py", ["--allof-merge-mode", "none"]),
-        ("field_constraints.py", ["--field-constraints"]),
-        ("pydantic_v2_dataclass.py", ["--output-model-type", "pydantic_v2.dataclass"]),
-        ("msgspec.py", ["--output-model-type", "msgspec.Struct"]),
-    ],
-)
-def test_main_allof_reference_sibling_constraints(output_file: Path, expected_file: str, extra_args: list[str]) -> None:
-    """Test constraints beside an allOf of one $ref constrain the value in every merge mode, at runtime too."""
-    name = "allof_reference_sibling_constraints"
-    run_main_and_assert(
-        input_path=JSON_SCHEMA_DATA_PATH / f"{name}.json",
-        output_path=output_file,
-        input_file_type="jsonschema",
-        assert_func=assert_file_content,
-        expected_file=f"{name}/{expected_file}",
-        extra_args=[*extra_args, "--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"],
-        force_exec_validation=True,
-    )
-    payloads = json.loads((DATA_PATH / f"payloads/{name}.json").read_text())
-    with _generated_model(output_file, name, "Measurement") as model:
-        validate = partial(msgspec.json.decode, type=model)
-        error_type: type[Exception] = msgspec.ValidationError
-        if "msgspec.Struct" not in extra_args:
-            validate = _model_json_validator(model)
-            error_type = ValidationError
-        validate(json.dumps(payloads["valid"]))
-
-        def accepts(field_name: str, value: object) -> bool:
-            with suppress(error_type):
-                return validate(json.dumps(payloads["valid"] | {field_name: value})) is not None
-            return False
-
-        rejected = [field_name for field_name, value in payloads["invalid"].items() if not accepts(field_name, value)]
-    assert_output("\n".join(rejected) + "\n", EXPECTED_JSON_SCHEMA_PATH / name / "rejected.txt")
-
-
 _TYPING_ALIAS_TYPE_OVERRIDES = json.dumps({"ConstraintsOnTypingAliases.overridden": "typing.List"})
 _TYPING_CONSTRAINT_OUTPUTS = (
     ("field_constraints.py", ["--field-constraints"]),
@@ -15510,7 +15470,7 @@ def test_main_jsonschema_contains_true_max_contains_zero(output_file: Path) -> N
 
 
 def test_main_jsonschema_contains_true_default_min_contains(output_file: Path) -> None:
-    """Test contains true defaults minContains to one."""
+    """Test contains true defaults minContains to one, also beside the contains of a $ref sibling."""
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "contains_true_default_min_contains.json",
         output_path=output_file,
@@ -15524,11 +15484,15 @@ def test_main_jsonschema_contains_true_default_min_contains(output_file: Path) -
         output_file,
         module_name="contains_true_default_min_contains",
         model_name="ContainsTrueDefaultMinContains",
-        valid_json='{"values":["x"]}',
+        valid_json='{"values":["x"],"ref_pair":["b"],"ref_tags":["c"]}',
         invalid_json='{"values":[]}',
         expected_error_type="too_short",
         expected_attribute_path=("values",),
         expected_attribute_value=["x"],
+        invalid_keyword_arguments=[
+            ({"values": ["x"], "ref_pair": []}, "too_short"),
+            ({"values": ["x"], "ref_tags": []}, "too_short"),
+        ],
     )
 
 

@@ -1967,15 +1967,66 @@ def _model_references(model: DataModel) -> list[Reference]:
     return [reference for data_type in model.all_data_types if (reference := data_type.reference)]
 
 
-def _model_shape(model: DataModel, shapes: dict[DataModel, _ModelShape]) -> _ModelShape:
+def _union_tags(model: DataModel) -> tuple[HashableComparable, ...]:
+    """Return the field index, property and the tags of each variant of each discriminated union of a model.
+
+    Unions that render alike decode other tags when their discriminators name another property or map their
+    variants to other tags. The tags a mapping gives the variants are listed by variant position, so unions that
+    map the same tags to variants that reuse merges match whatever schemas their mappings name.
+    """
+    if not (
+        discriminators := [
+            (index, discriminator, field.data_type.data_types)
+            for index, field in enumerate(model.fields)
+            if isinstance(discriminator := field.extras.get("discriminator"), dict)
+        ]
+    ):
+        return ()
+    from datamodel_code_generator._internal_utils import to_hashable  # noqa: PLC0415
+
+    return tuple(
+        (
+            index,
+            str(discriminator.get("propertyName")),
+            tuple(
+                to_hashable(_get_mapping_discriminator_values(source, mapping))
+                if (mapping := discriminator.get("mapping"))
+                and (reference := data_type.reference)
+                and isinstance(source := reference.source, DataModel)
+                else ()
+                for data_type in data_types
+            ),
+        )
+        for index, discriminator, data_types in discriminators
+    )
+
+
+@dataclass(slots=True)
+class _ModelShapes:
+    """The shapes of models memoized for one comparison pass, and the union tags the pass compares as well.
+
+    Reuse compares the union tags captured before any model is merged, so unions that decode other tags stay
+    apart; merging models of the same name compares rendered models alone.
+    """
+
+    union_tags: Mapping[DataModel, tuple[HashableComparable, ...]]
+    memo: dict[DataModel, _ModelShape]
+
+    def reuse_key(self, model: DataModel) -> tuple[HashableComparable, ...]:
+        """Return the key reuse compares models by: the rendered model and the tags of its discriminated unions."""
+        key = model.get_dedup_key()
+        return (*key, *tags) if (tags := self.union_tags.get(model)) else key
+
+
+def _model_shape(model: DataModel, shapes: _ModelShapes) -> _ModelShape:
     """Return a model's dedup key with referenced model names masked, and its references in order.
 
     The key is rendered afresh, since cached keys keep the names that references had when they were
     cached, and memoized in shapes for one comparison pass. Names are masked outside string literals and
     field declarations only, so defaults, descriptions and field names that spell a referenced model name
-    still tell models apart.
+    still tell models apart. The union tags the pass compares belong to the key, as they do to the reuse key.
     """
-    if (shape := shapes.get(model)) is not None:
+    if (shape := shapes.memo.get(model)) is not None:
         return shape
     references = _model_references(model)
     masks: dict[str, str] = {}
@@ -1985,11 +2036,12 @@ def _model_shape(model: DataModel, shapes: dict[DataModel, _ModelShape]) -> _Mod
     masked = _STRING_OR_IDENTIFIER_PATTERN.sub(
         lambda match: masks.get(name, name) if (name := match[1]) else match[0], rendered
     )
-    shapes[model] = shape = (type(model), masked, imports, len(references)), references
+    key = (type(model), masked, imports, len(references))
+    shapes.memo[model] = shape = ((*key, *tags) if (tags := shapes.union_tags.get(model)) else key), references
     return shape
 
 
-def _referenced_models_match(left: DataModel, right: DataModel, shapes: dict[DataModel, _ModelShape]) -> bool:
+def _referenced_models_match(left: DataModel, right: DataModel, shapes: _ModelShapes) -> bool:
     """Return whether equally rendered models also reference models of the same shape.
 
     Type hints carry only reference names, and references from different sources can share a
@@ -2022,7 +2074,7 @@ def _referenced_models_match(left: DataModel, right: DataModel, shapes: dict[Dat
     return True
 
 
-def _referenced_shapes(model: DataModel, shapes: dict[DataModel, _ModelShape]) -> tuple[object, ...]:
+def _referenced_shapes(model: DataModel, shapes: _ModelShapes) -> tuple[object, ...]:
     """Return the shapes of the models a model references in order, which models that match share.
 
     A reference to anything other than a model matches only itself, so it stands for itself.
@@ -2035,7 +2087,7 @@ def _referenced_shapes(model: DataModel, shapes: dict[DataModel, _ModelShape]) -
 
 def _iter_matching_duplicates(
     models: Iterable[DataModel],
-    shapes: dict[DataModel, _ModelShape],
+    shapes: _ModelShapes,
     key_fn: Callable[[DataModel], tuple[HashableComparable, ...]] | None = None,
 ) -> Iterator[tuple[DataModel, DataModel]]:
     """Pair each model with the earlier model of the same key whose content and references both match.
@@ -2200,32 +2252,6 @@ def _get_mapping_discriminator_values(
         for base_reference in filter(None, (base_class.reference for base_class in discriminator_model.base_classes)):
             _check_discriminator_mapping_paths(base_reference, mapping, discriminator_values)
     return discriminator_values
-
-
-def _reuse_key(model: DataModel) -> tuple[HashableComparable, ...]:
-    """Return the key reuse compares models by: the rendered model and the discriminators of its unions.
-
-    Unions that render alike decode other tags when their discriminators name another property or map their
-    variants to other tags, so reuse keeps them apart.
-    """
-    key = model.get_dedup_key()
-    if not (
-        discriminators := [
-            (index, discriminator)
-            for index, field in enumerate(model.fields)
-            if isinstance(discriminator := field.extras.get("discriminator"), dict)
-        ]
-    ):
-        return key
-    from datamodel_code_generator._internal_utils import to_hashable  # noqa: PLC0415
-
-    return (
-        *key,
-        *(
-            (index, str(discriminator.get("propertyName")), to_hashable(discriminator.get("mapping") or {}))
-            for index, discriminator in discriminators
-        ),
-    )
 
 
 _DiscriminatorTag: TypeAlias = tuple[DataModel, DataModelFieldBase, DiscriminatorValue | None]
@@ -3056,6 +3082,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._renamed_types: dict[str, str] = {}
         self._collapsed_reuse_models: dict[int, list[DataModel]] = {}
         self._collapsed_reuse_users: dict[int, tuple[DataType, Reference]] = {}
+        self._reuse_union_tags: dict[DataModel, tuple[HashableComparable, ...]] = {}
         self._reused_variant_tag_fields: dict[int, DataModelFieldBase] = {}
         self._quotes_hidden_types = False
 
@@ -3649,9 +3676,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return None
         return root_reference
 
-    def __renders_as_duplicate(
-        self, model: DataModel, original_model: DataModel, shapes: dict[DataModel, _ModelShape]
-    ) -> bool:
+    def __renders_as_duplicate(self, model: DataModel, original_model: DataModel, shapes: _ModelShapes) -> bool:
         """Return whether a model renders like the first model of its class name.
 
         A copy of a schema merged from another document compares with referenced names masked, since the
@@ -3669,7 +3694,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return
 
         model_class_names: dict[str, DataModel] = {}
-        shapes: dict[DataModel, _ModelShape] = {}
+        shapes = _ModelShapes({}, {})
         model_to_duplicate_models: defaultdict[DataModel, list[DataModel]] = defaultdict(list)
         # Use set for O(1) membership checks and collect removals for batch processing
         models_set = set(models)
@@ -3729,19 +3754,20 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
         if self.reuse_model and self.collapse_reuse_models:
             max_iterations, iteration = len(models), 0
+            shapes = _ModelShapes(self._reuse_union_tags, {})
             while True:
                 iteration += 1
                 if iteration > max_iterations:  # pragma: no cover
                     msg = f"Deduplication exceeded max iterations ({max_iterations})"
                     raise RuntimeError(msg)
 
-                shapes.clear()
+                shapes.memo.clear()
                 content_key_to_models: dict[tuple[Any, ...], list[DataModel]] = defaultdict(list)
                 for model in self._reuse_optimization_context.eligible_models(models):
                     if model in models_to_remove or self._is_root_model(model):
                         continue
                     model._dedup_key_cache.clear()  # noqa: SLF001
-                    content_key_to_models[_reuse_key(model)].append(model)
+                    content_key_to_models[shapes.reuse_key(model)].append(model)
 
                 if not (
                     duplicates := [
@@ -4527,7 +4553,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         )
         typed_map_values = self._typed_map_value_reference_ids
         canonical_models: dict[int, DataModel] = {}
-        for first_model, duplicate_model in _iter_matching_duplicates(reuse_candidates, {}, _reuse_key):
+        shapes = _ModelShapes(self._reuse_union_tags, {})
+        for first_model, duplicate_model in _iter_matching_duplicates(reuse_candidates, shapes, shapes.reuse_key):
             cached_model = canonical_models.get(id(first_model), first_model)
             model = duplicate_model
             if id(cached_model.reference) in typed_map_values and id(model.reference) not in typed_map_values:
@@ -4592,10 +4619,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             for module, models in module_models
             for model in self._reuse_optimization_context.eligible_models(models)
         }
+        shapes = _ModelShapes(self._reuse_union_tags, {})
         return [
             (model_modules[model], model, model_modules[canonical], canonical)
             for canonical, model in _iter_matching_duplicates(
-                self._typed_map_values_last(list(model_modules)), {}, _reuse_key
+                self._typed_map_values_last(list(model_modules)), shapes, shapes.reuse_key
             )
         ]
 
@@ -4764,6 +4792,23 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 model_path_to_module_name,
             )
 
+    def _keeps_root_model_named(self, model: DataModel, circular_root_model_paths: Collection[str]) -> bool:
+        """Return whether collapsing keeps a root model named wherever it is referenced.
+
+        A circular root model cannot be fully inlined, runtime rules the model owns would be lost with it, and
+        flattening it would discard constraints that live on a nested array or union alias, or on a mapping.
+        """
+        if not model.fields or model.path in circular_root_model_paths or model.has_runtime_object_validation:
+            return True
+        if not self.field_constraints and _has_preservable_root_constraints(model):
+            return True
+        root_type_field = model.fields[0]
+        return (
+            isinstance(constraints := root_type_field.constraints, ConstraintsBase)
+            and constraints.has_constraints
+            and (root_type_field.data_type.is_dict or root_type_field.data_type.is_mapping)
+        )
+
     def __collapse_root_models_in_scope(  # noqa: PLR0912, PLR0914, PLR0915
         self,
         models: list[DataModel],
@@ -4782,38 +4827,23 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             for model_field in model.fields:
                 for data_type in model_field.data_type.all_data_types:
                     reference = data_type.reference
-                    if not reference or not is_root_model(root_type_model := cast("DataModel", reference.source)):
-                        # If the data type is not a reference, we can't collapse it.
-                        # If it's a reference to a root model type, we don't do anything.
-                        continue
-
-                    # Use root-type as model_field type
-                    if not root_type_model.fields:
+                    if (
+                        not reference
+                        or not is_root_model(root_type_model := cast("DataModel", reference.source))
+                        or self._keeps_root_model_named(root_type_model, circular_root_model_paths)
+                    ):
                         continue
                     root_type_field = root_type_model.fields[0]
-
-                    if root_type_model.path in circular_root_model_paths:
-                        # A circular root model cannot be fully inlined; keep it named.
-                        continue
-
-                    # These runtime rules are owned by the referenced root model;
-                    # replacing it with the raw type would discard its validator.
-                    if root_type_model.has_runtime_object_validation:
-                        continue
-
-                    root_constraints = root_type_field.constraints
-                    if not self.field_constraints and _has_preservable_root_constraints(root_type_model):
-                        # Constraints can live on a nested array/union type alias.
-                        # Flattening this wrapper would silently discard them.
-                        continue
-                    if isinstance(root_constraints, ConstraintsBase) and root_constraints.has_constraints:
-                        if root_type_field.data_type.is_dict or root_type_field.data_type.is_mapping:
-                            continue
-                        if self.field_constraints and any(
+                    if (
+                        self.field_constraints
+                        and isinstance(root_constraints := root_type_field.constraints, ConstraintsBase)
+                        and root_constraints.has_constraints
+                        and any(
                             data_type.is_dict or data_type.is_union or data_type.is_list
                             for data_type in model_field.data_type.all_data_types
-                        ):
-                            continue
+                        )
+                    ):
+                        continue
 
                     if root_type_field.data_type.reference:
                         if self.collapse_root_models_name_strategy is None:
@@ -6459,6 +6489,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Import ``typing.Literal`` under an alias when only the tags of unions with reused variants need it.
 
         Such unions were left untagged before, so a model named ``Literal`` kept its name, which importers rely on.
+        The alias takes no name that the module binds or its class decorators name, additional imports included.
         """
         tag_fields = self._reused_variant_tag_fields
         fields = [field for model in models for field in model.fields]
@@ -6477,6 +6508,14 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             *(model.class_name for model in models),
             *(field.name for field in fields if field.name is not None),
             *bindings.values(),
+            *(self.imports.get_effective_name(from_, name) for from_, names in self.imports.items() for name in names),
+            *(
+                name
+                for model in models
+                for decorator in model.decorators
+                for name in _STRING_OR_IDENTIFIER_PATTERN.findall(decorator)
+                if name
+            ),
         }
         aliased_import = Import(
             from_=IMPORT_LITERAL.from_,
@@ -7519,11 +7558,20 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         dict[DataModel, tuple[ModulePath, list[DataModel]]],
         dict[str, str],
     ]:
-        """Build module structure from sorted models."""
+        """Build module structure from sorted models.
+
+        Reuse compares the tags of discriminated unions as their mappings give them before any model is merged,
+        since merging redirects the variants of a union to models that its mapping does not name.
+        """
         module_models = _group_models_by_module(sorted_data_models.values(), module_split_mode)
         model_to_module_models, model_path_to_module_name = _index_module_models(module_models, module_split_mode)
         self._collapsed_reuse_models.clear()
         self._collapsed_reuse_users.clear()
+        self._reuse_union_tags = (
+            {model: tags for _, models in module_models for model in models if (tags := _union_tags(model))}
+            if self.reuse_model
+            else {}
+        )
         for _, models in module_models:
             self.__delete_duplicate_models(models)
             self.__replace_duplicate_name_in_module(models)
