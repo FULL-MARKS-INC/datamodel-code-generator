@@ -5,29 +5,32 @@ from __future__ import annotations
 import json
 import re
 import sys
-import unicodedata
 from copy import deepcopy
 from fractions import Fraction
+from functools import cache, partial
 from typing import TYPE_CHECKING, Any
 
 from hypothesis import strategies as st
 from hypothesis_jsonschema import from_schema
 from jsonschema import validators
+from pydantic_core import SchemaValidator, core_schema
 
 from .conformance import _iter_schema_nodes, _schema_types
 from .native_numeric import NATIVE_FLOAT_CONTRACT
 from .schema import _schema_for_payload_generation
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+    from jsonschema.exceptions import ValidationError
     from jsonschema.protocols import Validator
 
     from .models import SchemaCase
 
 
-_UNICODE_BEYOND_SHARED_REGEX_TABLES = tuple(map(int, unicodedata.unidata_version.split("."))) > (16, 0, 0)
-"""Whether Python's re uses Unicode tables newer than 16.0, the newest that pydantic-core's regex shares with it."""
-_NON_ASCII_WORD_CHARACTER = re.compile(r"(?=[^\x00-\x7f])\w")
-_UNICODE_CLASS_ESCAPE = re.compile(r"\\[dDwWbB]")
+_REGEX_CLASS_ESCAPE = re.compile(r"(?<!\\)(?:\\\\)*\\([dDsSwWbB])")
+_REGEX_CLASS_BY_ESCAPE = dict.fromkeys("dD", r"\d") | dict.fromkeys("sS", r"\s") | dict.fromkeys("wWbB", r"\w")
+"""The character class each escape depends on; word boundaries depend on word characters."""
 
 _SourceSchemaCacheKey = tuple[str, str, str]
 _source_schema_validator_cache: dict[_SourceSchemaCacheKey, SourceSchemaValidator] = {}
@@ -129,18 +132,69 @@ def _bound_float_multiples(schema: dict[str, Any]) -> None:
         node["maximum"] = min(maximum, limit)
 
 
-def _within_shared_regex_tables(value: Any) -> bool:  # pragma: >=3.15 cover
-    """Keep word characters ASCII, where Python's re and pydantic-core's regex classify them alike."""
-    match value:
-        case str():
-            return _NON_ASCII_WORD_CHARACTER.search(value) is None
-        case dict():
-            return all(
-                _within_shared_regex_tables(key) and _within_shared_regex_tables(item) for key, item in value.items()
-            )
-        case list():
-            return all(map(_within_shared_regex_tables, value))
-    return True
+@cache
+def _rust_regex_class(regex_class: str) -> SchemaValidator:
+    """Match one character of a class with pydantic-core's default Rust regex engine."""
+    return SchemaValidator(core_schema.str_schema(pattern=f"^{regex_class}$"))
+
+
+@cache
+def _regex_engines_agree(regex_class: str, character: str) -> bool:
+    """Return whether Python's re and pydantic-core's Rust regex agree on a character's class membership."""
+    python_member = re.fullmatch(regex_class, character) is not None
+    return python_member is _rust_regex_class(regex_class).isinstance_python(character)
+
+
+@cache
+def _regex_classes(regex: str) -> frozenset[str]:
+    """Return the character classes that a regex's escapes depend on."""
+    return frozenset(_REGEX_CLASS_BY_ESCAPE[escape[1]] for escape in _REGEX_CLASS_ESCAPE.finditer(regex))
+
+
+class _RegexEnginesDisagreeError(Exception):
+    """Abort source validation instead of reporting an error that not, if or oneOf would invert."""
+
+
+def _agreed_pattern(
+    pattern: Callable[[Validator, str, Any, dict[str, Any]], Iterator[ValidationError]],
+    validator: Validator,
+    regex: str,
+    instance: Any,
+    schema: dict[str, Any],
+) -> Iterator[ValidationError]:
+    """Apply the pattern keyword unless the regex engines classify a character of the string differently."""
+    if validator.is_type(instance, "string") and not all(
+        _regex_engines_agree(regex_class, character) for regex_class in _regex_classes(regex) for character in instance
+    ):
+        raise _RegexEnginesDisagreeError
+    yield from pattern(validator, regex, instance, schema)
+
+
+@cache
+def _regex_agreement_class(validator_class: type[Validator]) -> type[Validator]:
+    """Extend a dialect's validator class with the regex agreement check on its pattern keyword."""
+    return validators.extend(
+        validator_class, {"pattern": partial(_agreed_pattern, validator_class.VALIDATORS["pattern"])}
+    )
+
+
+def _regex_agreement_validator(case: SchemaCase) -> SourceSchemaValidator:
+    """Build the source validator whose pattern keyword checks exactly the strings it is applied to.
+
+    The root drops ``$schema`` so references back into it keep the extended validator class.
+    """
+    agreement_class = _regex_agreement_class(validators.validator_for(case.source_schema))
+    schema = _canonical_json_numbers(case.source_schema)
+    schema.pop("$schema", None)
+    return SourceSchemaValidator(agreement_class(schema))
+
+
+def _valid_where_regex_engines_agree(validator: SourceSchemaValidator, payload: Any) -> bool:
+    """Keep source-valid payloads whose applied patterns both regex engines decide alike."""
+    try:
+        return validator.is_valid(payload)
+    except _RegexEnginesDisagreeError:
+        return False
 
 
 def payload_strategy(case: SchemaCase) -> st.SearchStrategy[Any]:
@@ -165,14 +219,15 @@ def payload_strategy(case: SchemaCase) -> st.SearchStrategy[Any]:
     # Literal regex fragments provide constructive witnesses for intersections whose
     # Unicode alphabet is prohibitively unlikely under rejection sampling. Each
     # candidate is proved against the unchanged source, including refs and bounds.
-    patterns = [pattern for node in _iter_schema_nodes(schema) if isinstance(pattern := node.get("pattern"), str)]
-    literals = [pattern for pattern in patterns if not re.search(r"[.\\^$*+?{}\[\]|()]", pattern)]
+    literals = [
+        pattern
+        for node in _iter_schema_nodes(schema)
+        if isinstance(pattern := node.get("pattern"), str) and not re.search(r"[.\\^$*+?{}\[\]|()]", pattern)
+    ]
     if literals:
         candidates = dict.fromkeys([*literals, "".join(literals), "".join(reversed(literals))])
         if witnesses := [candidate for candidate in candidates if validator.is_valid(candidate)]:
             strategy = st.one_of(st.sampled_from(witnesses), strategy)
-    strategy = strategy.filter(validator.is_valid)
-    if _UNICODE_BEYOND_SHARED_REGEX_TABLES and any(map(_UNICODE_CLASS_ESCAPE.search, patterns)):  # pragma: >=3.15 cover
-        strategy = strategy.filter(_within_shared_regex_tables)
+    strategy = strategy.filter(partial(_valid_where_regex_engines_agree, _regex_agreement_validator(case)))
     _payload_strategy_cache[cache_key] = strategy
     return strategy
