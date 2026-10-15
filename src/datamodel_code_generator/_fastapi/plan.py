@@ -30,6 +30,7 @@ from datamodel_code_generator._openapi_wire_plan import (
     STYLED,
     body_kind,
     content_types,
+    declared_media,
     form_extras,
     form_members,
     parameter_plans,
@@ -581,6 +582,12 @@ class Planner:  # noqa: PLR0904
         self.primaries = self.selected("primary_responses", config.primary_responses)
         self.parameter_names = self.selected("parameter_names", config.parameter_names)
         self.modes: dict[str, HandlerMode] = self.selected("handler_modes", config.handler_modes)
+        groups = {group_key(operation, single=config.layout == "single") for operation in request.operations}
+        self.problems.extend(
+            _problem("E_CONFIG_VALUE", f"The router_names entry {key!r} names no group", option_path="router_names")
+            for key in config.router_names
+            if key not in groups
+        )
         self.raise_problems()
 
     def raise_problems(self) -> None:
@@ -720,13 +727,21 @@ class Planner:  # noqa: PLR0904
         )
 
     def check_routes(self, specs: tuple[OperationSpec, ...]) -> None:
-        """Reject two operations FastAPI cannot tell apart: the same method and path shape."""
-        seen: set[tuple[str, str]] = set()
+        """Reject two operations FastAPI cannot tell apart: the same method and routed path shape.
+
+        Literal text is compared decoded, as the routes match it, so `/a b` and `/a%20b` are one route.
+        """
+        seen: dict[tuple[str, str], RoutePath] = {}
         for spec in specs:
-            if (key := (spec.contract.method, spec.route.shape())) in seen:
-                message = f"{_label(spec.contract)} differs from another route only by placeholder names"
-                self.problems.append(_problem("F_ROUTE_INVALID", message, spec.contract.id.use_site))
-            seen.add(key)
+            if (other := seen.setdefault((spec.contract.method, spec.route.shape()), spec.route)) is spec.route:
+                continue
+            reason = (
+                "placeholder names"
+                if other.written() == spec.route.written()
+                else "how its path text is percent-encoded"
+            )
+            message = f"{_label(spec.contract)} differs from another route only by {reason}"
+            self.problems.append(_problem("F_ROUTE_INVALID", message, spec.contract.id.use_site))
 
     def operation(self, operation: OperationContract, name: str, pascal: str) -> OperationSpec:
         """Plan one operation's parameters, body, responses, arguments, and route path."""
@@ -1115,7 +1130,7 @@ class Planner:  # noqa: PLR0904
         FastAPI takes the JSON null of a required body for an omitted one, so an adapter reads a required JSON body
         whose type accepts null.
         """
-        media = tuple(self.media(child) for child in declaration.children if child.kind == "media")
+        media = tuple(self.media(operation, child) for child in declaration.children if child.kind == "media")
         for item in media:
             self.bound(item.use)
         spec = BodySpec(
@@ -1184,9 +1199,15 @@ class Planner:  # noqa: PLR0904
             for item in media
         )
 
-    def media(self, declaration: WireDeclaration) -> MediaSpec:
-        """Return one media declaration with its normalized type, kind, type use, and whether it keeps extras."""
-        media_type = normalize_media_type(declaration.name or "")
+    def media(self, operation: OperationContract, declaration: WireDeclaration) -> MediaSpec:
+        """Return one media declaration with its normalized type, kind, type use, and whether it keeps extras.
+
+        A key that is no media type, or whose text is not ASCII header text, is reported, as the client reports it.
+        """
+        media_type, problem = declared_media(declaration.name or "")
+        if problem is not None:
+            message = f"The media type {declaration.name!r} of {_label(operation)} {problem}"
+            self.problems.append(_problem("F_MEDIA_UNSUPPORTED", message, declaration.use_site))
         use = self.use(declaration.schemas)
         kind = body_kind(media_type, use)
         return MediaSpec(
@@ -1231,7 +1252,8 @@ class Planner:  # noqa: PLR0904
         properties a schema types are read by the same rule, under whatever names they come, and need no plan when
         that reads them as the text they come as; their type checks such text when the model keeps them without it.
         Those a multipart body allows without a type are JSON as well. A model that validates its fields by name reads
-        a property under its field's name too, unless that is the name of another property.
+        a property under its field's name too, unless that is the name of another property. A URL-encoded body whose
+        schema no builtin encoding writes, such as one that is no object, is refused as the client refuses to send it.
         """
         assert media.use is not None
         json_members = _json_members(media)
@@ -1272,6 +1294,9 @@ class Planner:  # noqa: PLR0904
             additional = self.form_plan(operation, media, extras, untyped=untyped)
         elif multipart and (media.use.parts is None or media.use.parts.extra is None):
             additional = JsonPartSpec("", BuiltinType("object"), untyped=True)
+        if media.kind == "form" and (encoding := media.use.encoding) is not None and encoding.form.problem is not None:
+            source, message = encoding.form.problem
+            self.problems.append(_problem("MC_PARAMETER_ENCODING", message, source))
         return replace(
             media,
             fields=tuple(plan for plan in plans if isinstance(plan, FieldPlan)),
@@ -1340,7 +1365,7 @@ class Planner:  # noqa: PLR0904
 
         A response whose default media is JSON of a type that accepts null sends None as null, as the models decide.
         """
-        media = tuple(self.media(child) for child in declaration.children if child.kind == "media")
+        media = tuple(self.media(operation, child) for child in declaration.children if child.kind == "media")
         self.problems.extend(
             _problem(
                 "F_MEDIA_UNSUPPORTED",

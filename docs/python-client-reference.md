@@ -443,7 +443,8 @@ unknown keys and leaves out absent ones; a dataclass drops unknown keys and leav
   types, which check what those types declare and coerce as the backend does; a value the type refuses raises
   `DecodeError` with the reason `invalid_value`. Read-only and write-only behavior follows the generated model options.
 - **Binding.** A missing required argument, an unknown keyword, or a media type the operation does not declare fails
-  before anything is sent.
+  before anything is sent. A parameter value with text that UTF-8 cannot encode, such as a lone surrogate, fails with
+  a request `DecodeError` of the reason `unencodable`, with a `ParameterEncodingError` cause, before anything is sent.
 - **Path segments.** Path arguments that make their segment `.` or `..` once encoded in their parameters' styles and
   put into the path template, `%2E` in either case counting as `.`, such as `..` in the simple style, the empty string
   in the label style, or `%2e` with `allowReserved`, fail with a request `DecodeError` at the segment's first parameter
@@ -453,8 +454,13 @@ unknown keys and leaves out absent ones; a dataclass drops unknown keys and leav
 - **Path text.** The literal text of a path template is sent as RFC 3986 allows it in a path, as path arguments are:
   any other character, such as `\`, `|`, `^`, `[`, `]`, `?`, `#`, a space, or non-ASCII text, is percent-encoded as
   UTF-8, `\` as `%5C`, so no client, proxy, or server reads `\` as `/` or ends the path early. A `%` and two hex
-  digits is an octet the document already encodes and is sent as it is, so `/files/a%20b` sends `a%20b`; any other
-  `%` is sent as `%25`. The client holds the encoded path from generation, so calls pay nothing for it.
+  digits is an octet the document already encodes and is sent as it is, so `/files/a%20b` sends `a%20b`, which the
+  generated server routes by its decoded value; any other `%` is sent as `%25`. The client holds the encoded path from generation, so calls pay nothing for it.
+- **Header names.** A header parameter, response header, or part header whose name is not an RFC 9110 token, such as
+  `X Sp` or `X-Näme`, stops generation with an error, as it stops the generated server's, since no HTTP client or
+  server can send it. A declared media type whose text is not ASCII header text, such as `text/plain; label="café"`,
+  stops generation too, since its Content-Type could not be sent; a call's `media_type` of such text raises
+  `ConfigurationError` with the reason `invalid_value` and the `field_path` `("headers", "Content-Type")`.
 - **Header values.** A header carries header text only: HTAB, SP, and visible ASCII, without whitespace at either
   end, the text every HTTP client and server reads alike. RFC 9110 leaves any other byte opaque, and servers read it
   as Latin-1 or as UTF-8. A header parameter of any style, or of text content, whose value, array item, or object
@@ -855,12 +861,13 @@ typed ones by their type too. A URL-encoded form writes them as text of that typ
 array, and generation stops with `A parameter value needs one unambiguous scalar kind` at the `additionalProperties`
 that types them when the type has none. The generated FastAPI server reads the members of form bodies, these other
 properties included, by this rule too, and stops for a member or other properties without one scalar kind with the
-same message at the same place. The client also refuses a URL-encoded body whose schema has `patternProperties`
-(`Pattern properties have no builtin parameter encoding`) or is not an object
-(`A URL-encoded value must be an object`), which the server reads. A form body whose schema is a union of one schema
-and `null` alone is written as the form of that schema, by its members and other properties; a multipart body whose
-schema is a union of several schemas has no members to write parts by, and generation stops with
-`needs an object schema to be sent as parts`, as the server's generation stops for it.
+same message at the same place. Both also refuse a URL-encoded body whose schema has `patternProperties`
+(`Pattern properties have no builtin parameter encoding`) or is not an object, such as an array, a string, or
+`properties` without `type: object` (`A URL-encoded value must be an object`); the server reads such a body only in
+the request body mode. A form body whose schema is a union of one schema and `null` alone is written as the form of
+that schema, by its members and other properties; a multipart body whose schema is a union of several schemas has no
+members to write parts by, and generation stops with `needs an object schema to be sent as parts`, as the server's
+generation stops for it.
 
 A multipart response is read only when the operation declares one, with the standard library's MIME parser: a part's
 bytes are kept as they arrived unless it names a transfer encoding, and a broken body, or a part that is itself a

@@ -18,6 +18,7 @@ from datamodel_code_generator._runtime.model_codecs.parameters import (
     ParameterPlan,
     ValueShape,
     builtin_content,
+    header_text,
 )
 from datamodel_code_generator._target_contract import (
     BindingReason,
@@ -168,6 +169,19 @@ class _WirePlanner:
         self.diagnostics: list[CodecDiagnostic] = []
         self.version = batch.openapi
         self.uses = {use.id: use for use in batch.type_uses}
+
+
+def declared_media(name: str) -> tuple[str, str | None]:
+    """Return a content key's normalized media type and why no header carries it, or None when one does.
+
+    A key that is no media type is kept as it is written. A media type whose text is not ASCII header text, such as one
+    with a non-ASCII parameter, labels no body: its Content-Type would fail every call.
+    """
+    try:
+        media_type = normalize_media_type(name)
+    except ValueError:
+        return name, "is not a media type"
+    return media_type, None if header_text(media_type) else "is not ASCII header text, which a Content-Type needs"
 
 
 def body_kind(media_type: str, use: TypeUseBinding | None) -> MediaKind:
@@ -670,9 +684,17 @@ def _content_parameter(
         raise _PlanError(
             code="MC_PARAMETER_ENCODING", source=source, message="Text parameter content requires a string schema"
         )
-    return ParameterPlan(
-        location=location, name=name, required=required, content_media_type=media, fields=fields, additional=additional
-    )
+    try:
+        return ParameterPlan(
+            location=location,
+            name=name,
+            required=required,
+            content_media_type=media,
+            fields=fields,
+            additional=additional,
+        )
+    except ValueError as error:
+        raise _PlanError(code="MC_PARAMETER_ENCODING", source=source, message=str(error)) from None
 
 
 def _finite(planner: _WirePlanner, declaration: WireDeclaration) -> None:

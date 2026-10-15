@@ -29,6 +29,7 @@ TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _NOT_HEADER_TEXT: Final = re.compile(r"[^\t\x20-\x7E]")
 _COOKIE_OCTETS: Final = re.compile(r"[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*")
 _OWS: Final = " \t"
+_UNENCODABLE: Final = "A parameter value is text that UTF-8 cannot encode, such as a lone surrogate"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -51,11 +52,15 @@ class ParameterPlan:
     def __post_init__(self) -> None:
         """Reject style, content, and shape combinations without a reversible builtin form.
 
-        A cookie sent as it is, a single value or one of the cookie style, needs a name that is a token.
+        A header needs a name that is a token, and so does a cookie sent as it is, a single value or one of the cookie
+        style.
         """
         if not _reversible(self):
             content = "" if self.content_media_type is None else f" with content {self.content_media_type!r}"
             msg = f"{self.location} parameter style {self.style!r}{content} has no builtin form for {self.shape} values"
+            raise ValueError(msg)
+        if self.location == "header" and not TOKEN.fullmatch(self.name):
+            msg = f"header name {self.name!r} is not a token, which every header field name must be"
             raise ValueError(msg)
         if (
             self.location == "cookie"
@@ -253,7 +258,11 @@ def _querystring_text(plan: ParameterPlan, value: JSONValue) -> str:
 
 def querystring(plan: ParameterPlan, value: object) -> str:
     """Return a querystring parameter's whole encoded query, without its leading question mark."""
-    if text := _querystring_text(plan, cast("JSONValue", value)):
+    try:
+        text = _querystring_text(plan, cast("JSONValue", value))
+    except UnicodeEncodeError:
+        raise ParameterEncodingError(_UNENCODABLE) from None
+    if text:
         return text
     msg = "An explicit querystring value cannot encode to an empty query"
     raise ParameterEncodingError(msg)
@@ -295,9 +304,15 @@ def _content_pairs(plan: ParameterPlan, value: JSONValue) -> list[_Entry]:
 
 
 def pairs(plan: ParameterPlan, value: object) -> list[tuple[str | None, str]]:
-    """Return a parameter's ordered encoded names and texts in its location: the style's pairs, or its content."""
-    value = cast("JSONValue", value)
-    return (_style_pairs if plan.content_media_type is None else _content_pairs)(plan, value)
+    """Return a parameter's ordered encoded names and texts in its location: the style's pairs, or its content.
+
+    Text that UTF-8 cannot encode, such as a lone surrogate, raises ParameterEncodingError, as any value its style or
+    content cannot write does.
+    """
+    try:
+        return (_style_pairs if plan.content_media_type is None else _content_pairs)(plan, cast("JSONValue", value))
+    except UnicodeEncodeError:
+        raise ParameterEncodingError(_UNENCODABLE) from None
 
 
 def path_text(plan: ParameterPlan, value: object) -> str:

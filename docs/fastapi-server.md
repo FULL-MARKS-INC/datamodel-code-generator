@@ -1100,8 +1100,8 @@ one declared first keeps `default` and the other takes a number, such as `defaul
 
 With `--server-layout single`, every operation is in the group `all`: one `routes.py`, one `Service` Protocol, and the
 argument `service=`. `--server-router-names '{"all": "store"}'` renames it, as other group keys are renamed, to
-`StoreService` and `store=`. A group key that matches no group is ignored, while an operation reference that names no
-operation stops the run with an error.
+`StoreService` and `store=`. A group key that matches no group stops the run with an error, as an operation reference
+that names no operation does.
 
 `--server-parameter-names` keys an argument by its location, `path`, `query`, `querystring`, `header`, or `cookie`,
 and its wire name, such as `query:limit`.
@@ -1333,7 +1333,11 @@ strictly a value follows the OpenAPI document is decided by the model generation
 
 A path parameter is required, as OpenAPI requires, even when the document leaves out `required` or declares it
 `false`, and a default it declares is not used; the served document keeps the declaration as written. A document with
-a path parameter that names no placeholder of its path is refused.
+a path parameter that names no placeholder of its path is refused. A `content` key of a request body or a response
+that is no media type, such as `multipart/form data`, stops generation with
+`The media type 'multipart/form data' of POST /p is not a media type`, as it does for the generated client. So does a
+media type whose text is not ASCII header text, such as `text/plain; label="café"`, since no Content-Type header
+carries it.
 
 FastAPI cannot read some inputs, so a generated *adapter* reads them and validates the result with the model's
 `TypeAdapter`: deepObject, label, matrix, spaceDelimited, and pipeDelimited parameters, parameters with `content`,
@@ -1396,8 +1400,10 @@ or `type: [integer, boolean]`, declared by the schema or by a schema it combines
 `A parameter value needs one unambiguous scalar kind`, as it does for the generated client and for a parameter,
 unless an `encoding` gives the member a style. It stops the same way, at the `additionalProperties` that types them,
 for other properties of such a type, with either backend. The generated client stops for these members and other
-properties with the same message at the same place. It also refuses a URL-encoded body whose schema has
-`patternProperties` or is not an object, which the server reads.
+properties with the same message at the same place. Both also refuse a URL-encoded body whose schema has
+`patternProperties` (`Pattern properties have no builtin parameter encoding`) or is not an object, such as an array,
+a string, or `properties` without `type: object` (`A URL-encoded value must be an object`), unless the request body
+mode reads it.
 
 A form body whose schema is a union of one schema and `null` alone, such as
 `anyOf: [{$ref: "#/components/schemas/Search"}, {type: "null"}]`, is read as the form of that schema, its members and
@@ -1418,6 +1424,12 @@ selects a route you add to the generated router yourself, such as a mount or a S
 !!! warning
     A path parameter value can therefore contain `/` and `..`: `..%2F..%2Fetc` arrives as `../../etc`. Validate such
     a value, for instance with a `pattern` in the schema, before using it as a file system path or in another URL.
+
+A path's literal text is routed by its decoded value, as Starlette matches the decoded path: the document path
+`/files/a%20b` registers the route `/files/a b`, which the request `/files/a%20b` of the generated client matches,
+while the served document keeps the path as written. Literal text that encodes `/`, `{`, or `}` (`%2F`, `%7B`, or
+`%7D`) stops generation with an error, since no route matches it. So do two operations of one method whose paths
+route alike once decoded, such as `/a b` and `/a%20b`.
 
 A cookie parameter with a single value is a FastAPI `Cookie`, whatever its style, so the method receives the value
 as the request sent it: nothing is percent-decoded (`a%20b` stays `a%20b`), a value in double quotes loses the
@@ -1457,6 +1469,9 @@ A path, query, header, or cookie parameter whose schema mixes scalar kinds keeps
 string, such as `int | str` for `type: [integer, string]`. Without a string member, such as `type: [integer, boolean]`,
 and for an enum whose values mix kinds, such as `enum: [1, a]`, generation stops with
 `A parameter value needs one unambiguous scalar kind`.
+
+A header parameter, response header, or part header whose name is not an RFC 9110 token, such as `X Sp` or `X-Näme`,
+stops generation with an error, on the server and the client alike, since no HTTP client or server can send it.
 
 ### Responses
 

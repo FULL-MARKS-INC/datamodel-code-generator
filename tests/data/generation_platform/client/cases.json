@@ -11,8 +11,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -105,8 +105,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -150,8 +150,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -229,8 +229,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -845,6 +845,9 @@
   "cookie-names": {
     "input": "cookie-names.yaml"
   },
+  "header-names": {
+    "input": "header-names.yaml"
+  },
   "setting-errors": {
     "input": "pets.yaml",
     "config": {
@@ -909,6 +912,16 @@
     "input": "naming-default.yaml",
     "modules": [["client", "_operations.py"]]
   },
+  "naming-default-moved": {
+    "input": "naming-default.yaml",
+    "config": {"operations": [{"ref": "/paths/~1defaults/get", "resource": "other"}]},
+    "modules": [["client", "_operations.py"]]
+  },
+  "naming-device-moved": {
+    "input": "naming-device.yaml",
+    "config": {"operations": [{"ref": "/paths/~1consoles/get", "resource": "other"}]},
+    "modules": [["client", "_operations.py"]]
+  },
   "method-collisions": {
     "input": "method-collisions.yaml",
     "modules": [["client", "resources", "default", "_sync.py"], ["client", "types", "default", "_operations.py"]]
@@ -916,6 +929,10 @@
   "reference-errors": {
     "input": "pets.yaml",
     "config": {
+      "resource_names": [
+        {"tag": "pets", "namespace": "animals"},
+        {"tag": "nope", "namespace": "other"}
+      ],
       "operations": [
         {
           "ref": "/paths/~1missing/get"
@@ -4952,8 +4969,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -5014,8 +5031,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [
@@ -5078,8 +5095,8 @@
     "config": {
       "resource_names": [
         {
-          "tag": "photos",
-          "namespace": "photos"
+          "tag": "pets",
+          "namespace": "pets"
         }
       ],
       "operations": [

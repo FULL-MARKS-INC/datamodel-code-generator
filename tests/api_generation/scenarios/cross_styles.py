@@ -3,7 +3,8 @@
 The document also holds exploded cookie arrays and objects, an allowReserved query, and names that each target
 renames: Python keywords, a path and query parameter of one name, and the targets' own reserved arguments. A header
 carries ASCII text only: the client refuses any other value in every style before it sends, and JSON content, which
-it writes escaped, carries the rest.
+it writes escaped, carries the rest; a call's media type with other text labels no body. Literal path
+text the document percent-encodes is sent as written and routed by its decoded value.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ def calls(kit: Kit) -> Calls:
     api, models = kit.api, kit.models
     point, corner = models.Point(x=1, y=-2), models.Point(x=3, y=4)
     text, kind = api.default.get_header_text, models.HeaderTextGetHeaderXKindParameter
-    named = {"X_N\u00e4me": "a"}
     return [
         ("get_labels", lambda: api.default.get_labels(name="a b", names=["x", "y"], point=point)),
         ("get_matrix", lambda: api.default.get_matrix(name="a;b", names=["x", "y"], point=point)),
@@ -83,7 +83,13 @@ def calls(kit: Kit) -> Calls:
                 X_Named=models.Named(name="a b"),
             ),
         ),
-        ("get_header_names non-ASCII name", lambda: api.default.get_header_names(**named)),
+        ("get_literal encoded path text", lambda: api.default.get_literal(id="x y")),
+        (
+            "post_labelled_text non-ASCII media type",
+            lambda: api.default.post_labelled_text(
+                body=models.LabelledTextPostRequest("a"), media_type='text/plain; label="caf\u00e9"'
+            ),
+        ),
         ("get_query nothing", api.default.get_query),
         ("get_query empty arrays", lambda: api.default.get_query(spaced=[], piped=[])),
         ("get_headers", lambda: api.default.get_headers(X_Point=point, X_Corner=corner, X_Tags=["a", "b c"])),

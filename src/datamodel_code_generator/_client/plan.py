@@ -21,6 +21,7 @@ from datamodel_code_generator._openapi_wire_plan import (
     STYLED,
     body_kind,
     content_types,
+    declared_media,
     form_extras,
     parameter_plans,
     property_members,
@@ -398,6 +399,16 @@ class Planner:
         self.problems: list[Diagnostic] = []
         self.security = SecurityPlanner(request.batch, self.problems)
         self.settings = self.resolved()
+        tags = {found[0] for operation in request.operations if (found := _tags(operation))}
+        self.problems.extend(
+            _problem(
+                "E_CONFIG_VALUE",
+                f"The tag {item.tag!r} is the first tag of no operation",
+                option_path=f"resource_names[{index}]",
+            )
+            for index, item in enumerate(config.resource_names)
+            if item.tag not in tags
+        )
         self.raise_problems()
         self.namespaces = self.tag_namespaces()
 
@@ -539,24 +550,26 @@ class Planner:
     def tag_namespaces(self) -> dict[str | None, str]:
         """Name the resource of each first tag that no setting names, apart from the clients' members and each other.
 
-        The operations without a tag that no setting names form one more resource, under the key None, whose name
-        derives from `default` among the tags' names in declaration order. A Windows device name needs an explicit
-        one.
+        The operations without a tag form one more resource, under the key None, whose name derives from `default`
+        among the tags' names. A resource's place is its first operation, whether or not the operation's own
+        setting moves it to another resource, as the server orders its groups. A Windows device name needs an
+        explicit one where an operation stays in its resource.
         """
         first: dict[str | None, OperationContract] = {}
+        staying: dict[str | None, OperationContract] = {}
         for operation in self.request.operations:
-            setting = self.settings.get(operation.id.use_site.pointer)
-            if setting is not None and setting.resource is not None:
-                continue
             if (tag := tags[0] if (tags := _tags(operation)) else None) not in self.resource_names:
                 first.setdefault(tag, operation)
+                setting = self.settings.get(operation.id.use_site.pointer)
+                if setting is None or setting.resource is None:
+                    staying.setdefault(tag, operation)
         bases = [self.names.function("default" if tag is None else tag) for tag in first]
         names = self.names.claim(
             NameScope(RESERVED_MEMBERS, folded=True),
             [(base, _local(operation), ()) for operation, base in zip(first.values(), bases, strict=True)],
         )
-        for (tag, operation), namespace in zip(first.items(), names, strict=True):
-            if namespace.casefold() in WINDOWS_DEVICES:
+        for tag, namespace in zip(first, names, strict=True):
+            if namespace.casefold() in WINDOWS_DEVICES and (operation := staying.get(tag)) is not None:
                 message = f"The tag {tag!r} of {_label(operation)} needs an explicit resource name"
                 self.problems.append(_problem("E_RESERVED_NAME", message, operation.id.use_site))
         return dict(zip(first, names, strict=True))
@@ -732,14 +745,17 @@ class Planner:
         """Return the first type use of a declaration."""
         return next((self.uses[use] for use in uses if use in self.uses), None)
 
+    def _declared(self, operation: OperationContract, declaration: WireDeclaration) -> str:
+        """Return a media declaration's normalized type, reporting a key that no Content-Type header carries."""
+        media_type, problem = declared_media(declaration.name or "")
+        if problem is not None:
+            message = f"The media type {declaration.name!r} of {_label(operation)} {problem}"
+            self.problems.append(_problem("E_METADATA_REQUIRED", message, declaration.use_site))
+        return media_type
+
     def media(self, operation: OperationContract, declaration: WireDeclaration, *, request: bool) -> MediaSpec:
         """Return one media declaration with its normalized type, kind, type use, and form member plans."""
-        try:
-            media_type = normalize_media_type(declaration.name or "")
-        except ValueError:
-            message = f"The media type {declaration.name!r} of {_label(operation)} is not a media type"
-            self.problems.append(_problem("E_METADATA_REQUIRED", message, declaration.use_site))
-            media_type = declaration.name or ""
+        media_type = self._declared(operation, declaration)
         use = self.use(declaration.schemas)
         kind = body_kind(media_type, use)
         essence = media_type.partition(";")[0]
