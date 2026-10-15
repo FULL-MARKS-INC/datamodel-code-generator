@@ -1386,9 +1386,13 @@ def _parameter_arguments(module: Module, adapters: list[Argument]) -> str:
 
 
 def _json_part(module: Module, part: JsonPartSpec) -> str:
-    """Return the JsonPart constructor of one multipart member, with the adapter of its value or items."""
+    """Return the JsonPart constructor of one multipart member, with the adapter of its field, value, or items."""
     repeated = ", repeated=True" if part.repeated else ""
-    adapter = _adapter(module, part.type)
+    adapter = (
+        _adapter(module, part.type)
+        if (field := part.field) is None
+        else f"{module.local('_runtime.server.requests', 'field_adapter')}({module.annotation(field[0])}, {field[1]!r})"
+    )
     return f"{module.local('_runtime.server.requests', 'JsonPart')}({part.name!r}, {adapter}{repeated})"
 
 
@@ -1410,6 +1414,8 @@ def _body_media(module: Module, body: BodySpec) -> str:
                 else field_plan(module.local, additional)
             )
             entries.append(f"additional={plan}")
+        if (checked := item.checked) is not None:
+            entries.append(f"checked={module.name('pydantic', 'TypeAdapter')}(dict[str, {module.annotation(checked)}])")
         media.append(f"{module.local('_runtime.server.requests', 'BodyMedia')}({', '.join(entries)})")
     return _tuple(media)
 

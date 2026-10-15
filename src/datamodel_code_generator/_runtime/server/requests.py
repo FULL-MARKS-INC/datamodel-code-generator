@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, TypeAlias, cast
 from urllib.parse import quote, unquote_to_bytes
 
 from fastapi.exceptions import RequestValidationError
-from pydantic import TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 from starlette.datastructures import UploadFile
 from starlette.requests import Request  # noqa: TC002 - FastAPI resolves the dependencies' annotations.
 from typing_extensions import TypeVar
@@ -33,6 +33,9 @@ from .errors import invalid, media_invalid, missing, model_records, unsupported_
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from pydantic.fields import FieldInfo
+
+    from ..model_codecs.media import JSONValue
     from ..model_codecs.parameter_reads import RawParameter
     from ..model_codecs.parameters import ParameterPlan
     from .errors import Record
@@ -192,6 +195,17 @@ def _validated(adapter: TypeAdapter[object] | None, value: object) -> object:
     return value if adapter is None else adapter.validate_python(value)
 
 
+def field_adapter(model: type[object], name: str) -> TypeAdapter[object]:
+    """Return the adapter of a field of a Pydantic model or dataclass, which validates a value as the field does.
+
+    The field's constraints and its discriminator apply, so a tagged union rejects a value by its tag.
+    """
+    owner: Any = model
+    found: FieldInfo = owner.__pydantic_fields__[name]
+    annotated: Any = Annotated
+    return TypeAdapter[object](annotated[(found.annotation, *found.metadata, Field(discriminator=found.discriminator))])
+
+
 @dataclass(frozen=True, slots=True)
 class JsonPart:
     """One multipart member whose parts carry JSON: its name, the adapter of its value or items, and its repeats.
@@ -210,7 +224,8 @@ class BodyMedia:
 
     A form's members are read as text in the kinds of `fields`, and those of a multipart form in `json_parts` as JSON.
     `additional` reads every member neither names: as text as it comes unless the form's schema types its other
-    properties, and never as JSON in a URL-encoded form, whose other members `other` reads.
+    properties, and never as JSON in a URL-encoded form, whose other members `other` reads. `checked` validates such
+    text, as a mapping of their type, when the model keeps them without one.
     """
 
     media_type: str
@@ -219,6 +234,7 @@ class BodyMedia:
     fields: tuple[FieldPlan, ...] = ()
     json_parts: tuple[JsonPart, ...] = ()
     additional: FieldPlan | JsonPart = _TEXT
+    checked: TypeAdapter[object] | None = None
     members: Mapping[str, FieldPlan | JsonPart] = field(init=False, repr=False, compare=False)
     other: FieldPlan = field(init=False, repr=False, compare=False)
 
@@ -306,12 +322,22 @@ async def _read(media: BodyMedia, media_type: str, body: bytes, request: Request
                 raise RequestValidationError([media_invalid(("body",))]) from error
             return _validated(adapter, text)
         case "form":
-            return _validated(adapter, plain(decode_form(body, media.fields, media.other)))
+            return _validated(adapter, _checked(media, plain(decode_form(body, media.fields, media.other))))
         case "multipart":
-            return _validated(adapter, plain(await _parts(request, media.members, media.additional)))
+            return _validated(adapter, _checked(media, plain(await _parts(request, media.members, media.additional))))
         case _:
             pass
     return body
+
+
+def _checked(media: BodyMedia, values: JSONValue) -> JSONValue:
+    """Return a form's members with those no plan names validated by `checked`, refusing the values it rejects."""
+    if (checked := media.checked) is None:
+        return values
+    members = cast("dict[str, object]", values)
+    others = {name: value for name, value in members.items() if name not in media.members}
+    members.update(cast("dict[str, object]", checked.validate_python(others)))
+    return values
 
 
 async def _parts(

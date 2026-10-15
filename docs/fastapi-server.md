@@ -1356,21 +1356,25 @@ scalar kind, with one part for each item of an array. A part of any other member
 sends it: an object, a mapping, each item of an array of objects, a union of a string and an object, an enum of mixed
 kinds, or a union of an array and another type, whose array is one part. So is a part of a member whose `encoding`
 names one JSON media type and no style, such as `contentType: application/json`, a scalar included. A JSON part is
-parsed by `TypeAdapter.validate_json` of the member's type, or of its items' type, whatever media type the part names
-and whether it arrives as a field or as a file. A part that is not JSON, or that the type rejects, answers `422` with
-its records at `["body", name]`, or at `["body", name, index]` for a member that repeats, before the rest of the body
-is validated.
+parsed by `TypeAdapter.validate_json` whatever media type the part names and whether it arrives as a field or as a
+file: of the member's model field, so the field's own constraints and `discriminator` apply and a tag no member of the
+union has answers one `union_tag_invalid` record, or, for a member that repeats, of its items' type. A part that is not
+JSON, or that the type rejects, answers `422` with its records at `["body", name]`, or at `["body", name, index]` for a
+member that repeats, before the rest of the body is validated.
 
 A schema can type the properties it does not declare, with `additionalProperties: {...}`. Their parts come under any
 name no declared member has and are read by the same rule, by the type the model keeps their values as, in a field of
 its own or one it inherits from a schema combined with `allOf`: text of that type's kind, a list with one part for
 each item of an array, or JSON, whose records name the part as a declared member's do. So are their fields in a
-URL-encoded form, which an adapter then reads. Without such a schema, a part the schema does not declare is text,
-the last of its name, and the model keeps it, ignores it, or refuses it, as its options and
-`additionalProperties: false` say. The `pydantic_v2.dataclass` models have no field for other properties, so the
+URL-encoded form, which an adapter then reads. A model that validates its fields by name too, such as one
+`--allow-population-by-field-name` configures, also takes a part or field named like a property's field, such as
+`max_age` beside `maxAge`, as that property, unless another property has that name; any other name is one of the
+other properties. Without such a schema, a part the schema does not declare is text, the last of its name, and the
+model keeps it, ignores it, or refuses it, as its options and `additionalProperties: false` say. The `pydantic_v2.dataclass` models have no field for other properties, so the
 server reads typed ones by the type their schema gives them, the form's own or that of a schema it combines with
-`allOf`: a JSON part is checked by that type, text is passed on as it is read, and the model keeps each value as an
-attribute beside its fields, which its `repr` leaves out.
+`allOf`, also when `--reuse-model` makes the form's model inherit an equal one whose schema types them otherwise. That
+type checks JSON parts and text alike, answering `422` with the records of every value it rejects at `["body", name]`,
+and the model keeps each value as the type returns it, as an attribute beside its fields, which its `repr` leaves out.
 
 A URL-encoded form carries text alone. For a member without one scalar kind, such as an object, an array of objects,
 or `type: [integer, boolean]`, declared by the schema or by a schema it combines with `allOf`, generation stops with
@@ -1379,6 +1383,12 @@ unless an `encoding` gives the member a style. It stops the same way, at the `ad
 for other properties of such a type, with either backend. The generated client stops for these members and other
 properties with the same message at the same place. It also refuses a URL-encoded body whose schema has
 `patternProperties` or is not an object, which the server reads.
+
+A form body whose schema is a union of one schema and `null` alone, such as
+`anyOf: [{$ref: "#/components/schemas/Search"}, {type: "null"}]`, is read as the form of that schema, its members and
+other properties by the rules above, and the model that holds it receives the object. A multipart body whose schema
+is a union of several schemas declares no members its parts could be read by: generation stops with
+`needs body_mode='request'`, as the generated client stops with `needs an object schema to be sent as parts`.
 
 The adapters read no `encoding` that names another media type, part headers, `allowReserved`, or a style other than
 the default `form` with `explode: true`, and none that gives any style to a member without one scalar kind, which

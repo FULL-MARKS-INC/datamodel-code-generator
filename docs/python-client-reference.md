@@ -424,8 +424,9 @@ unknown keys and leaves out absent ones; a dataclass drops unknown keys and leav
   reason `unencodable` before anything is sent; its `location` names the argument, never the value. An empty array or
   object in a style-encoded parameter or a form member is left out as an omitted value is: it writes no query pair,
   header, cookie, or part. A style or a form cannot write null, so a `None` member of an object parameter or of a
-  URL-encoded or multipart form, and a `FieldPart` whose value is `None`, are left out the same way. A path segment cannot be left out, so an empty array or object in a path parameter fails
-  with a request `DecodeError` before anything is sent.
+  URL-encoded or multipart form, and a `FieldPart` whose value is `None`, are left out the same way. A multipart form
+  that is left with no part is still sent, as its closing boundary alone. A path segment cannot be left out, so an
+  empty array or object in a path parameter fails with a request `DecodeError` before anything is sent.
 - **Parameter arguments.** A parameter whose model type is a type alias or a root model takes the type it stands for,
   such as `limit: int` or `tags: list[str]`, never the alias or the root model. An alias's argument is sent as given,
   without validation. With Pydantic models, an argument whose parameter is a root model is built into it before it is
@@ -828,8 +829,9 @@ through its member's model codec, a repeated member sends a part for each item, 
 gives, and a media type the member's encoding declares must cover the one a part names. The SDK does not check parts
 against the schema. A part header HTTPX2 refuses, and a part that is not a `FieldPart` or a `FilePart` with a string
 name, raises a request `DecodeError` with the reason `unencodable` before sending. A body whose parts are all bytes is
-encoded once, with `Content-Length`; a body without parts is sent empty, without a Content-Type. HTTPX2 chooses the
-boundary.
+encoded once, with `Content-Length`; a body without parts is sent as its closing boundary alone, with the
+`multipart/form-data` Content-Type that names the boundary, which a server reads as a form without members. Each body
+gets a boundary of its own.
 
 The type of a member decides its parts, in a `MultipartBody` and in a form-data body sent as its model alike. A
 member repeats, one part for each item, when its type is an array. A value whose type has one scalar kind is text: a
@@ -844,14 +846,18 @@ The properties a schema types without declaring them, with `additionalProperties
 whatever names a body gives them, by the type of their values: an object is one `application/json` part, an array of
 objects one for each item, and a union of an array and another type one part. The type is the one the model keeps
 them as, in a field of its own or one it inherits from a schema combined with `allOf`, and for a model without such a
-field, the type of their schema, the form's own or that of a schema it combines with `allOf`. A multipart response
+field, the type of their schema, the form's own or that of a schema it combines with `allOf`, also when
+`--reuse-model` makes the form's model inherit an equal one whose schema types them otherwise. A multipart response
 reads them by that type too. A URL-encoded form writes them as text of that type's kind, one pair for each item of an
 array, and generation stops with `A parameter value needs one unambiguous scalar kind` at the `additionalProperties`
 that types them when the type has none. The generated FastAPI server reads the members of form bodies, these other
 properties included, by this rule too, and stops for a member or other properties without one scalar kind with the
 same message at the same place. The client also refuses a URL-encoded body whose schema has `patternProperties`
 (`Pattern properties have no builtin parameter encoding`) or is not an object
-(`A URL-encoded value must be an object`), which the server reads.
+(`A URL-encoded value must be an object`), which the server reads. A form body whose schema is a union of one schema
+and `null` alone is written as the form of that schema, by its members and other properties; a multipart body whose
+schema is a union of several schemas has no members to write parts by, and generation stops with
+`needs an object schema to be sent as parts`, as the server's generation stops for it.
 
 A multipart response is read only when the operation declares one, with the standard library's MIME parser: a part's
 bytes are kept as they arrived unless it names a transfer encoding, and a broken body, or a part that is itself a
