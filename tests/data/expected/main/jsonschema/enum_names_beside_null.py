@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, IntEnum
 
 from pydantic import BaseModel, RootModel
 
@@ -77,6 +77,56 @@ class Objects(Enum):
     value_2 = {'bar': 2}
 
 
+class NullLastEnum(Enum):
+    FIRST = 'x'
+    SECOND = 'y'
+
+
+class NullLast(RootModel[NullLastEnum | None]):
+    root: NullLastEnum | None = None
+
+
+class DescribedBesideNullEnum(Enum):
+    x = 'x'
+    """
+    The first
+    """
+    y = 'y'
+    """
+    Nothing
+    """
+
+
+class DescribedBesideNull(RootModel[DescribedBesideNullEnum | None]):
+    root: DescribedBesideNullEnum | None = None
+
+
+class NullableNumbersEnum(IntEnum):
+    NIL = 1
+    ONE = 2
+
+
+class NullableNumbers(RootModel[NullableNumbersEnum | None]):
+    root: NullableNumbersEnum | None = None
+
+
+class UndescribedBesideNullEnum(Enum):
+    x = 'x'
+
+
+class UndescribedBesideNull(RootModel[UndescribedBesideNullEnum | None]):
+    root: UndescribedBesideNullEnum | None = None
+
+
+class RepeatedNamesBesideNullEnum(Enum):
+    A = 'x'
+    A_1 = 'y'
+
+
+class RepeatedNamesBesideNull(RootModel[RepeatedNamesBesideNullEnum | None]):
+    root: RepeatedNamesBesideNullEnum | None = None
+
+
 class EnumNamesBesideNull(BaseModel):
     member_names: MemberNames | None = None
     item_names: ItemNames | None = None
@@ -85,3 +135,8 @@ class EnumNamesBesideNull(BaseModel):
     untyped: Untyped | None = None
     repeated_names: RepeatedNames | None = None
     objects: Objects | None = None
+    null_last: NullLast | None = None
+    described_beside_null: DescribedBesideNull | None = None
+    nullable_numbers: NullableNumbers | None = None
+    undescribed_beside_null: UndescribedBesideNull | None = None
+    repeated_names_beside_null: RepeatedNamesBesideNull | None = None
