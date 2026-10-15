@@ -24603,7 +24603,7 @@ def test_dotted_module_exports(
     expected: str,
 ) -> None:
     """Keep each export local to its final package and preserve model identities."""
-    if target_version == PythonVersion.PY_314:
+    if target_version.has_native_deferred_annotations:
         expected += "_py314"
     output_dir = output_dir.with_name(f"{expected}_{target_version.name.lower()}_{entrypoint}")
     expected_directory = EXPECTED_MAIN_PATH / "jsonschema" / f"dotted_module_exports_{expected}"

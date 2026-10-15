@@ -37,6 +37,7 @@ class PythonVersion(Enum):
     PY_312 = "3.12"
     PY_313 = "3.13"
     PY_314 = "3.14"
+    PY_315 = "3.15"
 
     @cached_property
     def version_key(self) -> tuple[int, int]:

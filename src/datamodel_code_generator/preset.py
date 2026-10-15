@@ -882,10 +882,10 @@ def render_presets_markdown() -> str:
         (
             "| "
             f"{target_python_version.value} | "
-            f"`{_STANDARD_PRESET_NAMES_BY_TARGET[target_python_version].value}` | "
+            f"`{standard_name.value}` | "
             f"`{_PRACTICAL_PRESET_NAMES_BY_TARGET[target_python_version].value}` |"
         )
-        for target_python_version in PythonVersion
+        for target_python_version, standard_name in _STANDARD_PRESET_NAMES_BY_TARGET.items()
     )
     lines.extend((
         "",
