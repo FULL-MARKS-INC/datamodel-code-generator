@@ -7,6 +7,7 @@ from functools import cached_property
 from math import isfinite
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast
 
+from datamodel_code_generator._openapi_codec_plan import keeps_extras
 from datamodel_code_generator._runtime.model_codecs.media import (
     FieldPlan,
     LexicalKind,
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
         FrozenLiteral,
         LeafStep,
         MemberShape,
+        SymbolId,
         TypeUseBinding,
         TypeView,
     )
@@ -300,7 +302,7 @@ def _form(
         additional = _additional(planner, bound)
         members = {name: schema for name, schema, _ in property_members(use)}
         encoded = tuple(_encoding(planner, bound, members, declaration) for declaration in styled.values())
-        encoded = _distinct(_located(bound), [field.name for field in fields], encoded)
+        encoded = _distinct(planner, bound, [field.name for field in fields], encoded)
     except _PlanError as error:
         _refused(planner, use, error)
         return None
@@ -316,7 +318,7 @@ def _styles(
         members = {name: schema for name, schema, _ in property_members(use)}
         encoded = tuple(_encoding(planner, bound, members, declaration) for declaration in encodings)
         styled = {plan.name for plan in encoded}
-        encoded = _distinct(_located(bound), [name for name in members if name not in styled], encoded)
+        encoded = _distinct(planner, bound, [name for name in members if name not in styled], encoded)
     except _PlanError as error:
         _refused(planner, use, error)
         return None
@@ -414,14 +416,17 @@ def _refused(planner: _WirePlanner, use: TypeUseBinding, error: _PlanError) -> N
 
 
 def _distinct(
-    location: SourceLocation, names: list[str], encoded: tuple[ParameterPlan, ...]
+    planner: _WirePlanner, form: TypeUseBinding, names: list[str], encoded: tuple[ParameterPlan, ...]
 ) -> tuple[ParameterPlan, ...]:
     """Refuse a form whose members write a name twice, or whose other names more than one member would take back.
 
     An exploded member's own names count, and an exploded object that allows other properties takes every name no
     other member writes, so the form may have one such member and no deepObject member then, as an operation's query
-    parameters may. Return the plans with the other exploded members' names reserved from the one that takes the rest.
+    parameters may, nor other properties of its own that its schema allows as `true` or a schema or its model keeps by
+    its configuration. Return the plans with the other exploded members' names reserved from the one that takes the
+    rest.
     """
+    location = _located(form)
     claimed = [
         *(item.name for plan in encoded if _spread(plan) for item in plan.fields),
         *names,
@@ -430,10 +435,15 @@ def _distinct(
     if len(set(claimed)) != len(claimed):
         raise _PlanError(code="MC_PARAMETER_ENCODING", source=location, message="Expanded form member names collide")
     absorbing = [plan.name for plan in encoded if plan.additional is not None and _spread(plan)]
-    if len(absorbing) > 1 or (absorbing and any(plan.style == "deepObject" for plan in encoded)):
+    if absorbing and (
+        len(absorbing) > 1
+        or any(plan.style == "deepObject" for plan in encoded)
+        or _encoded(form).declared
+        or planner.kinds.configured(form)
+    ):
         message = (
             f"The exploded form member {absorbing[0]!r} allows other properties and takes every name no other member "
-            "writes, so the form cannot have another such member or a deepObject member"
+            "writes, so the form cannot have another such member, a deepObject member, or other properties of its own"
         )
         raise _PlanError(code="MC_PARAMETER_ENCODING", source=location, message=message)
     plans = list(encoded)
@@ -820,7 +830,7 @@ class LexicalKinds:
         }
 
     @cached_property
-    def _symbols(self) -> dict[int, FinalModelSymbol]:
+    def _symbols(self) -> dict[SymbolId, FinalModelSymbol]:
         return {symbol.id: symbol for symbol in self._batch.symbols}
 
     @cached_property
@@ -866,6 +876,16 @@ class LexicalKinds:
                 and (value := self._argument(facts.type, *_ARGUMENTS["values"])) is not None
             ),
             None,
+        )
+
+    def configured(self, use: TypeUseBinding) -> bool:
+        """Return whether the model a use's type stands for keeps its other properties by the configuration it takes.
+
+        The type stands for the model through aliases, root models and a union with None alone, and the model takes
+        its own setting over the one it inherits.
+        """
+        return isinstance(value := self._unwrapped(use.type), GeneratedSymbolType) and keeps_extras(
+            self._symbols, value.symbol
         )
 
     def bound(self, direction: Direction, *places: tuple[SourceLocation, tuple[LeafStep, ...]]) -> TypeView | None:
