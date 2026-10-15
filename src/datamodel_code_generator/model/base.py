@@ -1967,6 +1967,7 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     _TYPED_EXTRA_DICT_KEY_CAPABILITY: ClassVar[Callable[[DataType], bool] | None] = None
     _IMPORTS_CACHE_KEY: ClassVar[str] = "_cached_imports"
     has_forward_reference: bool = False
+    discriminator_tag: tuple[Any, Any] | None = None
 
     @classmethod
     def resolve_module_import_conflicts(
