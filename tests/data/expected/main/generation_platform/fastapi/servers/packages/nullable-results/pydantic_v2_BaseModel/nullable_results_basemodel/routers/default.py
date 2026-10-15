@@ -376,6 +376,221 @@ def _add_post_memo(
     )
 
 
+def _add_get_range(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_range_handler = checked(
+        default.get_range,
+        'The default.get_range method of GET /ranges',
+        ('case',),
+    )
+
+    def get_range(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_range_handler(
+                case=case,
+            ),
+            contract.GetRange.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/ranges',
+        get_range,
+        methods=['GET'],
+        status_code=200,
+        response_model=nullable_results_basemodel_models.RangesGetResponse,
+        response_model_by_alias=True,
+        response_model_exclude_unset=True,
+        operation_id='getRange',
+        response_description='A text or null under any success status.',
+        dependencies=wiring.dependencies.get('get_range'),
+    )
+
+
+def _add_get_accepted(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_accepted_handler = checked(
+        default.get_accepted,
+        'The default.get_accepted method of GET /accepted',
+        ('case',),
+    )
+
+    def get_accepted(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_accepted_handler(
+                case=case,
+            ),
+            contract.GetAccepted.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/accepted',
+        get_accepted,
+        methods=['GET'],
+        status_code=202,
+        response_model=nullable_results_basemodel_models.Thing,
+        response_model_by_alias=True,
+        response_model_exclude_unset=True,
+        operation_id='getAccepted',
+        response_description='A thing under any success status.',
+        dependencies=wiring.dependencies.get('get_accepted'),
+    )
+
+
+def _add_get_default(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_default_handler = checked(
+        default.get_default,
+        'The default.get_default method of GET /defaults',
+        ('case',),
+    )
+
+    def get_default(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_default_handler(
+                case=case,
+            ),
+            contract.GetDefault.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/defaults',
+        get_default,
+        methods=['GET'],
+        status_code=200,
+        response_model=nullable_results_basemodel_models.Thing,
+        response_model_by_alias=True,
+        response_model_exclude_unset=True,
+        operation_id='getDefault',
+        response_description='A thing under any status.',
+        dependencies=wiring.dependencies.get('get_default'),
+    )
+
+
+def _add_get_error(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_error_handler = checked(
+        default.get_error,
+        'The default.get_error method of GET /errors',
+        ('case',),
+    )
+
+    def get_error(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_error_handler(
+                case=case,
+            ),
+            contract.GetError.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/errors',
+        get_error,
+        methods=['GET'],
+        status_code=400,
+        response_model=None,
+        response_class=Response,
+        operation_id='getError',
+        response_description='A client error.',
+        dependencies=wiring.dependencies.get('get_error'),
+    )
+
+
+def _add_get_ok(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_ok_handler = checked(
+        default.get_ok,
+        'The default.get_ok method of GET /oks',
+        ('case',),
+    )
+
+    def get_ok(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_ok_handler(
+                case=case,
+            ),
+            contract.GetOk.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/oks',
+        get_ok,
+        methods=['GET'],
+        status_code=200,
+        response_model=nullable_results_basemodel_models.Ok,
+        response_model_by_alias=True,
+        response_model_exclude_unset=True,
+        operation_id='getOk',
+        response_description='ok or null.',
+        dependencies=wiring.dependencies.get('get_ok'),
+    )
+
+
+def _add_get_any_alias(
+    router: APIRouter,
+    wiring: Wiring,
+) -> None:
+    default: DefaultService = wiring.services['default']
+    get_any_alias_handler = checked(
+        default.get_any_alias,
+        'The default.get_any_alias method of GET /any-aliases',
+        ('case',),
+    )
+
+    def get_any_alias(
+        *,
+        case: Annotated[str, Query(alias='case')],
+    ) -> object:
+        return dispatch(
+            get_any_alias_handler(
+                case=case,
+            ),
+            contract.GetAnyAlias.RESPONSES,
+        )
+
+    router.add_api_route(
+        '/any-aliases',
+        get_any_alias,
+        methods=['GET'],
+        status_code=200,
+        response_model=nullable_results_basemodel_models.AnyAlias,
+        response_model_by_alias=True,
+        response_model_exclude_unset=True,
+        operation_id='getAnyAlias',
+        response_description='Any value.',
+        dependencies=wiring.dependencies.get('get_any_alias'),
+    )
+
+
 LITERAL_ROUTES: Final = (
     ('get_text', _add_get_text),
     ('head_text', _add_head_text),
@@ -387,6 +602,12 @@ LITERAL_ROUTES: Final = (
     ('get_thing', _add_get_thing),
     ('get_note', _add_get_note),
     ('post_memo', _add_post_memo),
+    ('get_range', _add_get_range),
+    ('get_accepted', _add_get_accepted),
+    ('get_default', _add_get_default),
+    ('get_error', _add_get_error),
+    ('get_ok', _add_get_ok),
+    ('get_any_alias', _add_get_any_alias),
 )
 TEMPLATED_ROUTES: Final = ()
 

@@ -34,7 +34,12 @@ from datamodel_code_generator._openapi_wire_plan import (
     form_members,
     parameter_plans,
 )
-from datamodel_code_generator._python_type_annotation import PythonTypeBoundName, PythonTypeName, PythonTypeUnion
+from datamodel_code_generator._python_type_annotation import (
+    PythonTypeBoundName,
+    PythonTypeName,
+    PythonTypeSubscript,
+    PythonTypeUnion,
+)
 from datamodel_code_generator._runtime.model_codecs.media import FieldPlan, media_kind, normalize_media_type
 from datamodel_code_generator._target_contract import (
     BoundType,
@@ -115,12 +120,11 @@ _MODEL_IMPORTS: Final = frozenset({"BaseModel", "RootModel"})
 _STRICT_TYPES: Final = frozenset({"StrictBool", "StrictFloat", "StrictInt"})
 _STRICT_CONSTRUCTORS: Final = frozenset({"confloat", "conint"})
 _STRICT_BYTES: Final = ("pydantic", "StrictBytes")
-_ANY: Final = ("typing", "Any")
-_NULL_NAMES: Final = frozenset({
-    PythonTypeName("None"),
-    PythonTypeName("object"),
-    PythonTypeBoundName("Any", *_ANY),
-})
+_TYPING: Final = ("typing", "typing_extensions")
+_ANY: Final = frozenset((module, "Any") for module in _TYPING)
+_LITERAL: Final = frozenset((module, "Literal") for module in _TYPING)
+_NONE: Final = PythonTypeName("None")
+_NULL_NAMES: Final = frozenset({_NONE, PythonTypeName("object")})
 _STRICT_KEYWORD: Final = ("strict", LiteralScalar(kind="bool", value=True))
 _DOCUMENTATION: Final = frozenset({"title", "description", "examples", "deprecated"})
 _NULL: Final = LiteralScalar("none", None)
@@ -1137,14 +1141,14 @@ class Planner:  # noqa: PLR0904
 
         Any value does without a type or as Any; so does None, an enum with a null value, a union with such a member,
         a root model or alias whose annotation accepts None or whose type does, and an annotation the document
-        writes as None, a union with None, Any, or object.
+        writes as None, a union with None, Any under any alias, object, or a `Literal` with None.
         """
         null = False
         match value:
             case None | NoneType():
                 null = True
             case ImportedType():
-                null = (value.import_.from_, value.import_.import_) == _ANY
+                null = (value.import_.from_, value.import_.import_) in _ANY
             case BoundType():
                 null = _written_null(value.binding.expression)
             case UnionType():
@@ -1298,24 +1302,33 @@ class Planner:  # noqa: PLR0904
         )
 
     def primary(self, operation: OperationContract, responses: tuple[ResponseSpec, ...]) -> PrimarySpec | None:
-        """Choose the primary response and decide whether FastAPI's response_model sends bare values."""
-        exact = {int(response.status): response for response in responses if response.status.isdigit()}
+        """Choose the primary response and decide whether FastAPI's response_model sends bare values.
+
+        Without a choice it is `200`, else the lowest success status, else the `2XX` or `default` response at `200`,
+        else the lowest declared status; an operation that declares only other ranges has none.
+        """
         if (choice := self.primaries.get(operation.id.use_site.pointer)) is not None:
-            return self.chosen(operation, exact, choice)
-        if not exact:
-            return None
+            return self.chosen(operation, responses, choice)
+        exact = {int(response.status): response for response in responses if response.status.isdigit()}
         successful = [code for code in exact if _MIN_CONTENT_STATUS <= code <= _MAX_SUCCESS_STATUS]
-        status = _DEFAULT_STATUS if _DEFAULT_STATUS in exact else min(successful or exact)
-        response = exact[status]
+        status = _DEFAULT_STATUS if _DEFAULT_STATUS in exact or not successful else min(successful)
+        if (response := _declaring(responses, status)) is None and exact:
+            status = min(exact)
+            response = exact[status]
+        if response is None:
+            return None
         media = default_media(response)
         decision = _primary_decision(operation, status, media)
         return PrimarySpec(status=status, response=response, media=media, decision=decision, null=response.null)
 
     def chosen(
-        self, operation: OperationContract, exact: dict[int, ResponseSpec], choice: ResponseChoice
+        self, operation: OperationContract, responses: tuple[ResponseSpec, ...], choice: ResponseChoice
     ) -> PrimarySpec | None:
-        """Return the explicitly chosen primary response, reporting a choice that names no declared response."""
-        response = exact.get(choice.status_code)
+        """Return the explicitly chosen primary response, reporting a choice that names no declared response.
+
+        The chosen status takes the response that declares it: exactly, by its range, or as `default`.
+        """
+        response = _declaring(responses, choice.status_code)
         media = None if response is None else default_media(response)
         if response is not None and choice.media_type is not None:
             wanted = _normalized(choice.media_type)
@@ -1576,10 +1589,24 @@ def _constrained(value: TypeView, constraints: tuple[tuple[str, TypeArgument], .
 
 
 def _written_null(expression: PythonTypeExpr) -> bool:
-    """Return whether an annotation written in the document accepts None: None, Any, object, or a union of one."""
-    if isinstance(expression, PythonTypeUnion):
-        return any(map(_written_null, expression.items))
-    return expression in _NULL_NAMES
+    """Return whether an annotation written in the document accepts None, by the imports its names come from.
+
+    None, object, Any under any alias, a union with such a member, and a `Literal` with a None value do.
+    """
+    null = expression in _NULL_NAMES
+    match expression:
+        case PythonTypeUnion():
+            null = any(map(_written_null, expression.items))
+        case PythonTypeBoundName():
+            null = (expression.import_from, expression.import_name) in _ANY
+        case PythonTypeSubscript() if (
+            isinstance(base := expression.base, PythonTypeBoundName)
+            and (base.import_from, base.import_name) in _LITERAL
+        ):
+            null = _NONE in expression.arguments
+        case _:
+            pass
+    return null
 
 
 def _strict(value: TypeView) -> bool:
@@ -1627,11 +1654,15 @@ def _slotted(argument: Argument, slots: Mapping[str, str]) -> Argument:
     return replace(argument, native=replace(native, alias=slot))
 
 
+def _declaring(responses: tuple[ResponseSpec, ...], status: int) -> ResponseSpec | None:
+    """Return the response that declares a status: exact, then the same status class, then default."""
+    declared = {response.status: response for response in responses}
+    return declared.get(str(status)) or declared.get(f"{status // 100}XX") or declared.get("default")
+
+
 def _registration(responses: tuple[ResponseSpec, ...], primary: PrimarySpec | None) -> int:
     if primary is not None:
         return primary.status
-    if any(response.status == "default" for response in responses):
-        return _DEFAULT_STATUS
     ranges = (int(response.status[0]) * 100 for response in responses if response.status.endswith("XX"))
     return min(ranges, default=_DEFAULT_STATUS)
 

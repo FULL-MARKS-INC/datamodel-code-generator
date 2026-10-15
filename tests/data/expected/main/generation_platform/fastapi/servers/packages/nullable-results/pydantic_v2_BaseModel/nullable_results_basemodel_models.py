@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, RootModel, constr
+from typing_extensions import Any as Any_1
 from typing_extensions import TypeAliasType
 
 
@@ -26,6 +27,14 @@ class Color(Enum):
     red = 'red'
     blue = 'blue'
     NoneType_None = None
+
+
+class Ok(RootModel[Literal['ok', None]]):
+    root: Literal['ok', None]
+
+
+class AnyAlias(RootModel[Any_1]):
+    root: Any_1
 
 
 TextsGetQueryCaseParameter = TypeAliasType("TextsGetQueryCaseParameter", str)
@@ -93,3 +102,29 @@ class MemosPostRequest(BaseModel):
 
 class MemosPostResponse(BaseModel):
     text: str
+
+
+RangesGetQueryCaseParameter = TypeAliasType("RangesGetQueryCaseParameter", str)
+
+
+class RangesGetResponse(RootModel[str | None]):
+    root: str | None
+
+
+AcceptedGetQueryCaseParameter = TypeAliasType("AcceptedGetQueryCaseParameter", str)
+
+
+DefaultsGetQueryCaseParameter = TypeAliasType("DefaultsGetQueryCaseParameter", str)
+
+
+ErrorsGetQueryCaseParameter = TypeAliasType("ErrorsGetQueryCaseParameter", str)
+
+
+class ErrorsGetResponse(RootModel[str]):
+    root: str
+
+
+OksGetQueryCaseParameter = TypeAliasType("OksGetQueryCaseParameter", str)
+
+
+AnyAliasesGetQueryCaseParameter = TypeAliasType("AnyAliasesGetQueryCaseParameter", str)

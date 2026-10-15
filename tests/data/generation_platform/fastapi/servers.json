@@ -1565,6 +1565,11 @@
     "config": {
       "server_handler_modes": {
         "/paths/~1lists/get": "async"
+      },
+      "server_primary_responses": {
+        "/paths/~1accepted/get": {
+          "status_code": 202
+        }
       }
     },
     "requests": [
@@ -1733,6 +1738,58 @@
         "method": "POST",
         "url": "/memos?case=none",
         "json": {}
+      },
+      {
+        "method": "GET",
+        "url": "/ranges?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/ranges?case=word"
+      },
+      {
+        "method": "GET",
+        "url": "/accepted?case=bare"
+      },
+      {
+        "method": "GET",
+        "url": "/accepted?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/defaults?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/defaults?case=bare"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=word"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=client-error"
+      },
+      {
+        "method": "GET",
+        "url": "/oks?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/oks?case=undeclared"
+      },
+      {
+        "method": "GET",
+        "url": "/any-aliases?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/any-aliases?case=numbers"
       }
     ],
     "package_snapshots": [
@@ -2058,6 +2115,58 @@
       {
         "method": "GET",
         "url": "/notes?case=word"
+      },
+      {
+        "method": "GET",
+        "url": "/ranges?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/ranges?case=word"
+      },
+      {
+        "method": "GET",
+        "url": "/accepted?case=bare"
+      },
+      {
+        "method": "GET",
+        "url": "/accepted?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/defaults?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/defaults?case=bare"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=word"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/errors?case=client-error"
+      },
+      {
+        "method": "GET",
+        "url": "/oks?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/oks?case=undeclared"
+      },
+      {
+        "method": "GET",
+        "url": "/any-aliases?case=none"
+      },
+      {
+        "method": "GET",
+        "url": "/any-aliases?case=numbers"
       }
     ],
     "package_snapshots": []
@@ -5545,6 +5654,94 @@
         "json": {
           "note": "n"
         }
+      },
+      {
+        "method": "POST",
+        "url": "/multi",
+        "content": "null",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi",
+        "content": " null\n",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi",
+        "json": {
+          "name": "a"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi",
+        "content": "null",
+        "headers": {
+          "Content-Type": "text/plain"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi-optional",
+        "content": "null",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi-optional",
+        "content": " null\n",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi-optional",
+        "json": {
+          "name": "a"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/multi-optional",
+        "content": "null",
+        "headers": {
+          "Content-Type": "text/plain"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/oks",
+        "content": "null",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/oks",
+        "json": "ok"
+      },
+      {
+        "method": "POST",
+        "url": "/any-aliases",
+        "content": "null",
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      {
+        "method": "POST",
+        "url": "/any-aliases",
+        "json": 1
       }
     ],
     "package_snapshots": [

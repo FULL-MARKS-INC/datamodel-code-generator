@@ -12175,7 +12175,7 @@ arrives as `pet_id`, since the preset turns on snake-case field names.
 A method returns one of three things:
 
 - the model of its *primary response*, the response a bare return value takes: `200` when the operation declares
-  it, or else its lowest success status, such as `201` for `create_pet`;
+  it, or else its lowest success status, such as `201` for `create_pet`, or else its `2XX` or `default` response;
 - an `HTTPResult` for another status or extra headers, such as the `404` that `get_pet` declares;
 - a Starlette `Response`, sent as it is.
 
@@ -12505,7 +12505,8 @@ another status or extra headers. For a status the operation declares, exactly, b
 `get_pet` in the [quick start](#4-implement-the-operations) does.
 
 A status the operation does not declare is sent unchecked: the body is encoded as JSON without validation, and
-`HTTPResult(404)` without a body sends an empty `404`.
+`HTTPResult(404)` without a body sends an empty `404`. A success status that declares content always sends content, so
+`HTTPResult(200)` without a body sends `None` through that response's model; see [Responses](#responses).
 
 A Starlette `Response` is sent as it is, for anything else, such as another media type or repeated headers. See
 [Responses](#responses) for `null` bodies and empty responses.
@@ -13180,13 +13181,16 @@ numbers, and booleans (`--strict-types`), repeated path placeholders, request bo
 and binary bodies, multipart forms, and forms of the `pydantic_v2.dataclass` backend. A multipart form body reaches
 the method as its model, with uploads read to `bytes`.
 
-FastAPI takes the JSON `null` of a required body for an omitted one, so an adapter also reads a required JSON body
-whose model type accepts `null`, such as a `nullable: true` string, a union with `null`, or a schema of any value: the
-method receives what the model validates `null` as, `None` or the root model that holds it. `--force-optional` makes
-every root model and type alias accept `null`, so every required JSON body of one, such as a string, an array, or a
-union, is read this way. A required JSON body whose type rejects `null` stays FastAPI's and answers `null` with a
-`missing` record at `["body"]`, and an optional one stays FastAPI's too: its method receives `None` for `null` as for
-an omitted body.
+FastAPI takes the JSON `null` of a required body for an omitted one, so an adapter also reads a required JSON body whose
+model type accepts `null`, such as a `nullable: true` string, a union with `null`, a schema of any value, or an
+`x-python-type` that does, such as `typing_extensions.Any` or `typing.Literal['ok', None]`: the method receives what the
+model validates `null` as, `None` or the root model that holds it. `--force-optional` makes every root model and type
+alias accept `null`, so every required JSON body of one, such as a string, an array, or a union, is read this way. A
+required JSON body whose type rejects `null` stays FastAPI's and answers `null` with a `missing` record at `["body"]`,
+and an optional one stays FastAPI's too: its method receives `None` for `null` as for an omitted body. An adapter that
+reads a JSON body for another reason, such as several media types, reads a `null` its model rejects the same way: `422`
+with a `missing` record at `["body"]` for a required body, and `None` for an optional one, with `None` as the media
+type, as for an omitted body.
 
 A body that an adapter reads needs a Content-Type the operation declares: `application/json` with or without
 parameters for a body declared as `application/json`, but not another `+json` type, which FastAPI's own reading
@@ -13270,10 +13274,13 @@ and for an enum whose values mix kinds, such as `enum: [1, a]`, generation stops
 A service method returns the value of its primary response, which FastAPI validates and serializes with the route's
 `response_model` when the response is JSON (`by_alias=True`, `exclude_unset=True`). Without a
 [`--server-primary-responses`](cli-reference/target-generation-options.md#server-primary-responses) entry, the
-primary response is `200` when the operation declares it, or else its lowest success status, or else its lowest
-status. A bare value is sent with the `media_type` its entry names, such as `text/plain` of a response that also
-declares JSON, and validated and serialized with that media type's model; without a `media_type`, it takes the
-response's default media type.
+primary response is `200` when the operation declares it, or else its lowest success status, or else its `2XX` or
+else its `default` response, sent as `200`, or else its lowest status. An entry's `status_code` takes the response
+that declares it exactly, by its range such as `2XX`, or as `default`. An operation that declares only other ranges,
+such as `4XX`, has no primary response: a bare value, `None` included, answers `500` with a `ResponseValidationError`,
+so its method returns an `HTTPResult` or a `Response`. A bare value is sent with the `media_type` its entry names,
+such as `text/plain` of a response that also declares JSON, and validated and serialized with that media type's
+model; without a `media_type`, it takes the response's default media type.
 
 A `text/*` response labels text it encodes with the charset it encodes it in: the one its media type declares, or
 else `utf-8`. Bytes a method returns for a `text/*` response are sent as they are, with the media type the document
@@ -13286,11 +13293,15 @@ without validation, and without a body as an empty response. A Starlette `Respon
 else, such as another media type or repeated headers. A response leaves out the fields its model leaves unset, so a
 `pydantic_v2.dataclass` sends `null` only for a field set to `None`, and a field holding `MISSING` not at all.
 
-A declared response whose default media type is JSON and whose model type accepts `null`, as for the request bodies
-above, sends `None` as the JSON body `null` with that media type: a bare `None` for the primary response, and an
-`HTTPResult` without a body or with `None` for an exact status, a range such as `2XX`, or `default`. Under any other
-response an `HTTPResult` without a body is an empty response without a `Content-Type`, as it always is for a HEAD
-operation and for the statuses `1XX`, `204`, `205`, and `304`.
+A success (`2XX`) response that declares content always sends content. `None`, as a bare value or as an `HTTPResult`
+without a body, goes through the response's model like any other value, as FastAPI's `response_model` takes it: a
+response whose default media type is JSON and whose model type accepts `null`, as for the request bodies above, sends
+the JSON body `null`, and any other one answers `500` with a `ResponseValidationError`. This holds for a status the
+response declares exactly, by a range such as `2XX`, or as `default`. Any other status sends `None` as `null` under a
+JSON response whose model accepts `null`, and otherwise as an empty response without a `Content-Type`, such as
+`HTTPResult(404)` for a declared `404`, so the client raises the status error with an empty body. A status that no
+response declares, or whose response declares no content, sends `None` as an empty response too, as a HEAD operation
+and the statuses `1XX`, `204`, `205`, and `304` always do.
 
 ### Registration
 

@@ -28,6 +28,12 @@ OperationDependencies = TypedDict(
         'get_thing': Sequence[params.Depends],
         'get_note': Sequence[params.Depends],
         'post_memo': Sequence[params.Depends],
+        'get_range': Sequence[params.Depends],
+        'get_accepted': Sequence[params.Depends],
+        'get_default': Sequence[params.Depends],
+        'get_error': Sequence[params.Depends],
+        'get_ok': Sequence[params.Depends],
+        'get_any_alias': Sequence[params.Depends],
     },
     total=False,
 )
@@ -118,4 +124,53 @@ class PostMemo:
     )
     RESPONSES: Final = OperationResponses(
         responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.MemosPostResponse | None, null=True)},
+    )
+
+
+class GetRange:
+    """Plans of the get_range operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'2XX': Declared(media_type='application/json', model=nullable_results_basemodel_models.RangesGetResponse, null=True)},
+    )
+
+
+class GetAccepted:
+    """Plans of the get_accepted operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'2XX': Declared(media_type='application/json', model=nullable_results_basemodel_models.Thing)},
+    )
+
+
+class GetDefault:
+    """Plans of the get_default operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'default': Declared(media_type='application/json', model=nullable_results_basemodel_models.Thing)},
+    )
+
+
+class GetError:
+    """Plans of the get_error operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'4XX': Declared(media_type='text/plain', kind='text', model=nullable_results_basemodel_models.ErrorsGetResponse)},
+        bare=False,
+    )
+
+
+class GetOk:
+    """Plans of the get_ok operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.Ok, null=True), '4XX': Declared(media_type='application/json', model=nullable_results_basemodel_models.Ok, null=True)},
+    )
+
+
+class GetAnyAlias:
+    """Plans of the get_any_alias operation."""
+
+    RESPONSES: Final = OperationResponses(
+        responses={'200': Declared(media_type='application/json', model=nullable_results_basemodel_models.AnyAlias, null=True)},
     )

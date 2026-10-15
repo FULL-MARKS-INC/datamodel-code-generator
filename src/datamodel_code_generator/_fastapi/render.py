@@ -474,12 +474,13 @@ class BodyPlan:
 
 @dataclass(frozen=True, slots=True)
 class ResponsesPlan:
-    """The responses plan of one operation: the declared responses, the primary status and chosen media, and HEAD."""
+    """The responses plan of one operation: declared responses, primary status and media, HEAD, and bare values."""
 
     responses: str
     primary: str
     media: str
     head: bool
+    bare: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -1145,12 +1146,18 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
         return [*self.bare(module, spec), result, module.name("fastapi.responses", "Response")]
 
     def bare(self, module: Module, spec: OperationSpec) -> list[str]:
-        """Return the members of the type a method returns bare: the primary payload, None, or nothing."""
+        """Return the members of the type a method returns bare: the primary payload, None, or nothing.
+
+        A payload that accepts null through its model, such as a nullable root model, also takes None.
+        """
         if (primary := spec.primary) is None:
             return []
         if (media := primary.media) is None or not _body_status(spec, str(primary.status)):
             return ["None"]
-        return [self.media_type(module, media)]
+        payload = self.media_type(module, media)
+        if primary.null and (value := _payload(media)) is not None and not _nullable(value):
+            return [payload, "None"]
+        return [payload]
 
     def contract(self) -> Templated:
         """Return the contract module: the dependency keys, and each operation's plans and request adapters."""
@@ -1220,7 +1227,13 @@ def _responses_plan(module: Module, spec: OperationSpec) -> ResponsesPlan:
             and _body_status(spec, status)
         ):
             media = _declared(module, chosen, null=primary.null)
-    return ResponsesPlan(responses="{" + ", ".join(responses) + "}", primary=status, media=media, head=spec.head)
+    return ResponsesPlan(
+        responses="{" + ", ".join(responses) + "}",
+        primary=status,
+        media=media,
+        head=spec.head,
+        bare=primary is not None,
+    )
 
 
 def _declared(module: Module, media: MediaSpec | None, *, null: bool) -> str:
@@ -1442,7 +1455,7 @@ def _response_description(spec: OperationSpec) -> object:
         return fact(primary.response.declaration, "description")
     responses = {response.status: response for response in spec.responses}
     status = str(spec.registration_status)
-    represented = responses.get("default", responses.get(f"{status[0]}XX"))
+    represented = responses.get(f"{status[0]}XX")
     return None if represented is None else fact(represented.declaration, "description")
 
 

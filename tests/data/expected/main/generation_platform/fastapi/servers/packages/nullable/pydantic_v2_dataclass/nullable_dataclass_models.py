@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import MISSING, Field
 from pydantic.dataclasses import dataclass
+from typing_extensions import Any as Any_1
 from typing_extensions import TypeAliasType
 
 
@@ -29,6 +30,12 @@ class Color(Enum):
     red = 'red'
     blue = 'blue'
     NoneType_None = None
+
+
+Ok = TypeAliasType("Ok", Literal['ok', None])
+
+
+AnyAlias = TypeAliasType("AnyAlias", Any_1)
 
 
 TextsPostRequest = TypeAliasType(
@@ -81,3 +88,9 @@ class UploadsPostRequest:
 @dataclass
 class ExtendedPostRequest(Item):
     note: str | MISSING = MISSING
+
+
+MultiPostRequest = TypeAliasType("MultiPostRequest", str)
+
+
+MultiOptionalPostRequest = TypeAliasType("MultiOptionalPostRequest", str)

@@ -411,6 +411,95 @@
      }
     }
    }
+  },
+  "/multi": {
+   "post": {
+    "operationId": "postMulti",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Item"
+       }
+      },
+      "text/plain": {
+       "schema": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done."
+     }
+    }
+   }
+  },
+  "/multi-optional": {
+   "post": {
+    "operationId": "postMultiOptional",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Item"
+       }
+      },
+      "text/plain": {
+       "schema": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done."
+     }
+    }
+   }
+  },
+  "/oks": {
+   "post": {
+    "operationId": "postOk",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Ok"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done."
+     }
+    }
+   }
+  },
+  "/any-aliases": {
+   "post": {
+    "operationId": "postAnyAlias",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnyAlias"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Done."
+     }
+    }
+   }
   }
  },
  "components": {
@@ -452,6 +541,14 @@
      "blue",
      null
     ]
+   },
+   "Ok": {
+    "type": "string",
+    "x-python-type": "typing.Literal['ok', None]"
+   },
+   "AnyAlias": {
+    "type": "string",
+    "x-python-type": "typing_extensions.Any"
    }
   }
  }

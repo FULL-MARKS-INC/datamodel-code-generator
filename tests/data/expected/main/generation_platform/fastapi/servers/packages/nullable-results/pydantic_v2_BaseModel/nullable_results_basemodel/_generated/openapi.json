@@ -377,6 +377,181 @@
      }
     }
    }
+  },
+  "/ranges": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getRange",
+    "responses": {
+     "2XX": {
+      "description": "A text or null under any success status.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/accepted": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getAccepted",
+    "responses": {
+     "2XX": {
+      "description": "A thing under any success status.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Thing"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/defaults": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getDefault",
+    "responses": {
+     "default": {
+      "description": "A thing under any status.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Thing"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/errors": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getError",
+    "responses": {
+     "4XX": {
+      "description": "A client error.",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/oks": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getOk",
+    "responses": {
+     "200": {
+      "description": "ok or null.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Ok"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "description": "ok or null.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Ok"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/any-aliases": {
+   "parameters": [
+    {
+     "name": "case",
+     "in": "query",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "operationId": "getAnyAlias",
+    "responses": {
+     "200": {
+      "description": "Any value.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnyAlias"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -418,6 +593,14 @@
      "blue",
      null
     ]
+   },
+   "Ok": {
+    "type": "string",
+    "x-python-type": "typing.Literal['ok', None]"
+   },
+   "AnyAlias": {
+    "type": "string",
+    "x-python-type": "typing_extensions.Any"
    }
   }
  }
