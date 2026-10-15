@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import inspect
 import sys
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeGuard, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, NoReturn, TypeAlias, TypeGuard, TypeVar, cast
 from urllib.parse import unquote_to_bytes
 
 from fastapi import APIRouter
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.params import Depends
 from fastapi.routing import APIRoute
 from starlette.concurrency import run_in_threadpool
@@ -30,6 +30,9 @@ if TYPE_CHECKING:
 
 MethodT = TypeVar("MethodT")
 _REQUEST_VALUES: Final = frozenset({"input", "ctx", "url"})
+_LOCATIONS: Final = {"path": 0, "query": 1, "header": 2, "cookie": 3}
+"""The order of FastAPI's records by location; a body comes after every parameter."""
+_REJECTED: Final = "datamodel_code_generator.rejected"
 _PERCENT: Final = ord("%")
 _SLASH: Final = "\udc2f"
 """Stands for an encoded slash while a route matches; no decoded path holds a lone surrogate."""
@@ -71,8 +74,84 @@ class RawPathRouter(APIRouter):
         return path, match, child_scope
 
 
+def malformed_request() -> HTTPException:
+    """Return the error for request data that no declared parameter or media form can represent."""
+    return HTTPException(status_code=400, detail="Invalid request")
+
+
+class ParameterReader:
+    """A dependency that reads parameters FastAPI cannot: its route reports the records it rejects with FastAPI's."""
+
+    __slots__ = ()
+
+
+class _RejectedReadError(RequestValidationError, AttributeError):
+    """The records of a Rejected value raised by reading a parameter value from it, which FastAPI answers with 422.
+
+    It is an AttributeError too, as reading an attribute raises it.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class Rejected:
+    """The records of the parameters a request carries in forms their declarations reject, left by a ParameterReader.
+
+    Whichever raises them first takes them: the route with FastAPI's own records, or the endpoint when FastAPI found
+    none, through `accepted` or by reading a value of the record it stands for, as a route of a custom template that
+    leaves `accepted` out does before it calls the method.
+    """
+
+    records: list[dict[str, object]]
+
+    def take(self) -> list[dict[str, object]]:
+        """Return the records, leaving none to raise again."""
+        records = self.records.copy()
+        self.records.clear()
+        return records
+
+    def __getattr__(self, name: str) -> NoReturn:
+        """Raise the records for a parameter value read from the record; a special name is missing, as elsewhere."""
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise _RejectedReadError(self.take())
+
+
+def reject(scope: MutableMapping[str, Any], records: list[dict[str, object]]) -> Rejected:
+    """Leave the records of rejected parameters on a request's scope, and return them as a Rejected value."""
+    scope[_REJECTED] = rejected = Rejected(records)
+    return rejected
+
+
 class RawPathRoute(APIRoute):
-    """An APIRoute of a RawPathRouter: it puts the slashes back in the path and its values before the endpoint runs."""
+    """An APIRoute of a RawPathRouter: it puts the slashes back in the path and its values before the endpoint runs.
+
+    A route with a ParameterReader dependency reports the records the reader leaves with FastAPI's own, and one with
+    header or cookie parameters that FastAPI reads answers 400 for a request whose value of one of them is not ASCII,
+    as a reader answers for the headers and cookies it reads.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        """Return FastAPI's handler, which checks the text of its headers and raises a reader's records with its own."""
+        handler = super().get_route_handler()
+        endpoint = self.dependant  # codespell:ignore dependant
+        headers = _names(endpoint.header_params, lower=True)
+        cookies = _names(endpoint.cookie_params, lower=False)
+        readers = any(isinstance(dependency.call, ParameterReader) for dependency in endpoint.dependencies)
+        if not (headers or cookies or readers):
+            return handler
+
+        async def reported(request: Request) -> Response:
+            if (headers or cookies) and not _ascii(request.scope["headers"], headers, cookies):
+                raise malformed_request()
+            try:
+                return await handler(request)
+            except RequestValidationError as error:
+                if not isinstance(left := request.scope.get(_REJECTED), Rejected) or not (records := left.take()):
+                    raise
+                merged = sorted([*error.errors(), *records], key=_location)
+                raise RequestValidationError(merged, body=error.body, endpoint_ctx=error.endpoint_ctx) from None
+
+        return reported
 
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Restore the decoded path and the path parameter values, then handle the request."""
@@ -112,6 +191,35 @@ def wire_named(names: Mapping[str, str]) -> type[RawPathRoute]:
             return named
 
     return WireNamedRoute
+
+
+def _names(fields: Iterable[Any], *, lower: bool) -> frozenset[bytes]:
+    """Return the names FastAPI reads parameters by, as raw header bytes: header names compare case-insensitively."""
+    return frozenset((field.alias.lower() if lower else field.alias).encode("latin-1", "replace") for field in fields)
+
+
+def _ascii(lines: Iterable[tuple[bytes, bytes]], headers: frozenset[bytes], cookies: frozenset[bytes]) -> bool:
+    """Return whether the request's values of the named headers and cookies are ASCII, as RFC 9110 and 6265 write them.
+
+    A cookie is found as Starlette finds it: a `;`-separated pair of a `Cookie` header, its name stripped.
+    """
+    for name, value in lines:
+        if value.isascii():
+            continue
+        if name in headers or (
+            name == b"cookie"
+            and any(
+                separator and key.strip() in cookies and not text.isascii()
+                for key, separator, text in (pair.partition(b"=") for pair in value.split(b";"))
+            )
+        ):
+            return False
+    return True
+
+
+def _location(record: Mapping[str, Any]) -> int:
+    """Return where a record's location comes in FastAPI's order: path, query, header, and cookie, then the rest."""
+    return _LOCATIONS.get((record.get("loc") or ("",))[0], len(_LOCATIONS))
 
 
 def _segmented(scope: Scope) -> str | None:

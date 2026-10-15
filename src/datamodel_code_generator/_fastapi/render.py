@@ -115,16 +115,17 @@ _CREDENTIALS: Final[dict[SchemeKind, str]] = {
     "openid": "the bearer token of the `Authorization` header, as a string",
     "custom": "no FastAPI class reads it: override its dependency to return the credential",
 }
-_SCHEME_CLASSES: Final[dict[SchemeKind, str]] = {"bearer": "HTTPBearer", "digest": "HTTPDigest"}
 _RUNTIME_CLASSES: Final[dict[SchemeKind, str]] = {
     "basic": "OptionalHTTPBasic",
+    "bearer": "ASCIIHTTPBearer",
+    "digest": "ASCIIHTTPDigest",
     "oauth2": "OAuth2Bearer",
     "openid": "OpenIdConnectBearer",
 }
-_API_KEY_CLASSES: Final = {"header": "APIKeyHeader", "query": "APIKeyQuery", "cookie": "APIKeyCookie"}
+_API_KEY_CLASSES: Final = {"header": "ASCIIAPIKeyHeader", "cookie": "ASCIIAPIKeyCookie"}
 _CHALLENGES: Final[dict[SchemeKind, str]] = {
     "api_key": "APIKey",
-    "basic": "Basic",
+    "basic": 'Basic charset="UTF-8"',
     "bearer": "Bearer",
     "digest": "Digest",
     "oauth2": "Bearer",
@@ -388,11 +389,17 @@ class Principal:
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
-    """The endpoint function FastAPI calls for one operation."""
+    """The endpoint function FastAPI calls for one operation.
+
+    `accepted` names the call that returns the adapter parameter record, the parameter `record`, or raises the records
+    of its rejected values; it is empty for an operation without adapter parameters.
+    """
 
     name: str
     asynchronous: bool
     parameters: tuple[Parameter, ...]
+    record: str
+    accepted: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -944,9 +951,11 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
             for argument in spec.arguments
             if argument.kind not in {"media_type", "adapter"}
         ]
+        accepted = ""
         if any(argument.kind == "adapter" for argument in spec.arguments):
             annotated, depends = module.name("typing", "Annotated"), module.name("fastapi", "Depends")
             parameters.append(Parameter(record, f"{annotated}[{plan}.Parameters, {depends}({plan}.PARAMETERS)]"))
+            accepted = module.local("_runtime.server.requests", "accepted")
         call = Call(
             module.local("_runtime.server.responses", "dispatch"),
             tuple(Keyword(argument.name, _value(spec, argument, record)) for argument in spec.arguments),
@@ -962,7 +971,7 @@ class ServerRenderer:  # ruff: ignore[too-many-public-methods]
             handler=handler,
             lookup=lookup,
             principal=None if not principal else self.principal(module, spec, names),
-            endpoint=Endpoint(spec.python_name, asynchronous, tuple(parameters)),
+            endpoint=Endpoint(spec.python_name, asynchronous, tuple(parameters), record, accepted),
             call=call,
             registration=_registration(module, spec),
         )
@@ -1544,13 +1553,13 @@ def _scheme(module: Module, scheme: SchemeSpec, name: str) -> Scheme:
         return Scheme(name, escape_docstring(scheme.name) or "", "", ())
     facts = dict(scheme.declaration.facts)
     keywords: list[Keyword] = []
+    runtime = _API_KEY_CLASSES.get(str(scheme.location)) if scheme.kind == "api_key" else _RUNTIME_CLASSES[scheme.kind]
     if scheme.kind == "api_key":
         keywords.append(Keyword("name", repr(scheme.parameter)))
-        cls = module.name("fastapi.security", _API_KEY_CLASSES[str(scheme.location)])
-    elif (runtime := _RUNTIME_CLASSES.get(scheme.kind)) is not None:
-        cls = module.local("_runtime.server.security", runtime)
+    if runtime is None:
+        cls = module.name("fastapi.security", "APIKeyQuery")
     else:
-        cls = module.name("fastapi.security", _SCHEME_CLASSES[scheme.kind])
+        cls = module.local("_runtime.server.security", runtime)
     keywords.extend(
         Keyword(keyword, repr(value))
         for keyword in _SCHEME_FACTS.get(scheme.kind, ("description",))

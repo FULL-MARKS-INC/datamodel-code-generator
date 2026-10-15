@@ -656,6 +656,10 @@ A status the operation does not declare is sent unchecked: the body is encoded a
 `HTTPResult(404)` without a body sends an empty `404`. A success status that declares content always sends content, so
 `HTTPResult(200)` without a body sends `None` through that response's model; see [Responses](#responses).
 
+Header names must be tokens and header values ASCII header text, as RFC 9110 writes them: tab, space, and visible
+ASCII, without whitespace at either end, as the generated client sends them. A result with another header, such as
+`headers={"X-Out": "café"}`, answers `500` with a `ResponseValidationError` that names the header.
+
 A Starlette `Response` is sent as it is, for anything else, such as another media type or repeated headers. See
 [Responses](#responses) for `null` bodies and empty responses.
 
@@ -1403,6 +1407,18 @@ spellings than FastAPI does for a parameter it reads itself: integers and number
 `--strict-types int float bool` therefore narrows what those parameters accept. A repeated single value is taken as
 FastAPI takes it, by adapters too: the last query value, cookie, form field, and object member, and the first header.
 
+Header values are ASCII, as RFC 9110 writes header text and as the generated client sends them. A request that sends a
+header parameter of the operation with a byte outside ASCII, in any of its occurrences, answers `400 {"detail":
+"Invalid request"}`, whether FastAPI or an adapter reads it: FastAPI alone would read it as Latin-1. A header with JSON
+`content` is ASCII JSON text too, whose escapes such as `\u00e9` stand for other characters. The check covers the
+operation's header parameters, not the headers of your own dependencies; a security scheme's credential that is not
+ASCII presents no credential instead, as [Security](#security) describes.
+
+Cookie values are ASCII too, the cookie octets of RFC 6265, which is how the generated client sends them. A request
+that sends a cookie the operation reads with a byte outside ASCII in its name or value answers the same `400`, whether
+FastAPI or an adapter reads it; other cookies of the request are not read, so they may hold anything. An array or
+object cookie keeps the `form` style's percent-encoding of UTF-8 text.
+
 A parameter with JSON `content`, like a JSON part of a multipart form, is parsed by its model's
 `TypeAdapter.validate_json`, as a JSON body is, so pydantic's JSON rules apply: a number is read as a float first, so
 a `Decimal` field gets the float's value (`0.1000000000000000000000000001` becomes `Decimal("0.1")`) and `NaN` and
@@ -1439,7 +1455,9 @@ serializes its body with the model and default media type of the response that d
 range such as `2XX`, or as `default`. A status that no response declares is sent unchecked, its body encoded as JSON
 without validation, and without a body as an empty response. A Starlette `Response` is sent as it is, for anything
 else, such as another media type or repeated headers. A response leaves out the fields its model leaves unset, so a
-`pydantic_v2.dataclass` sends `null` only for a field set to `None`, and a field holding `MISSING` not at all.
+`pydantic_v2.dataclass` sends `null` only for a field set to `None`, and a field holding `MISSING` not at all. The
+headers of an `HTTPResult` must be ASCII header text under token names, else the result fails as one its response
+model rejects; a Starlette `Response` sends its headers unchecked.
 
 A success (`2XX`) response that declares content always sends content. `None`, as a bare value or as an `HTTPResult`
 without a body, goes through the response's model like any other value, as FastAPI's `response_model` takes it: a
@@ -1470,16 +1488,21 @@ connect an `authorize` callback and your own `FastAPI` application.
 
 ### Security
 
-`security.py` declares one FastAPI dependency for each security scheme the selected operations use: `APIKeyHeader`,
-`APIKeyQuery`, or `APIKeyCookie` for an API key, `HTTPBearer` or `HTTPDigest` for an HTTP scheme, and, for HTTP Basic,
-OAuth2 with the declared flows, and OpenID Connect, the runtime's subclasses of FastAPI's `HTTPBasic`, `OAuth2`, and
-`OpenIdConnect`, each with `auto_error=False`. A scheme no FastAPI class reads, such as `mutualTLS`, is a function
+`security.py` declares one FastAPI dependency for each security scheme the selected operations use: FastAPI's
+`APIKeyQuery` for an API key in the query, and the runtime's subclasses of FastAPI's `APIKeyHeader`, `APIKeyCookie`,
+`HTTPBearer`, `HTTPDigest`, `HTTPBasic`, `OAuth2` with the declared flows, and `OpenIdConnect` for the other schemes,
+each with `auto_error=False`. A scheme no FastAPI class reads, such as `mutualTLS`, is a function
 that returns `None`; replace it, or any other scheme, with `app.dependency_overrides[security.<scheme>]`. The
 credentials are what the dependencies return: a string for an API key, the token of an `Authorization: Bearer`
 header for OAuth2 and OpenID Connect, as `OAuth2PasswordBearer` reads it, `HTTPBasicCredentials`, or
 `HTTPAuthorizationCredentials`. Each HTTP, OAuth2, and OpenID Connect dependency presents no credential for an
 `Authorization` header of another scheme, so a Basic header satisfies no OAuth2 requirement, and the HTTP Basic one
-presents none for a malformed Basic header either, so another requirement set can still admit the request.
+presents none for a malformed Basic header either, so another requirement set can still admit the request. The HTTP
+Basic one reads the user name and password as UTF-8, the charset of RFC 7617 that the generated client encodes them
+in, where FastAPI's `HTTPBasic` reads ASCII only; Base64 that is not valid, or that does not decode to UTF-8 text with
+a `:`, is a malformed Basic header. A credential in a header or a cookie is ASCII, as header text and cookie octets
+are: an API key, a bearer token, or Digest credentials with a byte outside ASCII present no credential either, so the
+request answers `401` unless another requirement set admits it.
 
 `create_app` and `build_router` of a package with secured operations take an
 `authorize(requirement_sets, credentials)` callback, which may be a coroutine function. Each secured operation calls
@@ -1487,7 +1510,9 @@ it once with its security requirement sets whose every scheme presented a creden
 credentials by scheme name; the handler receives the principal it returns as the keyword argument
 `principal: PrincipalT_contra`, and it rejects a request by raising `HTTPException`. A request that presents no
 complete requirement set answers `401`, unless the operation also accepts no credentials, in which case the handler
-receives `None`, typed `PrincipalT_contra | None`.
+receives `None`, typed `PrincipalT_contra | None`. The `401` carries a `WWW-Authenticate` challenge for each kind of
+scheme the operation accepts, such as `APIKey, Bearer, Basic charset="UTF-8"`: the Basic challenge names UTF-8, the
+charset RFC 7617 lets a server ask for, in which the server reads Basic credentials.
 
 A service Protocol with secured operations is generic, `PetsService(Protocol[PrincipalT_contra])`, so
 `create_app(pets=..., authorize=...)` ties the principal type of the services to the return type of `authorize`. The
@@ -1548,7 +1573,10 @@ records without their `input` and `ctx`, and without pydantic's `url`, which Fas
 response carries each record's `type`, `loc`, and `msg`, so it does not return the rejected value as such. `loc`
 and `msg` are still pydantic's and can hold text the client chose: a key of a mapping or an unexpected field in
 `loc`, a discriminator tag in `msg`, and whatever a validator of your own puts in its error message. Parameters and
-bodies that adapters read answer with the same three keys.
+bodies that adapters read answer with the same three keys, and in the same response: when parameters that FastAPI
+reads and parameters that an adapter reads both fail, the `422` carries the records of all of them, ordered as FastAPI
+orders its own, by location (path, query, header, cookie, then the body), FastAPI's records of a location before the
+adapter's.
 
 `loc` names what the request carries, not the method argument it becomes: a parameter by its location and its name
 in the source document, such as `["path", "item-id"]`, `["query", "page[size]"]`, or `["header", "X-Trace-Id"]`,
@@ -1565,7 +1593,8 @@ exception handler receives them, so FastAPI's default handler and a handler of y
   validation_error_handler)`, imported from the generated package.
 - Other errors are FastAPI's: `404` and `405` bodies, and an opaque `500` for an exception in a service method or a
   result that fails its response model. That error goes to the server log with the values it rejected. Inputs that
-  adapters read also answer `400 {"detail": "Invalid request"}` and `415 {"detail": "Unsupported media type"}`.
+  adapters read also answer `400 {"detail": "Invalid request"}` and `415 {"detail": "Unsupported media type"}`, and
+  so does a header parameter whose value is not ASCII.
 - FastAPI's own document (`source_openapi=False`) describes validation errors with FastAPI's `ValidationError`
   schema, in which `loc`, `msg`, and `type` are required and `input` and `ctx` are optional, so these bodies
   conform to it; the source document describes the responses the source declares.
@@ -1657,8 +1686,11 @@ module's import block:
 `router.jinja2` receives one `route` for each operation, with its local names (`adder`, `router`, `wiring`,
 `service`, `handler`), its `lookup` of the service method, whose `keywords` name the arguments the route passes for
 the startup check, which an override without them leaves out, its `principal` dependency or none, its `endpoint` with
-the endpoint's `parameters` (`name`, `annotation`, `default`), the service method `call` with its `arguments`, and
-its `registration`, whose `keywords` hold the optional `add_api_route` arguments. A builtin template writes each
+the endpoint's `parameters` (`name`, `annotation`, `default`) and, for an operation with adapter parameters, the
+`accepted` call that the endpoint passes its `record` of them through before it calls the method, the service method
+`call` with its `arguments`, and its `registration`, whose `keywords` hold the optional `add_api_route` arguments. An
+override that leaves the `accepted` call out still answers `422` when only adapter parameters are rejected, as long as
+it reads a value of the record before it calls the method, as the builtin template's arguments do. A builtin template writes each
 parameter, argument, and route entry on its own line, and leaves the type annotations and plan values on one line for
 the formatter.
 
