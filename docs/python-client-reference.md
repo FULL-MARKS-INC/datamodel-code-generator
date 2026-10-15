@@ -838,17 +838,20 @@ member repeats, one part for each item, when its type is an array. A value whose
 string as it is, a number or a boolean as JSON writes it. A value whose type has none is one `application/json` part:
 an object, a mapping, a union of a string and an object, an enum of mixed kinds, or a union of an array and another
 type such as `string | string[]`, whose array is then one part rather than one for each item. A member without a
-type is written by its value: a string as it is, an object or an array as JSON. A media type that the member's
+type, whose schema is `{}`, takes any value, and that value is one `application/json` part as well, a string or an
+array included; an array whose items have no type has one such part for each item. A media type that the member's
 `encoding` declares takes precedence. A multipart response is read by the same rule, and a part that names a JSON
-media type is read as JSON.
+media type is read as JSON; a part of a member without a type that names none is read as text.
 
 The properties a schema types without declaring them, with `additionalProperties: {...}`, follow the same rule under
 whatever names a body gives them, by the type of their values: an object is one `application/json` part, an array of
 objects one for each item, and a union of an array and another type one part. The type is the one the model keeps
 them as, in a field of its own or one it inherits from a schema combined with `allOf`, and for a model without such a
 field, the type of their schema, the form's own or that of a schema it combines with `allOf`, also when
-`--reuse-model` makes the form's model inherit an equal one whose schema types them otherwise. A multipart response
-reads them by that type too. A URL-encoded form writes them as text of that type's kind, one pair for each item of an
+`--reuse-model` makes the form's model inherit an equal one whose schema types them otherwise. Other properties the
+schema allows without a type, with `additionalProperties: {}`, `true`, or no `additionalProperties`, are each one
+`application/json` part, as a member without a type is, a string or an array included. A multipart response reads
+typed ones by their type too. A URL-encoded form writes them as text of that type's kind, one pair for each item of an
 array, and generation stops with `A parameter value needs one unambiguous scalar kind` at the `additionalProperties`
 that types them when the type has none. The generated FastAPI server reads the members of form bodies, these other
 properties included, by this rule too, and stops for a member or other properties without one scalar kind with the

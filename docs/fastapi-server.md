@@ -1355,12 +1355,15 @@ A multipart part is text when the type of its member, or of the member's items w
 scalar kind, with one part for each item of an array. A part of any other member is JSON, as the generated client
 sends it: an object, a mapping, each item of an array of objects, a union of a string and an object, an enum of mixed
 kinds, or a union of an array and another type, whose array is one part. So is a part of a member whose `encoding`
-names one JSON media type and no style, such as `contentType: application/json`, a scalar included. A JSON part is
-parsed by `TypeAdapter.validate_json` whatever media type the part names and whether it arrives as a field or as a
-file: of the member's model field, so the field's own constraints and `discriminator` apply and a tag no member of the
-union has answers one `union_tag_invalid` record, or, for a member that repeats, of its items' type. A part that is not
-JSON, or that the type rejects, answers `422` with its records at `["body", name]`, or at `["body", name, index]` for a
-member that repeats, before the rest of the body is validated.
+names one JSON media type and no style, such as `contentType: application/json`, a scalar included, and of a member
+without a type, whose schema is `{}`, or of each item of an array whose items have none. A JSON part is parsed by
+`TypeAdapter.validate_json` whatever media type the part names and whether it arrives as a field or as a file, since
+the server cannot see the media type of a part that is not a file: of the member's model field, so the field's own
+constraints and `discriminator` apply and a tag no member of the union has answers one `union_tag_invalid` record, or,
+for a member that repeats, of its items' type. A part that is not JSON, or that the type rejects, answers `422` with
+its records at `["body", name]`, or at `["body", name, index]` for a member that repeats, before the rest of the body
+is validated. A member without a type takes any value, so it keeps a part that is not JSON as it arrives instead: text
+for a field, bytes for a file.
 
 A schema can type the properties it does not declare, with `additionalProperties: {...}`. Their parts come under any
 name no declared member has and are read by the same rule, by the type the model keeps their values as, in a field of
@@ -1369,8 +1372,11 @@ each item of an array, or JSON, whose records name the part as a declared member
 URL-encoded form, which an adapter then reads. A model that validates its fields by name too, such as one
 `--allow-population-by-field-name` configures, also takes a part or field named like a property's field, such as
 `max_age` beside `maxAge`, as that property, unless another property has that name; any other name is one of the
-other properties. Without such a schema, a part the schema does not declare is text, the last of its name, and the
-model keeps it, ignores it, or refuses it, as its options and `additionalProperties: false` say. The `pydantic_v2.dataclass` models have no field for other properties, so the
+other properties. Other properties the schema allows without a type, with `additionalProperties: {}`, `true`, or no
+`additionalProperties`, are values without a type like a member without one: a part under a name no declared member
+has is JSON, the last of its name, kept as it arrives when it is not JSON, and in a URL-encoded form a field is text.
+The model keeps such a value, ignores it, or refuses it, as its options and `additionalProperties: false` say. The
+`pydantic_v2.dataclass` models have no field for other properties, so the
 server reads typed ones by the type their schema gives them, the form's own or that of a schema it combines with
 `allOf`, also when `--reuse-model` makes the form's model inherit an equal one whose schema types them otherwise. That
 type checks JSON parts and text alike, answering `422` with the records of every value it rejects at `["body", name]`,
