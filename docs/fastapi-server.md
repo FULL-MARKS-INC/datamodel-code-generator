@@ -844,14 +844,23 @@ See app/server/README.md.
 <!-- END AUTO-GENERATED DOC EXAMPLE: fastapi-server.howto.notice -->
 
 A `format: binary` string is raw bytes, which only a whole body, such as `application/octet-stream`, `image/png` or
-`text/csv`, or a file part of a multipart form can carry; a `text/*` body whose model type is one binary string travels
-as its raw bytes, without a charset decoding or base64, as an `application/octet-stream` one does. Its schema is such a
-string, or reaches one through a `$ref` or a single `allOf`, `anyOf` or `oneOf` branch, also beside a `null`, a length
-limit or other binary strings. Generation stops with an error that names the operation, the media or parameter, and
-where the schema declares the string, when a binary string, at any depth of its schema and through references,
-`$dynamicRef` and `allOf`, would be read or sent as text: inside a JSON or URL-encoded body or response, a `text/*` body
-whose schema is an object, an array, or an `anyOf` or `oneOf` with a branch that is not a binary string, a multipart
-part that is not a file, an item of a streamed response, or a parameter or header. Pydantic writes `bytes` in JSON as
+`text/csv`, or a file part of a multipart form can carry; a `text/*` body whose model types its whole value as one
+binary string travels as its raw bytes, without a charset decoding or base64, as an `application/octet-stream` one
+does. The model type decides: the schema is such a string, or reaches one through a `$ref`, a single `allOf`, `anyOf` or
+`oneOf` branch, or `allOf` branches that merge into one, such as `allOf: [{type: string}, {format: binary}]`, also
+beside a `null`, a length limit or other binary strings. The method takes and returns such a body as `bytes`, which its
+model validates when it constrains them, such as `maxLength: 16` as `conbytes(max_length=16)`: a request body the model
+refuses answers `422`, and a response body it refuses is not sent, as for any other body. Bytes the model leaves
+unconstrained pass as they are, without a model call. An `enum` or a `const` of binary strings, also one that leaves
+out `type: string`, is text in the models, so a body of one, also an `application/octet-stream` one, is read and sent
+as text by its model, such as an `Enum`.
+Generation stops with an error that names the operation, the media or parameter, and where the schema declares the
+string, when a binary string, at any depth of its schema and through references, `$dynamicRef` and `allOf`, would be
+read or sent as text: inside a JSON or URL-encoded body or response, also one whose model types its whole value as
+bytes, a `text/*` body whose schema is an object, an array, or an `anyOf` or `oneOf` with a branch that is not a binary
+string, a binary body, such as `application/octet-stream`, whose model types its whole value as bytes only in part,
+such as `type: [string, integer]` or an `anyOf` of a binary string and an integer (`bytes | int`), a multipart part
+that is not a file, an item of a streamed response, or a parameter or header. Pydantic writes `bytes` in JSON as
 raw UTF-8 text, which other clients, such as a generated one with dataclass, TypedDict or msgspec models, write as
 base64, and it cannot write bytes that are not UTF-8. Declare such a value `format: byte`, which every backend sends as
 the same base64 text and Pydantic models hold as a `Base64Str`, or add
@@ -1464,7 +1473,8 @@ model; without a `media_type`, it takes the response's default media type.
 
 A `text/*` response labels text it encodes with the charset it encodes it in: the one its media type declares, or
 else `utf-8`. Bytes a method returns for a `text/*` response are sent as they are, with the media type the document
-declares, so they carry a charset only when the document declares one.
+declares, so they carry a charset only when the document declares one. A text response's model writes the value as its
+JSON text does, so an `Enum` member is sent as its value.
 
 An `HTTPResult(status_code, body, headers)` sends another status or extra headers. The package validates and
 serializes its body with the model and default media type of the response that declares the status: exactly, by its

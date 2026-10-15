@@ -83,7 +83,7 @@ from datamodel_code_generator._target_naming import TargetNames, path_placeholde
 from datamodel_code_generator.imports import IMPORT_ANY, IMPORT_DECIMAL, Import
 from datamodel_code_generator.model import dataclass as dataclass_model
 from datamodel_code_generator.model import msgspec, pydantic_v2, typed_dict
-from datamodel_code_generator.model.base import UNDEFINED, DataModel, DataModelFieldBase
+from datamodel_code_generator.model.base import UNDEFINED, ConstraintsBase, DataModel, DataModelFieldBase
 from datamodel_code_generator.model.dataclass import DataModelField as DataclassField
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum, get_raw_enum_member_value
 from datamodel_code_generator.model.msgspec import DataModelField as MsgspecField
@@ -142,6 +142,7 @@ _IDENTIFIERS: Final = frozenset({"$id", "$anchor", "$schema"})
 _ITEMS: Final[tuple[LeafStep, ...]] = ("items",)
 _FORMS: Final = frozenset({"form", "multipart"})
 _TEXT_MEDIA: Final = frozenset({"json", "form", "text"})
+_RAW_MEDIA: Final = frozenset({"text", "binary"})
 _HEADER_ROLES: Final[frozenset[SchemaRole]] = frozenset({
     "response_header",
     "request_encoding_header",
@@ -231,6 +232,7 @@ _CONTAINERS: Final = {
 }
 _STYLE: Final = ("use_union_operator", "use_standard_collections", "use_generic_container", "python_version")
 _WRAPPED: Final = frozenset({"alias", "root"})
+_UNCHECKED: Final[frozenset[BackendName | None]] = frozenset({"dataclass", "typeddict"})
 _ALONE: Final[dict[str, object]] = {
     **dict.fromkeys(_CONTAINERS.values(), False),
     "is_optional": False,
@@ -779,11 +781,11 @@ class _PartsRecord:
 class _SchemaRecord:
     """What the walk recorded of an acquired schema that its model types do not say.
 
-    `binary` is where the first raw binary string sits that the schema's values carry as text, and `octets` says the
-    schema of a text media is one raw binary string, which the media carries as the raw body. `wrapped` says a text
-    media's schema is not such a string but reaches one, and no bytes the models write as base64 text, which is the
-    raw body when the models type the whole schema as such strings alone. `form` is the branch of a form's union
-    with null alone that declares the form's members, which its parts and encoding are read from.
+    `binary` is where the first raw binary string sits that the schema's values carry as text. Of a body's schema,
+    `string` says its whole value may be a string, which its models may type as raw bytes, `spelled` that it is
+    written as one binary string, and `base64` that it reaches bytes the models write as base64 text. `form` is the
+    branch of a form's union with null alone that declares the form's members, which its parts and encoding are read
+    from.
     """
 
     default: LiteralScalar | None
@@ -791,8 +793,9 @@ class _SchemaRecord:
     parts: _PartsRecord | None
     encoding: EncodingFacts | None
     binary: SourceLocation | None = None
-    octets: bool = False
-    wrapped: bool = False
+    string: bool = False
+    spelled: bool = False
+    base64: bool = False
     form: _Declaration | None = None
 
 
@@ -911,6 +914,21 @@ def _json_types(schema: dict[str, YamlValue]) -> frozenset[str]:
         case _:
             pass
     return frozenset()
+
+
+def _valued_types(schema: dict[str, YamlValue]) -> frozenset[str]:
+    """Return the JSON types of a schema's enum members and const value."""
+    values = schema.get("enum")
+    members = [*(values if isinstance(values, list) else ()), *((schema["const"],) if "const" in schema else ())]
+    return frozenset(map(_json_type, members))
+
+
+def _spelled(schema: dict[str, YamlValue], formats: frozenset[str]) -> bool:
+    """Return whether a schema is written as a string of one of the formats, its values telling the type it omits."""
+    format_ = schema.get("format")
+    return (
+        isinstance(format_, str) and format_ in formats and "string" in (_json_types(schema) or _valued_types(schema))
+    )
 
 
 def _json_type(value: object) -> str:
@@ -1215,6 +1233,10 @@ class _Binder:
 
     def root(self, model: DataModel) -> DataType | None:
         """Return the type an alias or root model stands for: its field's, or that of the model its reuse inherits."""
+        return None if (field := self.root_field(model)) is None else field.data_type
+
+    def root_field(self, model: DataModel) -> DataModelFieldBase | None:
+        """Return the field of an alias or root model, or that of the model its reuse inherits."""
         while (
             not model.fields
             and len(model.base_classes) == 1
@@ -1222,7 +1244,16 @@ class _Binder:
             and (final := self.final(base)) is not None
         ):
             model = _source(final)
-        return model.fields[0].data_type if len(model.fields) == 1 else None
+        return model.fields[0] if len(model.fields) == 1 else None
+
+    def constrains(self, model: DataModel) -> bool:
+        """Return whether an alias or root model's field constrains its value, as the models that validate one do."""
+        return (
+            self.policies[id(model)].backend not in _UNCHECKED
+            and (field := self.root_field(model)) is not None
+            and isinstance(constraints := field.constraints, ConstraintsBase)
+            and constraints.has_constraints
+        )
 
     def projector(self, direction: Direction, *, inline: bool = False) -> _Projector:
         if (projector := self.projectors.get((direction, inline))) is None:
@@ -1441,7 +1472,8 @@ class _Hints:
 class _Projector:
     """Project final DataTypes of one direction into type views, each spelled as the model spells it.
 
-    An inlining projector reads each alias and root model as the type it stands for, as an argument takes it.
+    An inlining projector reads each alias and root model as the type it stands for, as an argument takes it, and
+    `constrained` says whether one of those models it read since it was last cleared constrains that type in its field.
     """
 
     def __init__(self, binder: _Binder, direction: Direction, *, inline: bool = False) -> None:
@@ -1451,6 +1483,7 @@ class _Projector:
         self.inline = inline
         self.inlined: set[SymbolId] = set()
         self.projected: dict[int, tuple[DataType, TypeView]] = {}
+        self.constrained = False
 
     def project(self, data_type: DataType) -> TypeProjection:
         try:
@@ -1529,6 +1562,7 @@ class _Projector:
             and (root := binder.root(model)) is not None
         ):
             self.inlined.add(symbol)
+            self.constrained = self.constrained or binder.constrains(model)
             try:
                 return self._project(root)
             finally:
@@ -2387,13 +2421,13 @@ class _Reader(_SchemaLocations):
         """Record what an acquired schema says that its model types do not, as the walk acquires it.
 
         A parameter's schema gives its default and keywords; a multipart schema how its members encode parts;
-        and any schema read as parameter or form text how its values are written.
+        and any schema read as parameter or form text how its values are written. A body's schema that is not a
+        multipart one says whether its models may type its whole value as raw bytes, which they decide.
         """
         media = declaration.tokens[-2] if declaration.tokens[-3:-2] == ("content",) else None
         kind = None if media is None else _media_kind(media)
         parameter = role == "parameter"
         text = parameter or role in _HEADER_ROLES
-        whole = self.whole(declaration)[1] if parameter else {}
         form = self.nullable_branch(declaration) if kind in _FORMS else None
         declared = form or declaration
         parts = (
@@ -2402,22 +2436,24 @@ class _Reader(_SchemaLocations):
             else None
         )
         item = declaration.tokens[-1] == "itemSchema"
-        body = kind == "text" and not (text or item)
-        octets = body and self.raw_bytes(self.whole(declaration)[1], self.formats)
-        if not octets and (text or item or kind in _TEXT_MEDIA):
+        body = kind is not None and parts is None and not (text or item)
+        whole = self.whole(declaration)[1] if parameter or body else {}
+        if text or item or kind in _TEXT_MEDIA:
             binary = None if (found := self.binary(declaration)) is None else locate(found)
         else:
             binary = None if parts is None else parts.binary
+        types = _json_types(whole)
         return _SchemaRecord(
-            _default(whole.get("default")),
+            _default(whole.get("default")) if parameter else None,
             _keywords(whole) if parameter else (),
             parts,
             self.encoding(declared, locate, members=kind in _FORMS)
             if text or media is None or kind in _FORMS
             else None,
             binary,
-            octets,
-            body and binary is not None and not self.base64(declaration),
+            body and (not types or "string" in types),
+            body and _spelled(whole, self.formats),
+            body and self.base64(declaration),
             form,
         )
 
@@ -2529,9 +2565,11 @@ class _Reader(_SchemaLocations):
 
     @staticmethod
     def raw_bytes(raw: dict[str, YamlValue], formats: frozenset[str]) -> bool:
-        """Return whether a schema is a string of one of the formats, as those the models type as raw bytes."""
-        format_ = raw.get("format")
-        return isinstance(format_, str) and format_ in formats and "string" in _json_types(raw)
+        """Return whether a schema is a string of one of the formats, as those the models type as raw bytes.
+
+        The models type an enum or a const of such strings as text.
+        """
+        return _spelled(raw, formats) and "enum" not in raw and "const" not in raw
 
     def _subschemas(self, declaration: _Declaration, raw: dict[str, YamlValue]) -> Iterator[_Declaration]:
         """Yield the schemas a schema's values are made of: its references', then its branches', members' and items'."""
@@ -3519,24 +3557,32 @@ class _Contracts(_SchemaUses):
         """Record what the walk recorded of the media's own schema keyword on its uses.
 
         A multipart media's uses get its parts, a parameter's content its default and keywords, and every use the
-        text encoding of its schema. A text media whose schema reaches a raw binary string carries it as the raw
-        body, not as text, when the models type the whole schema as that string.
+        text encoding of its schema. A body's models decide how it travels: a text or binary media carries it as the
+        raw body when they type its whole value as raw binary strings alone, none written as base64, checked by the
+        model when they constrain those strings. A binary media whose schema is written as one binary string they type
+        otherwise carries text read by the model, and any other body whose whole value they type as raw bytes in part
+        carries them as text, which is refused.
         """
         multipart = media.strip().lower().startswith("multipart/")
         record = self.record(schema)
+        kind = _media_kind(media)
         for use in uses:
             binding = self.uses[use]
             if record.form is not None and (held := self.held(binding.type)) is not None:
                 binding = replace(binding, members=self.members_at(held, record.form, use.direction))
-            octets = record.octets or (record.wrapped and self.octets(schema, use.direction))
+            raw, constrained = self.raw(schema, use.direction) if record.string and not record.base64 else ((), False)
+            octets = kind in _RAW_MEDIA and bool(raw) and all(raw)
+            partly = not octets and any(raw)
             self.uses[use] = replace(
                 binding,
                 parts=self.parts(schema, binding.members) if multipart else None,
                 default=record.default if role == "parameter" else None,
                 keywords=record.keywords,
                 encoding=record.encoding,
-                binary=None if octets else record.binary,
+                binary=None if octets else record.binary or (use.schema_site if partly else None),
                 octets=octets,
+                checked=octets and constrained,
+                text=kind == "binary" and record.spelled and not (octets or partly),
             )
         return uses
 
@@ -3546,18 +3592,21 @@ class _Contracts(_SchemaUses):
         binary = self.parser.data_type_manager.get_data_type(Types.binary)
         return self.binder.projector("neutral", inline=True).project(binary).value
 
-    def octets(self, schema: _Declaration, direction: Direction) -> bool:
-        """Return whether the models type a schema's whole value as raw binary strings alone, constrained or null too.
+    def raw(self, schema: _Declaration, direction: Direction) -> tuple[tuple[bool, ...], bool]:
+        """Return whether each type the models type a schema's whole value as, null aside, is a raw binary string.
 
-        Each alias and root model is read as the type it stands for, as the schema's wrappers leave it; a backend that
-        keeps the constraints of a string in its type holds two such strings where another holds one.
+        Each alias and root model is read as the type it stands for, as the schema's wrappers leave it, and a string
+        may be constrained; a backend that keeps the constraints of a string in its type holds two such strings where
+        another holds one. Also return whether the models constrain the value, in a type or in a wrapper's field.
         """
+        projector = self.binder.projector(direction, inline=True)
+        projector.constrained = False
         value = self.projection(schema, "value", direction, inline=True).value
-        found = [member for member in (() if value is None else _members(value)) if not isinstance(member, NoneType)]
-        return bool(found) and all(
+        members = [member for member in (() if value is None else _members(value)) if not isinstance(member, NoneType)]
+        return tuple(
             member.base == _BUILTINS["bytes"] if isinstance(member, ConstructorType) else member == self.binary_type
-            for member in found
-        )
+            for member in members
+        ), projector.constrained or any(isinstance(member, ConstructorType) for member in members)
 
     def media(  # noqa: PLR0913
         self,
