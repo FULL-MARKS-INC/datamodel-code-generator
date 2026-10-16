@@ -76,6 +76,21 @@ Apart: TypeAlias = Annotated[str, Meta(max_length=3, min_length=2)]
 Apart1: TypeAlias = Annotated[str, Meta(max_length=3, pattern='^a')]
 
 
+ApartOrCount: TypeAlias = Annotated[str, Meta(max_length=3, min_length=2)]
+
+
+ApartOrCount1: TypeAlias = Annotated[str, Meta(max_length=3, pattern='^a')]
+
+
+PartedOrLong: TypeAlias = Annotated[str, Meta(max_length=10)]
+
+
+Rank: TypeAlias = Annotated[int, Meta(ge=1, le=5)]
+
+
+Rank1: TypeAlias = Annotated[int, Meta(ge=1, multiple_of=2)]
+
+
 Short: TypeAlias = Annotated[str, Meta(max_length=3)]
 
 
@@ -86,6 +101,12 @@ Mixed1: TypeAlias = Annotated[str, Meta(max_length=3)]
 
 
 Pair1: TypeAlias = Annotated[str, Meta(max_length=3)]
+
+
+Parted1: TypeAlias = Annotated[str, Meta(max_length=3, min_length=2)]
+
+
+Parted2: TypeAlias = Annotated[str, Meta(max_length=3, pattern='^a')]
 
 
 class Upload(Struct):
@@ -109,5 +130,12 @@ class Upload(Struct):
     pair: Pair1 | int | list[int]
     same: Same
     shared: str | Shared1
-    apart: str
+    apart: Annotated[str, Meta(max_length=3)] | str
     mixed: str
+    apart_or_count: Annotated[str, Meta(max_length=3)] | str | int
+    parted: Annotated[str, Meta(max_length=3)] | str
+    parted_or_long: str
+    parted_or_count: int | Annotated[str, Meta(max_length=3)] | str
+    parted_or_null: Annotated[str, Meta(max_length=3)] | str | None
+    parted_twice: Annotated[str, Meta(max_length=3)] | str
+    rank: int | float

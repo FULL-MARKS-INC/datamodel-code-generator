@@ -21,7 +21,14 @@
     "same": "abc",
     "shared": "a",
     "apart": "abc",
-    "mixed": "Pagination"
+    "mixed": "Pagination",
+    "apart_or_count": "a",
+    "parted": "ab",
+    "parted_or_long": "abcdefgh",
+    "parted_or_count": "ab",
+    "parted_or_null": null,
+    "parted_twice": "ab",
+    "rank": 0
   },
   "invalid": {
     "page": 3,
@@ -44,6 +51,13 @@
     "same": "abcd",
     "shared": "abcd",
     "apart": "abcd",
-    "mixed": 3
+    "mixed": 3,
+    "apart_or_count": "abcd",
+    "parted": "abcd",
+    "parted_or_long": 5,
+    "parted_or_count": "abcd",
+    "parted_or_null": "abcd",
+    "parted_twice": "abcd",
+    "rank": "1"
   }
 }

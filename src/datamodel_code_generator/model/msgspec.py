@@ -78,6 +78,7 @@ _META_SCHEMA_KEYWORDS: Mapping[str, str] = MappingProxyType({
 })
 _LENGTH_META_KEYWORDS: frozenset[str] = frozenset({"min_length", "max_length"})
 _UNCONSTRAINED_UNION_MEMBERS_KEY = "_unconstrained_union_members"
+_CONSTRAINED_UNION_MEMBER_KEY = "_constrained_union_member"
 
 
 def _integer_bounds(constraints: tuple[tuple[str, Any], ...]) -> tuple[int | None, int | None]:
@@ -137,13 +138,17 @@ class _MsgspecFieldRenderPlan(NamedTuple):
 
 
 class _UnionLeaf(NamedTuple):
-    """A union member msgspec decodes as one type: the alias members spread to reach it, its type and constraints."""
+    """A union member msgspec decodes as one type: the alias members spread to reach it, its type and constraints.
+
+    A member written without constraints may be written with others instead, the ones its type shares.
+    """
 
     spread: tuple[tuple[DataType, DataModelField], ...]
     member: DataType
     kind: str
     base: DataType
     constraints: tuple[tuple[str, Any], ...]
+    meta: tuple[tuple[str, Any], ...] = ()
 
     @property
     def keywords(self) -> frozenset[str]:
@@ -973,7 +978,8 @@ class DataModelField(DataModelFieldBase):
 
         A member is an alias chain ending in a scalar or a Literal of one type; msgspec spreads an alias of a union,
         or of a type and None, into the union that names it, so the members of such an alias count as its own.
-        Other members yield nothing.
+        A member such an alias writes with the constraints its members of one type share gives them to the other
+        members of that type, as msgspec checks them on all of them. Other members yield nothing.
         """
         data_type = member
         while (reference := data_type.reference) is not None:
@@ -992,15 +998,29 @@ class DataModelField(DataModelFieldBase):
                 constraints += tuple((k, v) for k, v in meta.items() if v is not None and k in _META_SCHEMA_KEYWORDS)
             if alias_field._field_has_top_level_none() or self._data_type_is_plain_union(alias_field.data_type):  # noqa: SLF001
                 members = self._non_none_members(alias_field.data_type)
+                shared = {
+                    written[0].type: written[1]
+                    for inner in members
+                    if (written := inner.__dict__.get(_CONSTRAINED_UNION_MEMBER_KEY)) is not None
+                }
                 for inner in members:
-                    yield from self._union_leaves(
+                    for leaf in self._union_leaves(
                         inner,
                         (*spread, (member, alias_field)),
                         constraints if len(members) == 1 else (),
                         seen,
-                    )
+                    ):
+                        yield (
+                            leaf
+                            if _CONSTRAINED_UNION_MEMBER_KEY in inner.__dict__
+                            else leaf._replace(constraints=leaf.constraints + shared.get(leaf.kind, ()))
+                        )
                 return
             data_type = alias_field.data_type
+        if (written := data_type.__dict__.get(_CONSTRAINED_UNION_MEMBER_KEY)) is not None:
+            base, meta = written
+            yield _UnionLeaf(spread, member, base.type, base, constraints + meta)
+            return
         if (
             data_type.data_types
             or data_type.is_optional
@@ -1044,7 +1064,8 @@ class DataModelField(DataModelFieldBase):
         An alias spread to reach a dropped member is written as its members, so the alias itself keeps its Meta.
         """
         if (leaf := dropped.get(id(member))) is not None:
-            return [self._copy_data_type(leaf.base)]
+            base = self._copy_data_type(leaf.base)
+            return [self._constrained_member(base, leaf.meta) if leaf.meta else base]
         if (alias_field := spread.get(id(member))) is None:
             copied = self._copy_data_type(member)
             for nested in copied.all_data_types:
@@ -1061,14 +1082,30 @@ class DataModelField(DataModelFieldBase):
             members.append(self.data_type.__class__(type=NONE))
         return members
 
-    @staticmethod
-    def _conflicting_leaves(leaves: Mapping[str, list[_UnionLeaf]]) -> tuple[dict[int, _UnionLeaf], set[int]]:
-        """Return the constrained members of a union that would reject values another member accepts, by identity.
+    def _constrained_member(self, base: DataType, meta: tuple[tuple[str, Any], ...]) -> DataType:
+        """Return a union member written as its type with Meta constraints, which msgspec checks on every member."""
+        arguments = ", ".join(sorted(f"{name}={represent_python_value(value)}" for name, value in dict(meta).items()))
+        member = self.data_type.__class__(
+            alias=f"Annotated[{base.type_hint}, Meta({arguments})]",
+            data_types=[base],
+            import_=IMPORT_MSGSPEC_META,
+        )
+        base.parent = member
+        member.__dict__[_CONSTRAINED_UNION_MEMBER_KEY] = (base, meta)
+        return member
 
-        Each such member comes with the constraints it loses. A member of one type whose constraints are the ones
-        every member of that type shares keeps them, since msgspec checks them on every member; the other members
+    @staticmethod
+    def _conflicting_leaves(
+        leaves: Mapping[str, list[_UnionLeaf]],
+    ) -> tuple[dict[int, _UnionLeaf], dict[int, _UnionLeaf]]:
+        """Return the members of a union that would reject values another member accepts, by identity.
+
+        Each such member comes with the constraints it loses. msgspec checks the constraints of a member of one type
+        on every member of that type, so the constraints every such member shares stay on one of them: a member whose
+        constraints are just these keeps them, or else the first member is written with them, and the other members
         lose all of theirs. Also return the int members that would reject an integer a float member accepts, since
-        msgspec decodes every integer as the int member; constraints that admit every such integer stay.
+        msgspec decodes every integer as the int member, with the constraints they are written with, which they lose;
+        constraints that admit every such integer stay.
         """
         dropped: dict[int, _UnionLeaf] = {}
         for same_kind in leaves.values():
@@ -1076,26 +1113,30 @@ class DataModelField(DataModelFieldBase):
                 continue
             constraint_sets = [frozenset(leaf.constraints) for leaf in same_kind]
             shared = frozenset.intersection(*constraint_sets)
-            kept = shared if shared in constraint_sets else frozenset()
+            writer = None if shared in constraint_sets else same_kind[0]
             dropped.update(
-                (id(leaf.member), leaf._replace(constraints=tuple(c for c in leaf.constraints if c not in kept)))
+                (
+                    id(leaf.member),
+                    leaf._replace(
+                        constraints=tuple(c for c in leaf.constraints if c not in shared),
+                        meta=tuple(c for c in leaf.constraints if c in shared) if leaf is writer else (),
+                    ),
+                )
                 for leaf, constraints in zip(same_kind, constraint_sets, strict=True)
-                if constraints != kept
+                if constraints != shared
             )
         floats = [
             () if id(leaf.member) in dropped else leaf.constraints
             for leaf in leaves.get("float", ())
             if not leaf.base.literals
         ]
-        integers = [
-            leaf
+        integers = {
+            id(leaf.member): leaf._replace(constraints=checked, meta=())
             for leaf in leaves.get("int", ())
-            if leaf.constraints
-            and id(leaf.member) not in dropped
-            and not all(_admits_integers_of(leaf.constraints, other) for other in floats)
-        ]
-        dropped.update((id(leaf.member), leaf) for leaf in integers)
-        return dropped, {id(leaf.member) for leaf in integers}
+            if (checked := leaf.constraints if (written := dropped.get(id(leaf.member))) is None else written.meta)
+            and not all(_admits_integers_of(checked, other) for other in floats)
+        }
+        return dropped, integers
 
     def unconstrain_union_members(self) -> None:
         """Write the members of a union that msgspec decodes as one type without their Meta constraints.
@@ -1116,12 +1157,12 @@ class DataModelField(DataModelFieldBase):
                 for leaf in self._union_leaves(member):
                     leaves.setdefault(leaf.kind, []).append(leaf)
             dropped, integers = self._conflicting_leaves(leaves)
-            for member_id, leaf in dropped.items():
-                if member_id in integers:
-                    integer_keywords.update(leaf.keywords)
-                else:
-                    kinds.add(leaf.kind)
-                    keywords.update(leaf.keywords)
+            for leaf in dropped.values():
+                kinds.add(leaf.kind)
+                keywords.update(leaf.keywords)
+            for leaf in integers.values():
+                integer_keywords.update(leaf.keywords)
+            dropped.update(integers)
             spread = {id(member): alias_field for leaf in dropped.values() for member, alias_field in leaf.spread}
             for owner, index, member in reversed(slots):
                 if id(member) in dropped or id(member) in spread:

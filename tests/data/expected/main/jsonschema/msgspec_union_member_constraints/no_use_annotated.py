@@ -19,6 +19,9 @@ Mixed: TypeAlias = str
 Pair: TypeAlias = str | int | list[int]
 
 
+Parted: TypeAlias = str
+
+
 class Upload(Struct):
     page: bytes
     name: str | Short
@@ -42,3 +45,10 @@ class Upload(Struct):
     shared: str
     apart: str
     mixed: Mixed
+    apart_or_count: str | int
+    parted: Parted
+    parted_or_long: Parted | str
+    parted_or_count: Parted | int
+    parted_or_null: Parted | None
+    parted_twice: Parted
+    rank: int | float
