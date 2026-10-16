@@ -8,9 +8,11 @@ import sys
 import tokenize
 from collections import defaultdict
 from enum import IntEnum
+from functools import cache
 from io import StringIO
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeGuard, cast
 
+from datamodel_code_generator._format_types import PythonVersionMin
 from datamodel_code_generator._target_unicode import (
     NEWEST_TARGET,
     HostIdentifiers,
@@ -207,13 +209,24 @@ def _format_from_import(module: str, aliases: list[str], line_length: int) -> st
     return f"from {module} import (\n{imports}\n)"
 
 
-def _import_category(module: str, level: int, known_first_party: frozenset[str]) -> _ImportCategory:
+@cache
+def _stdlib_module_names(python_version: PythonVersion | None) -> frozenset[str]:
+    """Return the top-level standard library module names of the target Python version."""
+    from datamodel_code_generator import _target_stdlib_data as data  # noqa: PLC0415
+
+    index = data.TARGETS.index((python_version or PythonVersionMin).value)
+    return frozenset(name for name, (since, until) in data.STDLIB_MODULE_NAMES.items() if since <= index < until)
+
+
+def _import_category(
+    module: str, level: int, known_first_party: frozenset[str], python_version: PythonVersion | None = None
+) -> _ImportCategory:
     if module == "__future__":
         return _ImportCategory.FUTURE
     if level:
         return _ImportCategory.LOCAL
     top_level_module = module.split(".", 1)[0]
-    if top_level_module in sys.stdlib_module_names:
+    if top_level_module in _stdlib_module_names(python_version):
         return _ImportCategory.STANDARD_LIBRARY
     if top_level_module in known_first_party:
         return _ImportCategory.FIRST_PARTY
@@ -329,41 +342,35 @@ def _import_node_category(
 ) -> _ImportCategory:
     match node:
         case ast.Import():
-            return min(_import_category(names.restore(alias.name), 0, known_first_party) for alias in node.names)
+            return min(
+                _import_category(names.restore(alias.name), 0, known_first_party, names.python_version)
+                for alias in node.names
+            )
         case ast.ImportFrom():
-            return _import_category(names.restore(node.module or ""), node.level, known_first_party)
+            return _import_category(
+                names.restore(node.module or ""), node.level, known_first_party, names.python_version
+            )
     msg = f"Unsupported import node: {type(node).__name__}"
     raise TypeError(msg)
 
 
 def _format_import_node(
-    node: ast.Import | ast.ImportFrom,
+    node: ast.ImportFrom,
     line_length: int,
     known_first_party: frozenset[str] = DEFAULT_KNOWN_FIRST_PARTY,
     names: _ImportNames = _PLAIN_NAMES,
 ) -> tuple[_ImportCategory, str]:
     category = _import_node_category(node, known_first_party, names)
-    match node:
-        case ast.Import():
-            lines = [
-                f"import {_format_alias(alias)}"
-                for alias in sorted(node.names, key=lambda alias: names.restore(alias.name))
-            ]
-            return category, "\n".join(lines)
-        case ast.ImportFrom():
-            module = "." * node.level + (node.module or "")
-            if any(alias.asname is not None for alias in node.names):
-                lines = [
-                    _format_from_import(module, [_format_alias(alias)], line_length)
-                    for alias in sorted(node.names, key=lambda alias: _alias_sort_key(_format_alias(alias), names))
-                ]
-                return category, "\n".join(lines)
+    module = "." * node.level + (node.module or "")
+    if any(alias.asname is not None for alias in node.names):
+        lines = [
+            _format_from_import(module, [_format_alias(alias)], line_length)
+            for alias in sorted(node.names, key=lambda alias: _alias_sort_key(_format_alias(alias), names))
+        ]
+        return category, "\n".join(lines)
 
-            aliases = sorted(
-                (_format_alias(alias) for alias in node.names), key=lambda alias: _alias_sort_key(alias, names)
-            )
-            return category, _format_from_import(module, aliases, line_length)
-    raise AssertionError  # pragma: no cover
+    aliases = sorted((_format_alias(alias) for alias in node.names), key=lambda alias: _alias_sort_key(alias, names))
+    return category, _format_from_import(module, aliases, line_length)
 
 
 def _from_import_key(node: ast.ImportFrom) -> tuple[int, str]:
@@ -447,7 +454,9 @@ def _build_builtin_import_block(
 
         if isinstance(node, ast.ImportFrom) and _from_import_key(node) in aliased_modules:
             module = "." * node.level + (node.module or "")
-            category = _import_category(names.restore(node.module or ""), node.level, known_first_party)
+            category = _import_category(
+                names.restore(node.module or ""), node.level, known_first_party, names.python_version
+            )
             for alias in node.names:
                 aliased_from_imports[category, node.level, module].append((
                     node_index,
@@ -458,9 +467,15 @@ def _build_builtin_import_block(
 
         if isinstance(node, ast.ImportFrom) and _can_merge_from_imports(node, aliased_modules):
             module = node.module or ""
-            category = _import_category(names.restore(module), node.level, known_first_party)
+            category = _import_category(names.restore(module), node.level, known_first_party, names.python_version)
             for alias in node.names:
                 grouped_from_imports[category, node.level, module].add(_format_alias(alias))
+            continue
+
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                category = _import_category(names.restore(alias.name), 0, known_first_party, names.python_version)
+                categorized_lines[category].add(f"import {_format_alias(alias)}")
             continue
 
         category, import_line = _format_import_node(node, line_length, known_first_party, names)
