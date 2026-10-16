@@ -3528,7 +3528,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         self.imports.append(import_)
         return self.data_type.from_import(import_)
 
-    def _get_x_python_import_path(self, x_python_import: dict[str, Any]) -> str | None:  # noqa: PLR6301
+    def _get_x_python_import_path(self, x_python_import: dict[str, Any]) -> str | None:
         module = x_python_import.get("module")
         type_name = x_python_import.get("name")
         if not module and not type_name:
@@ -3536,20 +3536,30 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if not module or not type_name:
             msg = "x-python-import requires both module and name"
             raise Error(msg)
-        return _validate_schema_python_import_path(f"{module}.{type_name}", "x-python-import")
+        return self._get_emitted_python_type_path(
+            _validate_schema_python_import_path(f"{module}.{type_name}", "x-python-import")
+        )
 
-    def _get_x_python_runtime_symbol(  # ruff: ignore[no-self-use]
-        self, x_python_import: dict[str, Any]
-    ) -> PythonTypeRuntimeSymbol | None:
-        """Retain nested runtime module boundaries; snooper requires an instance method."""
-        if (qualname := x_python_import.get("qualname")) is None:
-            return None
+    def _get_target_runtime_symbol(self, module: str, qualname: str) -> PythonTypeRuntimeSymbol:
+        """Bind ``module.qualname`` through ``import module``, which import overrides cannot move.
+
+        The type the target must have is therefore checked here rather than in the emitted imports.
+        """
         from datamodel_code_generator._python_type_annotation import (  # ruff: ignore[import-outside-top-level]
             PythonTypeRuntimeSymbol,
         )
 
-        qualname = _validate_schema_python_import_path(qualname, "x-python-import qualname")
-        return PythonTypeRuntimeSymbol(x_python_import["module"], tuple(qualname.split(".")))
+        parts = tuple(qualname.split("."))
+        self._get_target_python_type_path(f"{module}.{parts[0]}")
+        return PythonTypeRuntimeSymbol(module, parts)
+
+    def _get_x_python_runtime_symbol(self, x_python_import: dict[str, Any]) -> PythonTypeRuntimeSymbol | None:
+        """Retain nested runtime module boundaries."""
+        if (qualname := x_python_import.get("qualname")) is None:
+            return None
+        return self._get_target_runtime_symbol(
+            x_python_import["module"], _validate_schema_python_import_path(qualname, "x-python-import qualname")
+        )
 
     def _get_x_python_import_expression(
         self, x_python_import: dict[str, Any], resolved_ref: str
@@ -3565,10 +3575,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if path:
             from datamodel_code_generator._python_type_annotation import (  # ruff: ignore[import-outside-top-level]
                 PythonTypeModelField,
-                PythonTypeRuntimeSymbol,
             )
 
-            expression: PythonTypeExpr = PythonTypeRuntimeSymbol(path["module"], tuple(path["qualname"].split(".")))
+            expression: PythonTypeExpr = self._get_target_runtime_symbol(path["module"], path["qualname"])
             for field in path["fields"]:
                 expression = PythonTypeModelField(
                     expression, field["name"], tuple(field["arguments"]), field["pydantic"]
@@ -3898,13 +3907,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             get_python_type_import_path,
         )
 
-        target_version = self.target_python_version.version_key
         try:
-            import_path = get_python_type_import_path(type_name, target_version)
+            import_path = get_python_type_import_path(type_name, self.target_python_version.version_key)
         except PythonTypeUnavailableError as exc:
-            target = ".".join(map(str, target_version))
-            msg = f"{exc.type_name} is unavailable for target Python {target}"
-            raise Error(msg) from exc
+            raise Error(str(exc)) from exc
         if import_path:
             return Import.from_full_path(import_path)
         return None
@@ -3919,19 +3925,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     def _resolve_qualified_type_import(self, qualified_name: str) -> Import:
         """Resolve known stdlib paths against the target without host imports."""
-        from datamodel_code_generator._python_type_import_registry import (  # noqa: PLC0415
-            PythonTypeUnavailableError,
-            get_qualified_python_type_import_path,
-        )
-
-        target_version = self.target_python_version.version_key
-        try:
-            import_path = get_qualified_python_type_import_path(qualified_name, target_version)
-        except PythonTypeUnavailableError as exc:
-            target = ".".join(map(str, target_version))
-            msg = f"{exc.type_name} is unavailable for target Python {target}"
-            raise Error(msg) from exc
-        return _qualified_python_type_import(import_path)
+        return _qualified_python_type_import(self._get_target_python_type_path(qualified_name))
 
     def _resolve_type_import_from_defs(self, type_name: str) -> Import | PythonTypeExpr | None:
         """Resolve import for a type name from $defs with x-python-import."""
@@ -10876,7 +10870,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return self.get_ref_data_type(item.ref)
         if item.custom_type_path:  # pragma: no cover
             return self.data_type_manager.get_data_type_from_full_path(
-                _validate_schema_python_import_path(item.custom_type_path, "customTypePath"),
+                self._get_emitted_python_type_path(
+                    _validate_schema_python_import_path(item.custom_type_path, "customTypePath")
+                ),
                 is_custom_type=True,
             )
         shared_numeric_constraints = self._has_shared_numeric_union_constraints(item)
@@ -11381,7 +11377,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             data_type: DataType = self.get_ref_data_type(obj.ref)
         elif obj.custom_type_path:
             data_type = self.data_type_manager.get_data_type_from_full_path(
-                _validate_schema_python_import_path(obj.custom_type_path, "customTypePath"),
+                self._get_emitted_python_type_path(
+                    _validate_schema_python_import_path(obj.custom_type_path, "customTypePath")
+                ),
                 is_custom_type=True,
             )  # pragma: no cover
         elif (union_type := self._parse_constrained_type_union(name, obj, path)) is not None:
