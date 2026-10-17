@@ -7641,7 +7641,7 @@ current generated class name such as `Foo1`. Values are final Python class names
 
 This is useful when a schema cannot be edited but generated model names must be
 stable for public APIs or downstream code. Colliding mapped names fail instead
-of being silently suffixed.""",
+of being silently suffixed. Keys that match no model are reported in a warning.""",
     input_schema="jsonschema/model_name_map.json",
     cli_args=[
         "--model-name-map",
@@ -7683,6 +7683,37 @@ def test_main_jsonschema_model_name_map_from_file(output_file: Path, tmp_path: P
         assert_func=assert_file_content,
         expected_file="model_name_map.py",
         extra_args=["--model-name-map", str(mapping_path)],
+    )
+
+
+def test_main_jsonschema_model_name_map_warns_on_unmatched_keys(output_file: Path) -> None:
+    """Report once and redacted the keys that match no model, not a name key that a path key of the model shadows."""
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        run_main_and_assert(
+            input_path=JSON_SCHEMA_DATA_PATH / "model_name_map.json",
+            output_path=output_file,
+            input_file_type="jsonschema",
+            assert_func=assert_file_content,
+            expected_file="model_name_map.py",
+            extra_args=[
+                "--model-name-map",
+                json.dumps({
+                    "#/definitions/Foo": "RenamedFoo",
+                    "Bar": "RenamedBar",
+                    "model-name": "OriginalMapped",
+                    "Foo": "ShadowedFoo",
+                    "Ownr": "Owner",
+                    "#/definitions/pet": "Pet",
+                    "https://user:s3cret@example.com/schema.json?token=abc#/definitions/Foo": "RemoteFoo",
+                }),
+                "--formatters",
+                "builtin",
+            ],
+        )
+    assert_output(
+        "".join(f"{record.message}\n" for record in recorded if record.category is UserWarning),
+        EXPECTED_JSON_SCHEMA_PATH / "model_name_map_unmatched_keys_warnings.txt",
     )
 
 
