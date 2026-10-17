@@ -88,7 +88,8 @@
       "caveats": [],
       "evidence": [
         "Train Travel API: BookingPayment.source variants became Card and BankAccount instead of Source and Source1"
-      ]
+      ],
+      "trial": null
     },
     {
       "rule": "unions.name-variants-after-tags",
@@ -110,12 +111,15 @@
         "GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805 (Changes23 -> ChangesBody)",
         "SchemaStore workflow schema (5 tagged): 49 -> 44 (WorkflowDispatchInput1 to 5 -> WorkflowDispatchInputString, Boolean, ...)",
         "with full-path on the GitHub and OpenAI descriptions: no change in problem names; schemas without tagged or key branches: no change"
-      ]
+      ],
+      "trial": null
     }
   ],
+  "left_out": [],
   "consider": [],
   "not_recommended": [],
   "disagreements": [],
+  "trial": null,
   "notes": [
     "Target Python is not set: the recommendation assumes 3.10, the default. Set --target-python-version to start from the preset of the Python version the project runs."
   ],

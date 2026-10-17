@@ -1010,7 +1010,9 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
   --recommend-options   Analyse the input schema and print the options to add
                         on top of the latest dated preset, with the reasons,
                         as a command and a pyproject.toml block, then exit
-                        (experimental).
+                        (experimental). Schemas of up to 3000 estimated models
+                        are also compared by generating the candidate
+                        configurations in memory.
   --skill-scope {project,user}
                         Installation scope for --install-skill (default:
                         project). Project installs use .agents/skills or

@@ -2437,10 +2437,13 @@ Recommend options for the input schema on top of the latest dated preset (experi
 
 `--recommend-options` reads the input schema, measures how it is written (shared property names, inline
 enums and objects, repeated shapes, titles, tagged unions, dotted keys), and applies the recommender's rule
-data. It prints the latest dated preset to start from, the options to add with the reason for each and what
-they changed on measured schemas, options it advises against, and the resulting command and pyproject.toml
-block. Nothing is generated or written. Options set on the command line or in pyproject.toml are kept and
-reported when the rules suggest another value. Add `--output-format json` for a structured payload.
+data. For a schema of up to 3000 estimated models, it then generates the candidate configurations in memory
+(the preset, the recommendation, and the recommendation without or with each option), compares their class
+names, and recommends the best candidate, with class names before and after each option. It prints the
+latest dated preset to start from, the options to add with the reason for each, options it advises against,
+the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
+on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
+`--output-format json` for a structured payload.
 
 **Related:** [`--enum-field-as-literal`](typing-customization.md#enum-field-as-literal), [`--naming-strategy`](model-customization.md#naming-strategy), `--output-format`, [`--preset`](base-options.md#preset)
 
@@ -2624,7 +2627,7 @@ reported when the rules suggest another value. Add `--output-format json` for a 
     <!-- fmt: off -->
 
     ```
-    Option recommendations (experimental; quick mode; rules 2026-10-17)
+    Option recommendations (experimental; full mode; rules 2026-10-17)
 
     Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
       components                       6, 2 operations
@@ -2640,21 +2643,7 @@ reported when the rules suggest another value. Add `--output-format json` for a 
 
     Start from  --preset standard-py310-20261017
 
-    Add (6 options)
-      --naming-strategy full-path   [naming.qualify-shared-inline-names]
-          Inline schemas under different parents share property names (names: 4, e.g. status x3, owner
-          x3, state x2, total x2; inline names equal to a component name: 0). Numbered names (Status,
-          Status1) depend on parse order and shift when the schema grows; full-path names each inline
-          model after its parent.
-          caveat: full-path repeats the parent name where a union branch or array item already carries
-          it (#4826).
-          measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
-          versions 17% -> 0.0%
-          measured: Petstore: Status and Status1 became OrderStatus and PetStatus
-          measured: Stripe API description: the expandable ID string of charge no longer displaces the
-          charge component (ChargeModel)
-          measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
-          lost
+    Add (5 options)
       --enum-field-as-literal all   [enums.inline-value-sets-as-literal]
           Most enums are inline value sets of one property (inline enums: 6 of 6). As Enum classes they
           add one class name each, the longest and most numbered names; Literal types keep the values
@@ -2662,6 +2651,8 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: GitHub REST API description: 1872 -> 1538 types, names over 40 characters 370 -> 227
           measured: Stripe API description: problem names 348 -> 158
           measured: SchemaStore workflow schema: Type1 to Type19 disappear
+          trial: recommended - enum-shape -> recommended: classes 15 -> 9, problem names 2 -> 2; 0 of 9
+          classes matched by schema location renamed (0 only renumbered), 6 removed, 0 added
       --reuse-model --collapse-reuse-models   [reuse.identical-inline-shapes]
           The schema repeats shapes (inline objects repeating a shape: 10, in 2 shapes; inline enums
           repeating a value set: 0, in 0 sets; union branches that only constrain their parent's
@@ -2671,6 +2662,8 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: 2512 -> 2022 types
           measured: SchemaStore workflow schema: the step branches' copies With1 to With11 became one
           With1
+          trial: recommended - reuse -> recommended: classes 17 -> 9, problem names 2 -> 2; 0 of 9
+          classes matched by schema location renamed (0 only renumbered), 8 removed, 0 added
       --no-treat-dot-as-module   [dotted-keys.flat-when-namespaces-cycle]
           Dotted keys (2, in 2 namespaces) reference each other in cycles (namespace groups: 1). As
           modules, cycle members move to _internal.py, where same-named classes of different namespaces
@@ -2678,6 +2671,10 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: Card_1 and Customer_1 disappear, problem names 158 -> 153
           measured: Kubernetes apps/v1: no cycles, so modules stay (median name length 16 as modules, 32
           flat)
+          trial: recommended - dotted-keys -> recommended: classes 14 -> 9, problem names 2 -> 2; 2 of 9
+          classes matched by schema location renamed (0 only renumbered), 5 removed, 0 added, e.g.
+            Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
+            Shipment -> ShippingShipment   #/components/schemas/shipping.Shipment
       --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
           Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
           sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -2694,6 +2691,32 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           WorkflowDispatchInputString, Boolean, ...)
           measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
           schemas without tagged or key branches: no change
+          trial: recommended - union-variant-names -> recommended: classes 9 -> 9, problem names 2 -> 2;
+          2 of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added,
+          e.g.
+            PaymentPayment -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
+            PaymentPayment1 -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
+
+    Left out after the trial (the rules recommend these)
+      --naming-strategy full-path   [naming.qualify-shared-inline-names]
+          Inline schemas under different parents share property names (names: 4, e.g. status x3, owner
+          x3, state x2, total x2; inline names equal to a component name: 0). Numbered names (Status,
+          Status1) depend on parse order and shift when the schema grows; full-path names each inline
+          model after its parent.
+          caveat: full-path repeats the parent name where a union branch or array item already carries
+          it (#4826).
+          measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
+          versions 17% -> 0.0%
+          measured: Petstore: Status and Status1 became OrderStatus and PetStatus
+          measured: Stripe API description: the expandable ID string of charge no longer displaces the
+          charge component (ChargeModel)
+          measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
+          lost
+          trial: recommended - naming-strategy -> recommended: classes 9 -> 9, problem names 0 -> 2; 4
+          of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+            Total -> OrderTotal   #/components/schemas/Order/total
+            PaymentCard -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
+            PaymentBank -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
 
     Not recommended
       --use-title-as-name   [titles.keys-when-titles-collide]
@@ -2707,12 +2730,30 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: 17% of component titles changed in four months; class names
           from keys renamed 0.0% of locations
 
+    Trial  8 candidates generated in memory without formatting; nothing written
+      candidate                          classes   problems  numbered  long  doubled  displaced  median
+      current                                 22  5 (22.7%)         5     0        0          0       6
+      preset                                  22  5 (22.7%)         5     0        0          0       6
+      recommended                              9  2 (22.2%)         0     0        2          0      10
+      recommended - naming-strategy            9   0 (0.0%)         0     0        0          0       5   selected
+      recommended - enum-shape                15  2 (13.3%)         0     0        2          0      11
+      recommended - reuse                     17  2 (11.8%)         0     0        2          0      14
+      recommended - dotted-keys               14  2 (14.3%)         0     0        2          0       7
+      recommended - union-variant-names        9  2 (22.2%)         1     0        2          0      10
+      current: the configuration as set, without the preset; never selected
+
+    Changes from the current configuration (current -> recommended - naming-strategy)
+      4 of 9 classes matched by schema location renamed (0 only renumbered), 13 removed, 0 added, e.g.
+        Payment1 -> PaymentCard   #/components/schemas/Payment/oneOf/0
+        Payment2 -> PaymentBank   #/components/schemas/Payment/oneOf/1
+        Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
+
     Notes
       - Target Python is not set: the recommendation assumes 3.10, the default. Set
         --target-python-version to start from the preset of the Python version the project runs.
 
     Command
-      datamodel-codegen --collapse-reuse-models --enum-field-as-literal all --input api.yaml --input-file-type openapi --naming-strategy full-path --preset standard-py310-20261017 --reuse-model --no-treat-dot-as-module --use-tag-as-union-variant-name
+      datamodel-codegen --collapse-reuse-models --enum-field-as-literal all --input api.yaml --input-file-type openapi --preset standard-py310-20261017 --reuse-model --no-treat-dot-as-module --use-tag-as-union-variant-name
 
     pyproject.toml
       [tool.datamodel-codegen]
@@ -2720,7 +2761,6 @@ reported when the rules suggest another value. Add `--output-format json` for a 
       enum-field-as-literal = "all"
       input = "api.yaml"
       input-file-type = "openapi"
-      naming-strategy = "full-path"
       preset = "standard-py310-20261017"
       reuse-model = true
       treat-dot-as-module = false

@@ -260,6 +260,7 @@ if TYPE_CHECKING:
         Path,
         RemoteReferenceLock | None,
         bool,
+        InputFileType,
     ]
 
 
@@ -2905,6 +2906,7 @@ def _run_generation(
                 emit_settings_path,
                 owned_remote_lock,
                 allow_empty_api,
+                _,
             ) = _parse_run(
                 input_,
                 config,
@@ -2947,7 +2949,7 @@ def _parse_run(  # noqa: PLR0913, PLR0914
     """Prepare one generation run and parse it up to its results and model metadata, writing nothing.
 
     Returns what emitting needs: the parse results and metadata, the prepared input and config, and the emit
-    settings, remote lock and API-scope switch.
+    settings, remote lock and API-scope switch; last, the input file type the run parsed, detected when it was auto.
     """
     config, output_context_path, emit_settings_path = _prepare_generation_config(config, caller_cwd)
     input_filename = config.input_filename
@@ -3040,6 +3042,7 @@ def _parse_run(  # noqa: PLR0913, PLR0914
         emit_settings_path,
         owned_remote_lock,
         allow_empty_api,
+        input_file_type,
     )
 
 
@@ -3048,12 +3051,13 @@ def _collect_model_metadata(
     config: GenerateConfig,
     *,
     remote_text_cache: DefaultPutDict[str, str],
-) -> ModelMetadata | None:
-    """Return the metadata of the models generate() would write for a config, writing nothing.
+) -> tuple[ModelMetadata | None, InputFileType]:
+    """Return the metadata of the models generate() would write for a config, writing nothing, and the input type.
 
     The run takes generate()'s preparation, parse and compatibility retries, so the class names are the names
     generation gives; formatting, every output, the remote lock update and a selected server or client are left out.
-    Runs that share ``remote_text_cache`` fetch each remote document once.
+    The input type is the one the run parsed, detected when the config's is auto. Runs that share
+    ``remote_text_cache`` fetch each remote document once.
     """
     config = _prepare_generate_facade_config(
         config.model_copy(
@@ -3071,14 +3075,15 @@ def _collect_model_metadata(
     with _tuned_gc(), PROCESS_STATE_LOCK if use_output_cwd else contextlib.nullcontext():
         with PROCESS_STATE_LOCK:
             caller_cwd = Path.cwd()
-        return _parse_run(
+        parsed = _parse_run(
             input_,
             config,
             caller_cwd,
             use_output_cwd=use_output_cwd,
             remote_text_cache=remote_text_cache,
             collect_model_metadata=True,
-        )[1]
+        )
+        return parsed[1], parsed[-1]
 
 
 def infer_input_type(text: str) -> InputFileType:  # noqa: PLR0911, PLR0912

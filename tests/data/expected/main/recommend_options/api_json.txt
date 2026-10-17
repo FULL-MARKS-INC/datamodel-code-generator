@@ -94,7 +94,8 @@
         "Petstore: Status and Status1 became OrderStatus and PetStatus",
         "Stripe API description: the expandable ID string of charge no longer displaces the charge component (ChargeModel)",
         "SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and lost"
-      ]
+      ],
+      "trial": null
     },
     {
       "rule": "enums.inline-value-sets-as-literal",
@@ -113,7 +114,8 @@
         "GitHub REST API description: 1872 -> 1538 types, names over 40 characters 370 -> 227",
         "Stripe API description: problem names 348 -> 158",
         "SchemaStore workflow schema: Type1 to Type19 disappear"
-      ]
+      ],
+      "trial": null
     },
     {
       "rule": "reuse.identical-inline-shapes",
@@ -133,7 +135,8 @@
         "GitHub REST API description: 3263 -> 1872 types, numbered names 1774 -> 663",
         "Stripe API description: 2512 -> 2022 types",
         "SchemaStore workflow schema: the step branches' copies With1 to With11 became one With1"
-      ]
+      ],
+      "trial": null
     },
     {
       "rule": "dotted-keys.flat-when-namespaces-cycle",
@@ -150,7 +153,8 @@
       "evidence": [
         "Stripe API description: Card_1 and Customer_1 disappear, problem names 158 -> 153",
         "Kubernetes apps/v1: no cycles, so modules stay (median name length 16 as modules, 32 flat)"
-      ]
+      ],
+      "trial": null
     },
     {
       "rule": "unions.name-variants-after-tags",
@@ -172,9 +176,11 @@
         "GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805 (Changes23 -> ChangesBody)",
         "SchemaStore workflow schema (5 tagged): 49 -> 44 (WorkflowDispatchInput1 to 5 -> WorkflowDispatchInputString, Boolean, ...)",
         "with full-path on the GitHub and OpenAI descriptions: no change in problem names; schemas without tagged or key branches: no change"
-      ]
+      ],
+      "trial": null
     }
   ],
+  "left_out": [],
   "consider": [],
   "not_recommended": [
     {
@@ -193,10 +199,12 @@
         "GitHub REST API description: 53 shared component titles numbered components (page-deployment became GitHubPages1, Actor2)",
         "OpenAI API description: 503 problem names with titles off, 544 with titles on",
         "Stripe API description: 17% of component titles changed in four months; class names from keys renamed 0.0% of locations"
-      ]
+      ],
+      "trial": null
     }
   ],
   "disagreements": [],
+  "trial": null,
   "notes": [],
   "arguments": [
     "--collapse-reuse-models",

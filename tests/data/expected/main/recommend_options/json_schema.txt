@@ -36,6 +36,104 @@
       "title": "RecommendBaselinePayload",
       "type": "object"
     },
+    "RecommendCandidatePayload": {
+      "additionalProperties": false,
+      "description": "One compared configuration and the class names it generates, or the error that rejected it.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The preset the candidate starts from; null for the configuration as set.",
+          "title": "Preset"
+        },
+        "set": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "description": "Options added on top of the preset, as config values.",
+          "title": "Set",
+          "type": "object"
+        },
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Arguments",
+          "type": "array"
+        },
+        "selectable": {
+          "description": "False for the configuration as set without the recommended preset.",
+          "title": "Selectable",
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecommendNameMetricsPayload"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecommendNameStabilityPayload"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "preset",
+        "set",
+        "arguments",
+        "selectable",
+        "error",
+        "metrics",
+        "stability"
+      ],
+      "title": "RecommendCandidatePayload",
+      "type": "object"
+    },
     "RecommendContextPayload": {
       "additionalProperties": false,
       "description": "The output model type and target Python version the recommendation chose presets for.",
@@ -155,6 +253,224 @@
       "title": "RecommendInputPayload",
       "type": "object"
     },
+    "RecommendNameChangePayload": {
+      "additionalProperties": false,
+      "description": "One class that two candidates name differently at the same schema location.",
+      "properties": {
+        "location": {
+          "description": "The schema location of the class, written like a JSON Pointer fragment; the properties and items steps of inline schemas are left out.",
+          "title": "Location",
+          "type": "string"
+        },
+        "before": {
+          "title": "Before",
+          "type": "string"
+        },
+        "after": {
+          "title": "After",
+          "type": "string"
+        }
+      },
+      "required": [
+        "location",
+        "before",
+        "after"
+      ],
+      "title": "RecommendNameChangePayload",
+      "type": "object"
+    },
+    "RecommendNameChangesPayload": {
+      "additionalProperties": false,
+      "description": "How the class names of two candidates differ, matching classes by schema location.",
+      "properties": {
+        "matched": {
+          "description": "Locations with one class in both candidates.",
+          "title": "Matched",
+          "type": "integer"
+        },
+        "renamed": {
+          "title": "Renamed",
+          "type": "integer"
+        },
+        "renumbered": {
+          "description": "Renamed classes whose names differ only in digits.",
+          "title": "Renumbered",
+          "type": "integer"
+        },
+        "removed": {
+          "description": "Locations with a class only before.",
+          "title": "Removed",
+          "type": "integer"
+        },
+        "added": {
+          "description": "Locations with a class only after.",
+          "title": "Added",
+          "type": "integer"
+        },
+        "examples": {
+          "description": "Renamed classes from the largest families of numbered names before, then by location.",
+          "items": {
+            "$ref": "#/$defs/RecommendNameChangePayload"
+          },
+          "title": "Examples",
+          "type": "array"
+        }
+      },
+      "required": [
+        "matched",
+        "renamed",
+        "renumbered",
+        "removed",
+        "added",
+        "examples"
+      ],
+      "title": "RecommendNameChangesPayload",
+      "type": "object"
+    },
+    "RecommendNameMetricsPayload": {
+      "additionalProperties": false,
+      "description": "Counts over the class names one candidate generates; problems counts each class once.",
+      "properties": {
+        "types": {
+          "description": "Generated classes.",
+          "title": "Types",
+          "type": "integer"
+        },
+        "component": {
+          "title": "Component",
+          "type": "integer"
+        },
+        "inline": {
+          "title": "Inline",
+          "type": "integer"
+        },
+        "operation": {
+          "title": "Operation",
+          "type": "integer"
+        },
+        "readable": {
+          "title": "Readable",
+          "type": "integer"
+        },
+        "numbered": {
+          "title": "Numbered",
+          "type": "integer"
+        },
+        "statuscode": {
+          "title": "Statuscode",
+          "type": "integer"
+        },
+        "generic": {
+          "title": "Generic",
+          "type": "integer"
+        },
+        "long": {
+          "description": "Names longer than 40 characters that are not a component key.",
+          "title": "Long",
+          "type": "integer"
+        },
+        "doubled": {
+          "description": "Names repeating a word the schema does not repeat.",
+          "title": "Doubled",
+          "type": "integer"
+        },
+        "doubled_from_spec": {
+          "title": "Doubled From Spec",
+          "type": "integer"
+        },
+        "displaced": {
+          "description": "Components whose name another class took.",
+          "title": "Displaced",
+          "type": "integer"
+        },
+        "inline_like_component": {
+          "title": "Inline Like Component",
+          "type": "integer"
+        },
+        "union_variants": {
+          "title": "Union Variants",
+          "type": "integer"
+        },
+        "union_variants_parent_numbered": {
+          "title": "Union Variants Parent Numbered",
+          "type": "integer"
+        },
+        "union_variants_numbered": {
+          "title": "Union Variants Numbered",
+          "type": "integer"
+        },
+        "median_length": {
+          "title": "Median Length",
+          "type": "integer"
+        },
+        "max_length": {
+          "title": "Max Length",
+          "type": "integer"
+        },
+        "problems": {
+          "title": "Problems",
+          "type": "integer"
+        },
+        "problems_percent": {
+          "title": "Problems Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "types",
+        "component",
+        "inline",
+        "operation",
+        "readable",
+        "numbered",
+        "statuscode",
+        "generic",
+        "long",
+        "doubled",
+        "doubled_from_spec",
+        "displaced",
+        "inline_like_component",
+        "union_variants",
+        "union_variants_parent_numbered",
+        "union_variants_numbered",
+        "median_length",
+        "max_length",
+        "problems",
+        "problems_percent"
+      ],
+      "title": "RecommendNameMetricsPayload",
+      "type": "object"
+    },
+    "RecommendNameStabilityPayload": {
+      "additionalProperties": false,
+      "description": "How one candidate's class names move between --diff-against and the input.",
+      "properties": {
+        "fingerprints_matched": {
+          "description": "Classes matched by a unique set of at least two field names.",
+          "title": "Fingerprints Matched",
+          "type": "integer"
+        },
+        "fingerprints_renamed": {
+          "title": "Fingerprints Renamed",
+          "type": "integer"
+        },
+        "fingerprints_renumbered": {
+          "title": "Fingerprints Renumbered",
+          "type": "integer"
+        },
+        "locations": {
+          "$ref": "#/$defs/RecommendNameChangesPayload"
+        }
+      },
+      "required": [
+        "fingerprints_matched",
+        "fingerprints_renamed",
+        "fingerprints_renumbered",
+        "locations"
+      ],
+      "title": "RecommendNameStabilityPayload",
+      "type": "object"
+    },
     "RecommendOptionPayload": {
       "additionalProperties": false,
       "description": "One rule outcome: the config values it sets, the CLI arguments for them, and why.",
@@ -225,6 +541,17 @@
           },
           "title": "Evidence",
           "type": "array"
+        },
+        "trial": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecommendOptionTrialPayload"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What full mode measured for the option; null in quick mode, or when a candidate it needs was rejected or left out."
         }
       },
       "required": [
@@ -235,9 +562,105 @@
         "reason",
         "contested_reason",
         "caveats",
-        "evidence"
+        "evidence",
+        "trial"
       ],
       "title": "RecommendOptionPayload",
+      "type": "object"
+    },
+    "RecommendOptionTrialPayload": {
+      "additionalProperties": false,
+      "description": "The candidates without and with one option, and the class names it changes.",
+      "properties": {
+        "before": {
+          "description": "Label of the candidate without the option.",
+          "title": "Before",
+          "type": "string"
+        },
+        "after": {
+          "description": "Label of the candidate with the option.",
+          "title": "After",
+          "type": "string"
+        },
+        "changes": {
+          "$ref": "#/$defs/RecommendNameChangesPayload"
+        }
+      },
+      "required": [
+        "before",
+        "after",
+        "changes"
+      ],
+      "title": "RecommendOptionTrialPayload",
+      "type": "object"
+    },
+    "RecommendTrialPayload": {
+      "additionalProperties": false,
+      "description": "The candidates full mode generated and compared, and the one it selected.",
+      "properties": {
+        "metrics_version": {
+          "title": "Metrics Version",
+          "type": "integer"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/RecommendCandidatePayload"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "ranking": {
+          "description": "Candidate labels, best first.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Ranking",
+          "type": "array"
+        },
+        "selected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The best selectable candidate; null when every one was rejected.",
+          "title": "Selected"
+        },
+        "current": {
+          "description": "The candidate that runs the configuration as set.",
+          "title": "Current",
+          "type": "string"
+        },
+        "migration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecommendNameChangesPayload"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Class names the selected candidate changes from the current one."
+        },
+        "left_out": {
+          "description": "Candidates beyond the limit of eight that were not generated.",
+          "title": "Left Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "metrics_version",
+        "candidates",
+        "ranking",
+        "selected",
+        "current",
+        "migration",
+        "left_out"
+      ],
+      "title": "RecommendTrialPayload",
       "type": "object"
     }
   },
@@ -260,7 +683,10 @@
       "type": "string"
     },
     "mode": {
-      "const": "quick",
+      "enum": [
+        "quick",
+        "full"
+      ],
       "title": "Mode",
       "type": "string"
     },
@@ -302,6 +728,14 @@
       "title": "Recommendations",
       "type": "array"
     },
+    "left_out": {
+      "description": "Options the rules recommend that the candidate full mode selected does not take.",
+      "items": {
+        "$ref": "#/$defs/RecommendOptionPayload"
+      },
+      "title": "Left Out",
+      "type": "array"
+    },
     "consider": {
       "items": {
         "$ref": "#/$defs/RecommendOptionPayload"
@@ -322,6 +756,17 @@
       },
       "title": "Disagreements",
       "type": "array"
+    },
+    "trial": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecommendTrialPayload"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The candidates full mode compared; null in quick mode."
     },
     "notes": {
       "items": {
@@ -374,9 +819,11 @@
     "facts",
     "baseline",
     "recommendations",
+    "left_out",
     "consider",
     "not_recommended",
     "disagreements",
+    "trial",
     "notes",
     "arguments",
     "config",

@@ -4167,12 +4167,14 @@ Analyse a schema and get the `datamodel-codegen` options that suit it, starting 
 A [preset](presets.md) is a good general starting point, but some choices depend on the shape of your schema: how
 inline models should be named, whether titles make good class names, whether inline enums should become `Literal`
 types, or whether repeated inline objects should be reused. `--recommend-options` reads your schema, measures the
-signals that drive these choices, and prints:
+signals that drive these choices, generates the candidate configurations in memory to compare the class names they
+give your schema, and prints:
 
 - the latest dated preset to start from,
 - the options to add on top of it, each with the rule that chose it, the reason with counts from your schema, caveats,
-  and the effect measured on public schemas,
+  the effect measured on public schemas, and the class names it changes in your schema (before -> after),
 - options worth considering when the schema has signals for and against them,
+- the compared candidates and the class names that change from your current configuration,
 - where your existing configuration differs from the rules,
 - a ready command and a `pyproject.toml` block.
 
@@ -4188,7 +4190,12 @@ Pass the options you have already decided on, such as `--output-model-type` and 
 recommendation starts from the matching preset. When they are in `pyproject.toml`, run the command from the project
 directory; `--profile NAME` and a single `--job NAME` select a profile or a job as they do for generation.
 
-The command prints the report and exits. It does not generate models, write files, or change your configuration.
+The command prints the report and exits. It does not write files or change your configuration.
+
+To compare names in the layout you generate, pass `--output` as you would for generation: a file path selects one
+module, a directory a package. Nothing is written there. Generating every candidate takes about as long as generating
+your models once per candidate, so a schema estimated above 3000 models gets the rules only, and the notes give the
+command that compares the candidates anyway (see [How candidates are compared](#how-candidates-are-compared)).
 
 ## Read the report
 
@@ -4244,7 +4251,7 @@ components:
 <!-- fmt: off -->
 
 ```text
-Option recommendations (experimental; quick mode; rules 2026-10-17)
+Option recommendations (experimental; full mode; rules 2026-10-17)
 
 Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
   components                       2, 0 operations
@@ -4260,13 +4267,19 @@ Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
 
 Start from  --preset standard-py314-20261017
 
-Add (2 options)
+Add (1 option)
   --use-title-as-name   [titles.names-from-unique-titles]
       Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
       x1, Bank Account x1). Titles name them after what they are, instead of their parent property
       and a number.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
+      trial: recommended - title-source -> recommended: classes 4 -> 4, problem names 0 -> 0; 2 of 4
+      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        PaymentCard -> Card   #/components/schemas/Booking/payment/oneOf/0
+        PaymentBankAccount -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+
+Left out after the trial (the rules recommend these)
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -4283,16 +4296,31 @@ Add (2 options)
       WorkflowDispatchInputString, Boolean, ...)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
+      trial: recommended - union-variant-names -> recommended: classes 4 -> 4, problem names 0 -> 0;
+      0 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added
+
+Trial  5 candidates generated in memory without formatting; nothing written
+  candidate                          classes   problems  numbered  long  doubled  displaced  median
+  current                                  4  1 (25.0%)         1     0        0          0       7
+  preset                                   4  1 (25.0%)         1     0        0          0       7
+  recommended                              4   0 (0.0%)         0     0        0          0       7
+  recommended - title-source               4   0 (0.0%)         0     0        0          0      11
+  recommended - union-variant-names        4   0 (0.0%)         0     0        0          0       7   selected
+  current: the configuration as set, without the preset; never selected
+
+Changes from the current configuration (current -> recommended - union-variant-names)
+  2 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+    Payment -> Card   #/components/schemas/Booking/payment/oneOf/0
+    Payment1 -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
 
 Command
-  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name --use-title-as-name
+  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-title-as-name
 
 pyproject.toml
   [tool.datamodel-codegen]
   input = "titled_variants.yaml"
   preset = "standard-py314-20261017"
   target-python-version = "3.14"
-  use-tag-as-union-variant-name = true
   use-title-as-name = true
 ```
 
@@ -4305,9 +4333,12 @@ The counts, presets and options come from your schema and the installed version.
 |---|---|
 | Schema | The signals the rules read: components, inline objects and enums, shared property names, repeated shapes, titles, unions and their tags, key style. |
 | Start from | The latest dated `standard` preset for your output model type and target Python version, and the rules it already satisfies. It is the `practical` preset only when you configured a practical preset, or when no option can set a value a rule needs on the standard preset (the notes then say which). |
-| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), and `measured:` lines with the effect seen on public schemas. |
-| Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are not in the command. |
+| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), `measured:` lines with the effect seen on public schemas, and a `trial:` line with the candidates without and with it, their class and problem-name counts, and up to three class names it changes in your schema. |
+| Left out after the trial | Options the rules recommend that the selected candidate does without, because your schema's class names score better without them. |
+| Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are in the command only when the candidate with them scores best. |
 | Not recommended | Options a rule argues against for this schema. |
+| Trial | The compared candidates with their class counts, problem names, and median name length; `selected` marks the recommended one. |
+| Changes from the current configuration | The class names the recommended configuration changes from the configuration you run now, matched by schema location. |
 | Your configuration | Options you set that differ from the rules, and a newer preset when you set an older one. Your values are kept. |
 | Notes | Assumptions, such as the target Python version used when you did not set one. |
 | Command / pyproject.toml | The same recommendation as a command and as configuration. |
@@ -4323,7 +4354,8 @@ The counts, presets and options come from your schema and the installed version.
 
 Options you set on the command line or in `pyproject.toml` always stay as you set them. When a rule disagrees, the
 report lists it under "Your configuration" instead of changing it. Adopting a new naming option can rename generated
-classes, so review imports of the generated models before switching an existing project.
+classes: "Changes from the current configuration" counts them and shows examples, so review imports of the generated
+models before switching an existing project.
 
 `--http-headers` and `--http-query-parameters` are not repeated in the printed command, and URLs are shown without
 their user information, query, and fragment; add them again when you run it. A remote input is read once, checked
@@ -4338,15 +4370,17 @@ datamodel-codegen --input openapi.yaml --input-file-type openapi --recommend-opt
 datamodel-codegen --output-format-json-schema recommend-options
 ```
 
-The payload has `kind: "recommend-options"` and contains the `signals`, the starting preset under `baseline`, the
-`recommendations`, `consider`, `not_recommended` and `disagreements` entries (each with its `rule`, `set` config
-values and CLI `arguments`), `notes`, the full command as `arguments`, the `config` table, and the text report as
-`content`. `rules_revision` identifies the rule data that produced it.
+The payload has `kind: "recommend-options"` and contains the `mode` that ran (`full` when candidates were compared),
+the `signals`, the starting preset under `baseline`, the `recommendations`, `left_out`, `consider`, `not_recommended`
+and `disagreements` entries (each with its `rule`, `set` config values, CLI `arguments`, and the `trial` candidates
+and class-name `changes` that measured it), the compared candidates under `trial` (each with its `metrics`, and
+`stability` with `--diff-against`, plus the `ranking`, the `selected` label, and the `migration` from the current
+configuration), `notes`, the full command as `arguments`, the `config` table, and the text report as `content`.
+`rules_revision` identifies the rule data and `trial.metrics_version` the class-name metrics that produced it.
 
 ## What it measures
 
-- It reads the input once and measures the schema signals; no models are generated, so it is fast even on large
-  specifications.
+- It reads the input once and measures the schema signals without generating models.
 - For OpenAPI, it measures what your `--openapi-scopes` generate: component schemas with the `schemas` scope
   (otherwise only those the operations reference), and request, response, parameter, webhook, and request body
   schemas with those scopes, filtered by `--openapi-include-paths`. Swagger 2.0 `definitions` are measured as well.
@@ -4358,9 +4392,56 @@ values and CLI `arguments`), `notes`, the full command as `arguments`, the `conf
   `--input-model`, it recommends only the preset.
 - When `--target-python-version` is not set, it assumes the default target and says so in the notes.
 
-It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`, more than one `--job`,
-`--generate-pyproject-config`, `--generate-cli-command`, `--generate-prompt`, `--install-skill`,
-`--list-deprecations`, or `--list-experimental`.
+It cannot be combined with `--check`, `--watch`, `--all-jobs`, more than one `--job`, `--generate-pyproject-config`,
+`--generate-cli-command`, `--generate-prompt`, `--install-skill`, `--list-deprecations`, or `--list-experimental`.
+
+## How candidates are compared
+
+The recommender then generates these configurations of your command in memory, with formatting off, and reads the
+class names each one gives your schema:
+
+- **current**: the configuration as you run it now, without the recommended preset. It is measured for the changes
+  from your configuration and never selected.
+- **preset**: the latest dated preset with your options.
+- **recommended**: the preset with the options the rules add.
+- **recommended + DECISION**: the recommendation with each option the schema also argues against (Consider).
+- **recommended - DECISION**: the recommendation without each option it adds.
+
+With a preset already configured, your configuration is the starting point and is labelled `current`. A
+configuration is generated once under its first label, and at most eight are generated; the last ones are left out
+first, and the notes say so.
+
+Each candidate's class names are measured like the naming benchmark the rules come from. A name is a problem when it
+is numbered (`Status1`), contains a status code, is a generic word (`Item`, `Data`), is longer than 40 characters,
+repeats a word the schema does not repeat (`ShapeShape`), takes a component's name from the component, or names an
+inline model like an unrelated component. Candidates are ranked by, in order: fewer problem names; with
+`--diff-against`, fewer classes renamed between the previous and the current schema; a shorter median name; fewer
+added options. The best candidate other than `current` is selected, and the command and `pyproject.toml` block carry
+its options.
+
+The `trial:` line of each option compares the candidates without and with it, so it shows what that one option changes
+on top of the rules' recommendation. Classes are matched by schema location; locations of inline schemas leave out
+`properties` and `items` steps.
+
+A candidate whose generation fails is listed as rejected with the error and never selected. If every candidate fails,
+the options are the rules' recommendation alone.
+
+Candidates are compared when the schema is estimated at up to 3000 models: its components, inline objects and enums,
+and inline union variants, plus those of `--diff-against`. The limit is a model count, never a time, so the same
+schema always gives the same report. Larger schemas, and inputs whose size cannot be estimated (input types without
+schema rules, directories, `--input-model`), get the rules only; the notes give the command that compares the
+candidates anyway, for every input type.
+
+### Stability between schema versions
+
+Pass the previous version of the schema with `--diff-against` (and `--output`, which selects the layout as for
+generation) to also rank candidates by how many classes they rename between the versions:
+
+```bash
+datamodel-codegen --input openapi.yaml --diff-against openapi.previous.yaml --output models.py --recommend-options
+```
+
+Every candidate is then generated for both versions, and the Trial table gains a `renamed` column.
 
 ## How recommendations are maintained
 
@@ -4379,7 +4460,7 @@ It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`,
 ## FAQ
 
 **Does it generate code?**
-No. It only reads the schema and evaluates the rules.
+It writes nothing. To compare candidates, it generates their models in memory and reads only the class names.
 
 **Does it change my `pyproject.toml`?**
 No. It prints a command and a configuration block; you decide what to apply.
@@ -4389,12 +4470,13 @@ No. Explicit options are kept, and disagreements are reported under "Your config
 
 **Is the output stable?**
 The same input, options, and installed version give the same report. The report does not depend on the machine or
-on installed libraries. Upgrading datamodel-code-generator can change the recommendation when a new preset or a rule
+on installed libraries, and whether candidates are compared depends on the schema size, not on time. Upgrading datamodel-code-generator can change the recommendation when a new preset or a rule
 revision is released.
 
 **Why is an option I expected missing?**
 Either the preset already sets it (listed under "Start from"), the schema does not show the signal its rule needs,
-or the option is a project decision the recommender never makes. Check [Presets](presets.md) and the
+the candidate without it scored better on your schema (listed under "Left out after the trial"), or the option is a
+project decision the recommender never makes. Check [Presets](presets.md) and the
 [CLI Reference](cli-reference/index.md) for the full list of options.
 
 ---
@@ -50930,10 +51012,13 @@ Recommend options for the input schema on top of the latest dated preset (experi
 
 `--recommend-options` reads the input schema, measures how it is written (shared property names, inline
 enums and objects, repeated shapes, titles, tagged unions, dotted keys), and applies the recommender's rule
-data. It prints the latest dated preset to start from, the options to add with the reason for each and what
-they changed on measured schemas, options it advises against, and the resulting command and pyproject.toml
-block. Nothing is generated or written. Options set on the command line or in pyproject.toml are kept and
-reported when the rules suggest another value. Add `--output-format json` for a structured payload.
+data. For a schema of up to 3000 estimated models, it then generates the candidate configurations in memory
+(the preset, the recommendation, and the recommendation without or with each option), compares their class
+names, and recommends the best candidate, with class names before and after each option. It prints the
+latest dated preset to start from, the options to add with the reason for each, options it advises against,
+the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
+on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
+`--output-format json` for a structured payload.
 
 **Related:** [`--enum-field-as-literal`](typing-customization.md#enum-field-as-literal), [`--naming-strategy`](model-customization.md#naming-strategy), `--output-format`, [`--preset`](base-options.md#preset)
 
@@ -51117,7 +51202,7 @@ reported when the rules suggest another value. Add `--output-format json` for a 
     <!-- fmt: off -->
 
     ```
-    Option recommendations (experimental; quick mode; rules 2026-10-17)
+    Option recommendations (experimental; full mode; rules 2026-10-17)
 
     Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
       components                       6, 2 operations
@@ -51133,21 +51218,7 @@ reported when the rules suggest another value. Add `--output-format json` for a 
 
     Start from  --preset standard-py310-20261017
 
-    Add (6 options)
-      --naming-strategy full-path   [naming.qualify-shared-inline-names]
-          Inline schemas under different parents share property names (names: 4, e.g. status x3, owner
-          x3, state x2, total x2; inline names equal to a component name: 0). Numbered names (Status,
-          Status1) depend on parse order and shift when the schema grows; full-path names each inline
-          model after its parent.
-          caveat: full-path repeats the parent name where a union branch or array item already carries
-          it (#4826).
-          measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
-          versions 17% -> 0.0%
-          measured: Petstore: Status and Status1 became OrderStatus and PetStatus
-          measured: Stripe API description: the expandable ID string of charge no longer displaces the
-          charge component (ChargeModel)
-          measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
-          lost
+    Add (5 options)
       --enum-field-as-literal all   [enums.inline-value-sets-as-literal]
           Most enums are inline value sets of one property (inline enums: 6 of 6). As Enum classes they
           add one class name each, the longest and most numbered names; Literal types keep the values
@@ -51155,6 +51226,8 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: GitHub REST API description: 1872 -> 1538 types, names over 40 characters 370 -> 227
           measured: Stripe API description: problem names 348 -> 158
           measured: SchemaStore workflow schema: Type1 to Type19 disappear
+          trial: recommended - enum-shape -> recommended: classes 15 -> 9, problem names 2 -> 2; 0 of 9
+          classes matched by schema location renamed (0 only renumbered), 6 removed, 0 added
       --reuse-model --collapse-reuse-models   [reuse.identical-inline-shapes]
           The schema repeats shapes (inline objects repeating a shape: 10, in 2 shapes; inline enums
           repeating a value set: 0, in 0 sets; union branches that only constrain their parent's
@@ -51164,6 +51237,8 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: 2512 -> 2022 types
           measured: SchemaStore workflow schema: the step branches' copies With1 to With11 became one
           With1
+          trial: recommended - reuse -> recommended: classes 17 -> 9, problem names 2 -> 2; 0 of 9
+          classes matched by schema location renamed (0 only renumbered), 8 removed, 0 added
       --no-treat-dot-as-module   [dotted-keys.flat-when-namespaces-cycle]
           Dotted keys (2, in 2 namespaces) reference each other in cycles (namespace groups: 1). As
           modules, cycle members move to _internal.py, where same-named classes of different namespaces
@@ -51171,6 +51246,10 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: Card_1 and Customer_1 disappear, problem names 158 -> 153
           measured: Kubernetes apps/v1: no cycles, so modules stay (median name length 16 as modules, 32
           flat)
+          trial: recommended - dotted-keys -> recommended: classes 14 -> 9, problem names 2 -> 2; 2 of 9
+          classes matched by schema location renamed (0 only renumbered), 5 removed, 0 added, e.g.
+            Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
+            Shipment -> ShippingShipment   #/components/schemas/shipping.Shipment
       --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
           Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
           sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -51187,6 +51266,32 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           WorkflowDispatchInputString, Boolean, ...)
           measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
           schemas without tagged or key branches: no change
+          trial: recommended - union-variant-names -> recommended: classes 9 -> 9, problem names 2 -> 2;
+          2 of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added,
+          e.g.
+            PaymentPayment -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
+            PaymentPayment1 -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
+
+    Left out after the trial (the rules recommend these)
+      --naming-strategy full-path   [naming.qualify-shared-inline-names]
+          Inline schemas under different parents share property names (names: 4, e.g. status x3, owner
+          x3, state x2, total x2; inline names equal to a component name: 0). Numbered names (Status,
+          Status1) depend on parse order and shift when the schema grows; full-path names each inline
+          model after its parent.
+          caveat: full-path repeats the parent name where a union branch or array item already carries
+          it (#4826).
+          measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
+          versions 17% -> 0.0%
+          measured: Petstore: Status and Status1 became OrderStatus and PetStatus
+          measured: Stripe API description: the expandable ID string of charge no longer displaces the
+          charge component (ChargeModel)
+          measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
+          lost
+          trial: recommended - naming-strategy -> recommended: classes 9 -> 9, problem names 0 -> 2; 4
+          of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+            Total -> OrderTotal   #/components/schemas/Order/total
+            PaymentCard -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
+            PaymentBank -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
 
     Not recommended
       --use-title-as-name   [titles.keys-when-titles-collide]
@@ -51200,12 +51305,30 @@ reported when the rules suggest another value. Add `--output-format json` for a 
           measured: Stripe API description: 17% of component titles changed in four months; class names
           from keys renamed 0.0% of locations
 
+    Trial  8 candidates generated in memory without formatting; nothing written
+      candidate                          classes   problems  numbered  long  doubled  displaced  median
+      current                                 22  5 (22.7%)         5     0        0          0       6
+      preset                                  22  5 (22.7%)         5     0        0          0       6
+      recommended                              9  2 (22.2%)         0     0        2          0      10
+      recommended - naming-strategy            9   0 (0.0%)         0     0        0          0       5   selected
+      recommended - enum-shape                15  2 (13.3%)         0     0        2          0      11
+      recommended - reuse                     17  2 (11.8%)         0     0        2          0      14
+      recommended - dotted-keys               14  2 (14.3%)         0     0        2          0       7
+      recommended - union-variant-names        9  2 (22.2%)         1     0        2          0      10
+      current: the configuration as set, without the preset; never selected
+
+    Changes from the current configuration (current -> recommended - naming-strategy)
+      4 of 9 classes matched by schema location renamed (0 only renumbered), 13 removed, 0 added, e.g.
+        Payment1 -> PaymentCard   #/components/schemas/Payment/oneOf/0
+        Payment2 -> PaymentBank   #/components/schemas/Payment/oneOf/1
+        Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
+
     Notes
       - Target Python is not set: the recommendation assumes 3.10, the default. Set
         --target-python-version to start from the preset of the Python version the project runs.
 
     Command
-      datamodel-codegen --collapse-reuse-models --enum-field-as-literal all --input api.yaml --input-file-type openapi --naming-strategy full-path --preset standard-py310-20261017 --reuse-model --no-treat-dot-as-module --use-tag-as-union-variant-name
+      datamodel-codegen --collapse-reuse-models --enum-field-as-literal all --input api.yaml --input-file-type openapi --preset standard-py310-20261017 --reuse-model --no-treat-dot-as-module --use-tag-as-union-variant-name
 
     pyproject.toml
       [tool.datamodel-codegen]
@@ -51213,7 +51336,6 @@ reported when the rules suggest another value. Add `--output-format json` for a 
       enum-field-as-literal = "all"
       input = "api.yaml"
       input-file-type = "openapi"
-      naming-strategy = "full-path"
       preset = "standard-py310-20261017"
       reuse-model = true
       treat-dot-as-module = false
@@ -59437,7 +59559,7 @@ This page lists features that are available but still experimental.
 | `cli-option.generate-schema-validators` | cli-option | `--generate-schema-validators` | 0.66.1 | - |
 | `cli-option.generate-server` | cli-option | `--generate-server fastapi and the --server-* options (and their [tool.datamodel-codegen] keys and generate() options)` | 0.84.0 | - |
 | `cli-option.install-skill` | cli-option | `--install-skill, --skill-scope, and --overwrite-skill` | 0.76.0 | - |
-| `cli-option.recommend-options` | cli-option | `--recommend-options, its rule data, and its JSON payload` | 0.86.0 | - |
+| `cli-option.recommend-options` | cli-option | `--recommend-options, its rule data, its candidate comparison, and its JSON payload` | 0.86.0 | - |
 | `cli-option.schema-validator-type` | cli-option | `--schema-validator-type` | 0.66.1 | - |
 | `cli-option.use-missing-sentinel` | cli-option | `--use-missing-sentinel` | 0.66.1 | - |
 | `cli-option.use-type-alias` | cli-option | `--use-type-alias` | 0.36.0 | - |
@@ -59515,12 +59637,12 @@ Use --install-skill with codex or claude-code. --skill-scope selects a project o
 ### `cli-option.recommend-options`
 
 - **Kind:** cli-option
-- **Target:** `--recommend-options, its rule data, and its JSON payload`
+- **Target:** `--recommend-options, its rule data, its candidate comparison, and its JSON payload`
 - **Since:** 0.86.0
 
-Option recommendations are experimental; the rules, the schema signals they read, the report, and the JSON payload may change.
+Option recommendations are experimental; the rules, the schema signals they read, the class-name metrics, the report, and the JSON payload may change.
 
---recommend-options reads the input schema, measures naming-relevant signals of OpenAPI, AsyncAPI, and JSON Schema documents, and prints the latest dated preset to start from with the options to add, as a command and a pyproject.toml block, without generating code. Options set on the command line or in pyproject.toml are kept.
+--recommend-options reads the input schema, measures naming-relevant signals of OpenAPI, AsyncAPI, and JSON Schema documents, and prints the latest dated preset to start from with the options to add, as a command and a pyproject.toml block. Options set on the command line or in pyproject.toml are kept. For schemas of up to 3000 estimated models, it also generates the candidate configurations in memory and recommends the one whose class names score best; nothing is written.
 
 ### `cli-option.schema-validator-type`
 

@@ -9,12 +9,14 @@ Analyse a schema and get the `datamodel-codegen` options that suit it, starting 
 A [preset](presets.md) is a good general starting point, but some choices depend on the shape of your schema: how
 inline models should be named, whether titles make good class names, whether inline enums should become `Literal`
 types, or whether repeated inline objects should be reused. `--recommend-options` reads your schema, measures the
-signals that drive these choices, and prints:
+signals that drive these choices, generates the candidate configurations in memory to compare the class names they
+give your schema, and prints:
 
 - the latest dated preset to start from,
 - the options to add on top of it, each with the rule that chose it, the reason with counts from your schema, caveats,
-  and the effect measured on public schemas,
+  the effect measured on public schemas, and the class names it changes in your schema (before -> after),
 - options worth considering when the schema has signals for and against them,
+- the compared candidates and the class names that change from your current configuration,
 - where your existing configuration differs from the rules,
 - a ready command and a `pyproject.toml` block.
 
@@ -30,7 +32,12 @@ Pass the options you have already decided on, such as `--output-model-type` and 
 recommendation starts from the matching preset. When they are in `pyproject.toml`, run the command from the project
 directory; `--profile NAME` and a single `--job NAME` select a profile or a job as they do for generation.
 
-The command prints the report and exits. It does not generate models, write files, or change your configuration.
+The command prints the report and exits. It does not write files or change your configuration.
+
+To compare names in the layout you generate, pass `--output` as you would for generation: a file path selects one
+module, a directory a package. Nothing is written there. Generating every candidate takes about as long as generating
+your models once per candidate, so a schema estimated above 3000 models gets the rules only, and the notes give the
+command that compares the candidates anyway (see [How candidates are compared](#how-candidates-are-compared)).
 
 ## Read the report
 
@@ -86,7 +93,7 @@ components:
 <!-- fmt: off -->
 
 ```text
-Option recommendations (experimental; quick mode; rules 2026-10-17)
+Option recommendations (experimental; full mode; rules 2026-10-17)
 
 Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
   components                       2, 0 operations
@@ -102,13 +109,19 @@ Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
 
 Start from  --preset standard-py314-20261017
 
-Add (2 options)
+Add (1 option)
   --use-title-as-name   [titles.names-from-unique-titles]
       Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
       x1, Bank Account x1). Titles name them after what they are, instead of their parent property
       and a number.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
+      trial: recommended - title-source -> recommended: classes 4 -> 4, problem names 0 -> 0; 2 of 4
+      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        PaymentCard -> Card   #/components/schemas/Booking/payment/oneOf/0
+        PaymentBankAccount -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+
+Left out after the trial (the rules recommend these)
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -125,16 +138,31 @@ Add (2 options)
       WorkflowDispatchInputString, Boolean, ...)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
+      trial: recommended - union-variant-names -> recommended: classes 4 -> 4, problem names 0 -> 0;
+      0 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added
+
+Trial  5 candidates generated in memory without formatting; nothing written
+  candidate                          classes   problems  numbered  long  doubled  displaced  median
+  current                                  4  1 (25.0%)         1     0        0          0       7
+  preset                                   4  1 (25.0%)         1     0        0          0       7
+  recommended                              4   0 (0.0%)         0     0        0          0       7
+  recommended - title-source               4   0 (0.0%)         0     0        0          0      11
+  recommended - union-variant-names        4   0 (0.0%)         0     0        0          0       7   selected
+  current: the configuration as set, without the preset; never selected
+
+Changes from the current configuration (current -> recommended - union-variant-names)
+  2 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+    Payment -> Card   #/components/schemas/Booking/payment/oneOf/0
+    Payment1 -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
 
 Command
-  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name --use-title-as-name
+  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-title-as-name
 
 pyproject.toml
   [tool.datamodel-codegen]
   input = "titled_variants.yaml"
   preset = "standard-py314-20261017"
   target-python-version = "3.14"
-  use-tag-as-union-variant-name = true
   use-title-as-name = true
 ```
 
@@ -147,9 +175,12 @@ The counts, presets and options come from your schema and the installed version.
 |---|---|
 | Schema | The signals the rules read: components, inline objects and enums, shared property names, repeated shapes, titles, unions and their tags, key style. |
 | Start from | The latest dated `standard` preset for your output model type and target Python version, and the rules it already satisfies. It is the `practical` preset only when you configured a practical preset, or when no option can set a value a rule needs on the standard preset (the notes then say which). |
-| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), and `measured:` lines with the effect seen on public schemas. |
-| Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are not in the command. |
+| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), `measured:` lines with the effect seen on public schemas, and a `trial:` line with the candidates without and with it, their class and problem-name counts, and up to three class names it changes in your schema. |
+| Left out after the trial | Options the rules recommend that the selected candidate does without, because your schema's class names score better without them. |
+| Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are in the command only when the candidate with them scores best. |
 | Not recommended | Options a rule argues against for this schema. |
+| Trial | The compared candidates with their class counts, problem names, and median name length; `selected` marks the recommended one. |
+| Changes from the current configuration | The class names the recommended configuration changes from the configuration you run now, matched by schema location. |
 | Your configuration | Options you set that differ from the rules, and a newer preset when you set an older one. Your values are kept. |
 | Notes | Assumptions, such as the target Python version used when you did not set one. |
 | Command / pyproject.toml | The same recommendation as a command and as configuration. |
@@ -165,7 +196,8 @@ The counts, presets and options come from your schema and the installed version.
 
 Options you set on the command line or in `pyproject.toml` always stay as you set them. When a rule disagrees, the
 report lists it under "Your configuration" instead of changing it. Adopting a new naming option can rename generated
-classes, so review imports of the generated models before switching an existing project.
+classes: "Changes from the current configuration" counts them and shows examples, so review imports of the generated
+models before switching an existing project.
 
 `--http-headers` and `--http-query-parameters` are not repeated in the printed command, and URLs are shown without
 their user information, query, and fragment; add them again when you run it. A remote input is read once, checked
@@ -180,15 +212,17 @@ datamodel-codegen --input openapi.yaml --input-file-type openapi --recommend-opt
 datamodel-codegen --output-format-json-schema recommend-options
 ```
 
-The payload has `kind: "recommend-options"` and contains the `signals`, the starting preset under `baseline`, the
-`recommendations`, `consider`, `not_recommended` and `disagreements` entries (each with its `rule`, `set` config
-values and CLI `arguments`), `notes`, the full command as `arguments`, the `config` table, and the text report as
-`content`. `rules_revision` identifies the rule data that produced it.
+The payload has `kind: "recommend-options"` and contains the `mode` that ran (`full` when candidates were compared),
+the `signals`, the starting preset under `baseline`, the `recommendations`, `left_out`, `consider`, `not_recommended`
+and `disagreements` entries (each with its `rule`, `set` config values, CLI `arguments`, and the `trial` candidates
+and class-name `changes` that measured it), the compared candidates under `trial` (each with its `metrics`, and
+`stability` with `--diff-against`, plus the `ranking`, the `selected` label, and the `migration` from the current
+configuration), `notes`, the full command as `arguments`, the `config` table, and the text report as `content`.
+`rules_revision` identifies the rule data and `trial.metrics_version` the class-name metrics that produced it.
 
 ## What it measures
 
-- It reads the input once and measures the schema signals; no models are generated, so it is fast even on large
-  specifications.
+- It reads the input once and measures the schema signals without generating models.
 - For OpenAPI, it measures what your `--openapi-scopes` generate: component schemas with the `schemas` scope
   (otherwise only those the operations reference), and request, response, parameter, webhook, and request body
   schemas with those scopes, filtered by `--openapi-include-paths`. Swagger 2.0 `definitions` are measured as well.
@@ -200,9 +234,56 @@ values and CLI `arguments`), `notes`, the full command as `arguments`, the `conf
   `--input-model`, it recommends only the preset.
 - When `--target-python-version` is not set, it assumes the default target and says so in the notes.
 
-It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`, more than one `--job`,
-`--generate-pyproject-config`, `--generate-cli-command`, `--generate-prompt`, `--install-skill`,
-`--list-deprecations`, or `--list-experimental`.
+It cannot be combined with `--check`, `--watch`, `--all-jobs`, more than one `--job`, `--generate-pyproject-config`,
+`--generate-cli-command`, `--generate-prompt`, `--install-skill`, `--list-deprecations`, or `--list-experimental`.
+
+## How candidates are compared
+
+The recommender then generates these configurations of your command in memory, with formatting off, and reads the
+class names each one gives your schema:
+
+- **current**: the configuration as you run it now, without the recommended preset. It is measured for the changes
+  from your configuration and never selected.
+- **preset**: the latest dated preset with your options.
+- **recommended**: the preset with the options the rules add.
+- **recommended + DECISION**: the recommendation with each option the schema also argues against (Consider).
+- **recommended - DECISION**: the recommendation without each option it adds.
+
+With a preset already configured, your configuration is the starting point and is labelled `current`. A
+configuration is generated once under its first label, and at most eight are generated; the last ones are left out
+first, and the notes say so.
+
+Each candidate's class names are measured like the naming benchmark the rules come from. A name is a problem when it
+is numbered (`Status1`), contains a status code, is a generic word (`Item`, `Data`), is longer than 40 characters,
+repeats a word the schema does not repeat (`ShapeShape`), takes a component's name from the component, or names an
+inline model like an unrelated component. Candidates are ranked by, in order: fewer problem names; with
+`--diff-against`, fewer classes renamed between the previous and the current schema; a shorter median name; fewer
+added options. The best candidate other than `current` is selected, and the command and `pyproject.toml` block carry
+its options.
+
+The `trial:` line of each option compares the candidates without and with it, so it shows what that one option changes
+on top of the rules' recommendation. Classes are matched by schema location; locations of inline schemas leave out
+`properties` and `items` steps.
+
+A candidate whose generation fails is listed as rejected with the error and never selected. If every candidate fails,
+the options are the rules' recommendation alone.
+
+Candidates are compared when the schema is estimated at up to 3000 models: its components, inline objects and enums,
+and inline union variants, plus those of `--diff-against`. The limit is a model count, never a time, so the same
+schema always gives the same report. Larger schemas, and inputs whose size cannot be estimated (input types without
+schema rules, directories, `--input-model`), get the rules only; the notes give the command that compares the
+candidates anyway, for every input type.
+
+### Stability between schema versions
+
+Pass the previous version of the schema with `--diff-against` (and `--output`, which selects the layout as for
+generation) to also rank candidates by how many classes they rename between the versions:
+
+```bash
+datamodel-codegen --input openapi.yaml --diff-against openapi.previous.yaml --output models.py --recommend-options
+```
+
+Every candidate is then generated for both versions, and the Trial table gains a `renamed` column.
 
 ## How recommendations are maintained
 
@@ -221,7 +302,7 @@ It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`,
 ## FAQ
 
 **Does it generate code?**
-No. It only reads the schema and evaluates the rules.
+It writes nothing. To compare candidates, it generates their models in memory and reads only the class names.
 
 **Does it change my `pyproject.toml`?**
 No. It prints a command and a configuration block; you decide what to apply.
@@ -231,10 +312,11 @@ No. Explicit options are kept, and disagreements are reported under "Your config
 
 **Is the output stable?**
 The same input, options, and installed version give the same report. The report does not depend on the machine or
-on installed libraries. Upgrading datamodel-code-generator can change the recommendation when a new preset or a rule
+on installed libraries, and whether candidates are compared depends on the schema size, not on time. Upgrading datamodel-code-generator can change the recommendation when a new preset or a rule
 revision is released.
 
 **Why is an option I expected missing?**
 Either the preset already sets it (listed under "Start from"), the schema does not show the signal its rule needs,
-or the option is a project decision the recommender never makes. Check [Presets](presets.md) and the
+the candidate without it scored better on your schema (listed under "Left out after the trial"), or the option is a
+project decision the recommender never makes. Check [Presets](presets.md) and the
 [CLI Reference](cli-reference/index.md) for the full list of options.

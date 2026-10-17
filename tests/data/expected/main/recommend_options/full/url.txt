@@ -1,0 +1,78 @@
+Option recommendations (experimental; full mode; rules 2026-10-17)
+
+Schema  JSON Schema (https://json-schema.org/draft/2020-12/schema)
+  components                       2, 0 operations
+  inline objects / enums           3 / 0, nesting depth 1
+  shared property names            1 (dimensions x2)
+  inline names = component names   0
+  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets
+  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key
+  inline titles                    0 objects, most repeated 0 (none)
+  unions                           1 oneOf/anyOf, 0 with a discriminator, 2 inline variants
+  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
+  component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces
+  root schema                      object model 1, title words 0
+
+Start from  --preset standard-py314-20261017
+
+Add (2 options)
+  --naming-strategy full-path   [naming.qualify-shared-inline-names]
+      Inline schemas under different parents share property names (names: 1, e.g. dimensions x2;
+      inline names equal to a component name: 0). Numbered names (Status, Status1) depend on parse
+      order and shift when the schema grows; full-path names each inline model after its parent.
+      caveat: full-path repeats the parent name where a union branch or array item already carries
+      it (#4826).
+      measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
+      versions 17% -> 0.0%
+      measured: Petstore: Status and Status1 became OrderStatus and PetStatus
+      measured: Stripe API description: the expandable ID string of charge no longer displaces the
+      charge component (ChargeModel)
+      measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
+      lost
+      trial: recommended - naming-strategy -> recommended: classes 6 -> 6, problem names 1 -> 0; 3
+      of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        Dimensions -> ProductDimensions   #/$defs/Product/dimensions
+        Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
+        Price -> CatalogPrice   #/price/oneOf/0
+  --class-name Catalog   [root.class-name-for-root-object]
+      The root schema is an object model. Without --class-name its class is Model (with
+      --use-title-as-name, its title: none), and full-path prefixes that name onto root-level
+      models. The suggested name comes from the input file name; replace it with the name the
+      project wants.
+      measured: SchemaStore tsconfig schema: JSONSchemaForTheTypeScriptCompilerSConfigurationFile
+      became TsConfig, names over 40 characters 6 -> 0
+      measured: SchemaStore workflow, docker-compose and package.json schemas: Model became
+      Workflow, Compose and PackageJson
+      trial: recommended - root-name -> recommended: classes 6 -> 6, problem names 1 -> 0; 2 of 6
+      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        Model -> Catalog   #
+        ModelPrice -> CatalogPrice   #/price/oneOf/0
+
+Trial  5 candidates generated in memory without formatting; nothing written
+  candidate                      classes   problems  numbered  long  doubled  displaced  median
+  current                              6  2 (33.3%)         1     0        0          0       7
+  preset                               6  2 (33.3%)         1     0        0          0       7
+  recommended                          6   0 (0.0%)         0     0        0          0      12   selected
+  recommended - naming-strategy        6  1 (16.7%)         1     0        0          0       7
+  recommended - root-name              6  1 (16.7%)         0     0        0          0      10
+  current: the configuration as set, without the preset; never selected
+
+Changes from the current configuration (current -> recommended)
+  4 of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+    Dimensions -> ProductDimensions   #/$defs/Product/dimensions
+    Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
+    Model -> Catalog   #
+
+Notes
+  - --url is repeated without its user information, query, and fragment; add them again.
+
+Command
+  datamodel-codegen --class-name Catalog --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14 --url https://api.example.com/specs/catalog.json
+
+pyproject.toml
+  [tool.datamodel-codegen]
+  class-name = "Catalog"
+  naming-strategy = "full-path"
+  preset = "standard-py314-20261017"
+  target-python-version = "3.14"
+  url = "https://api.example.com/specs/catalog.json"

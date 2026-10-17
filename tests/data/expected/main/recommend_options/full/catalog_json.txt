@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "format": "json",
+  "kind": "recommend-options",
+  "mode": "full",
+  "rules_revision": "2026-10-17",
+  "calibrated_presets": "20261017",
+  "input": {
+    "source": "file",
+    "input_file_type": "jsonschema",
+    "document": "JSON Schema (https://json-schema.org/draft/2020-12/schema)",
+    "analysed": true
+  },
+  "context": {
+    "output_model_type": "pydantic_v2.BaseModel",
+    "target_python_version": "3.14"
+  },
+  "signals": {
+    "all_enums": 0,
+    "component_enums": 0,
+    "component_title_duplicate_groups": 0,
+    "component_titles_equal_other_key": 0,
+    "component_titles_equal_own_key": 0,
+    "component_titles_in_duplicate_groups": 0,
+    "components": 2,
+    "discriminated_unions": 0,
+    "dotted_key_namespaces": 0,
+    "dotted_keys": 0,
+    "dotted_namespace_reference_cycles": 0,
+    "duplicate_inline_enum_shapes": 0,
+    "duplicate_inline_enums": 0,
+    "duplicate_inline_objects": 0,
+    "duplicate_inline_shapes": 0,
+    "estimated_models": 7,
+    "inline_enums": 0,
+    "inline_names_equal_component": 0,
+    "inline_object_union_variants": 1,
+    "inline_objects": 3,
+    "inline_scalar_union_variants": 1,
+    "inline_tagged_union_branches": 0,
+    "inline_title_max_repeat": 0,
+    "inline_titled_objects": 0,
+    "inline_titled_union_variants": 0,
+    "inline_union_variants": 2,
+    "max_inline_depth": 1,
+    "operations": 0,
+    "parent_copy_union_branches": 0,
+    "root_is_object": 1,
+    "root_title_words": 0,
+    "shared_inline_enum_names": 0,
+    "shared_inline_names": 1,
+    "shared_inline_object_names": 1,
+    "single_key_required_open": 0,
+    "single_key_union_branches": 0,
+    "single_value_enum_union_branches": 0,
+    "single_value_enums": 0,
+    "tagged_behind_ref": 0,
+    "titled_components": 0,
+    "unions": 1
+  },
+  "facts": {
+    "schema": "JSON Schema (https://json-schema.org/draft/2020-12/schema)",
+    "scopes": "",
+    "shared_inline_name_examples": "dimensions x2",
+    "inline_title_examples": "",
+    "duplicate_title_examples": "",
+    "key_style": "PascalCase (2 of 2)",
+    "root_title": ""
+  },
+  "baseline": {
+    "preset": "standard-py314-20261017",
+    "family": "standard",
+    "configured": false,
+    "covers": []
+  },
+  "recommendations": [
+    {
+      "rule": "naming.qualify-shared-inline-names",
+      "decision": "naming-strategy",
+      "set": {
+        "naming_strategy": "full-path"
+      },
+      "arguments": [
+        "--naming-strategy",
+        "full-path"
+      ],
+      "reason": "Inline schemas under different parents share property names (names: 1, e.g. dimensions x2; inline names equal to a component name: 0). Numbered names (Status, Status1) depend on parse order and shift when the schema grows; full-path names each inline model after its parent.",
+      "contested_reason": null,
+      "caveats": [
+        "full-path repeats the parent name where a union branch or array item already carries it (#4826)."
+      ],
+      "evidence": [
+        "GitHub REST API description: numbered names 663 -> 53; locations renamed between two versions 17% -> 0.0%",
+        "Petstore: Status and Status1 became OrderStatus and PetStatus",
+        "Stripe API description: the expandable ID string of charge no longer displaces the charge component (ChargeModel)",
+        "SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and lost"
+      ],
+      "trial": {
+        "before": "recommended - naming-strategy",
+        "after": "recommended",
+        "changes": {
+          "matched": 6,
+          "renamed": 3,
+          "renumbered": 0,
+          "removed": 0,
+          "added": 0,
+          "examples": [
+            {
+              "location": "#/$defs/Product/dimensions",
+              "before": "Dimensions",
+              "after": "ProductDimensions"
+            },
+            {
+              "location": "#/$defs/Variant/dimensions",
+              "before": "Dimensions1",
+              "after": "VariantDimensions"
+            },
+            {
+              "location": "#/price/oneOf/0",
+              "before": "Price",
+              "after": "CatalogPrice"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "rule": "root.class-name-for-root-object",
+      "decision": "root-name",
+      "set": {
+        "class_name": "Catalog"
+      },
+      "arguments": [
+        "--class-name",
+        "Catalog"
+      ],
+      "reason": "The root schema is an object model. Without --class-name its class is Model (with --use-title-as-name, its title: none), and full-path prefixes that name onto root-level models. The suggested name comes from the input file name; replace it with the name the project wants.",
+      "contested_reason": null,
+      "caveats": [],
+      "evidence": [
+        "SchemaStore tsconfig schema: JSONSchemaForTheTypeScriptCompilerSConfigurationFile became TsConfig, names over 40 characters 6 -> 0",
+        "SchemaStore workflow, docker-compose and package.json schemas: Model became Workflow, Compose and PackageJson"
+      ],
+      "trial": {
+        "before": "recommended - root-name",
+        "after": "recommended",
+        "changes": {
+          "matched": 6,
+          "renamed": 2,
+          "renumbered": 0,
+          "removed": 0,
+          "added": 0,
+          "examples": [
+            {
+              "location": "#",
+              "before": "Model",
+              "after": "Catalog"
+            },
+            {
+              "location": "#/price/oneOf/0",
+              "before": "ModelPrice",
+              "after": "CatalogPrice"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "left_out": [],
+  "consider": [],
+  "not_recommended": [],
+  "disagreements": [],
+  "trial": {
+    "metrics_version": 1,
+    "candidates": [
+      {
+        "label": "current",
+        "preset": null,
+        "set": {},
+        "arguments": [],
+        "selectable": false,
+        "error": null,
+        "metrics": {
+          "types": 6,
+          "component": 3,
+          "inline": 3,
+          "operation": 0,
+          "readable": 4,
+          "numbered": 1,
+          "statuscode": 0,
+          "generic": 1,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 1,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 0,
+          "median_length": 7,
+          "max_length": 11,
+          "problems": 2,
+          "problems_percent": 33.3
+        },
+        "stability": null
+      },
+      {
+        "label": "preset",
+        "preset": "standard-py314-20261017",
+        "set": {},
+        "arguments": [],
+        "selectable": true,
+        "error": null,
+        "metrics": {
+          "types": 6,
+          "component": 3,
+          "inline": 3,
+          "operation": 0,
+          "readable": 4,
+          "numbered": 1,
+          "statuscode": 0,
+          "generic": 1,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 1,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 0,
+          "median_length": 7,
+          "max_length": 11,
+          "problems": 2,
+          "problems_percent": 33.3
+        },
+        "stability": null
+      },
+      {
+        "label": "recommended",
+        "preset": "standard-py314-20261017",
+        "set": {
+          "naming_strategy": "full-path",
+          "class_name": "Catalog"
+        },
+        "arguments": [
+          "--naming-strategy",
+          "full-path",
+          "--class-name",
+          "Catalog"
+        ],
+        "selectable": true,
+        "error": null,
+        "metrics": {
+          "types": 6,
+          "component": 3,
+          "inline": 3,
+          "operation": 0,
+          "readable": 6,
+          "numbered": 0,
+          "statuscode": 0,
+          "generic": 0,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 1,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 0,
+          "median_length": 12,
+          "max_length": 17,
+          "problems": 0,
+          "problems_percent": 0.0
+        },
+        "stability": null
+      },
+      {
+        "label": "recommended - naming-strategy",
+        "preset": "standard-py314-20261017",
+        "set": {
+          "class_name": "Catalog"
+        },
+        "arguments": [
+          "--class-name",
+          "Catalog"
+        ],
+        "selectable": true,
+        "error": null,
+        "metrics": {
+          "types": 6,
+          "component": 3,
+          "inline": 3,
+          "operation": 0,
+          "readable": 5,
+          "numbered": 1,
+          "statuscode": 0,
+          "generic": 0,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 1,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 0,
+          "median_length": 7,
+          "max_length": 11,
+          "problems": 1,
+          "problems_percent": 16.7
+        },
+        "stability": null
+      },
+      {
+        "label": "recommended - root-name",
+        "preset": "standard-py314-20261017",
+        "set": {
+          "naming_strategy": "full-path"
+        },
+        "arguments": [
+          "--naming-strategy",
+          "full-path"
+        ],
+        "selectable": true,
+        "error": null,
+        "metrics": {
+          "types": 6,
+          "component": 3,
+          "inline": 3,
+          "operation": 0,
+          "readable": 5,
+          "numbered": 0,
+          "statuscode": 0,
+          "generic": 1,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 1,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 0,
+          "median_length": 10,
+          "max_length": 17,
+          "problems": 1,
+          "problems_percent": 16.7
+        },
+        "stability": null
+      }
+    ],
+    "ranking": [
+      "recommended",
+      "recommended - naming-strategy",
+      "recommended - root-name",
+      "current",
+      "preset"
+    ],
+    "selected": "recommended",
+    "current": "current",
+    "migration": {
+      "matched": 6,
+      "renamed": 4,
+      "renumbered": 0,
+      "removed": 0,
+      "added": 0,
+      "examples": [
+        {
+          "location": "#/$defs/Product/dimensions",
+          "before": "Dimensions",
+          "after": "ProductDimensions"
+        },
+        {
+          "location": "#/$defs/Variant/dimensions",
+          "before": "Dimensions1",
+          "after": "VariantDimensions"
+        },
+        {
+          "location": "#",
+          "before": "Model",
+          "after": "Catalog"
+        }
+      ]
+    },
+    "left_out": 0
+  },
+  "notes": [],
+  "arguments": [
+    "--class-name",
+    "Catalog",
+    "--input",
+    "catalog.json",
+    "--naming-strategy",
+    "full-path",
+    "--preset",
+    "standard-py314-20261017",
+    "--target-python-version",
+    "3.14"
+  ],
+  "config": {
+    "tool": {
+      "datamodel-codegen": {
+        "class-name": "Catalog",
+        "input": "catalog.json",
+        "naming-strategy": "full-path",
+        "preset": "standard-py314-20261017",
+        "target-python-version": "3.14"
+      }
+    }
+  },
+  "config_complete": true,
+  "content": "Option recommendations (experimental; full mode; rules 2026-10-17)\n\nSchema  JSON Schema (https://json-schema.org/draft/2020-12/schema)\n  components                       2, 0 operations\n  inline objects / enums           3 / 0, nesting depth 1\n  shared property names            1 (dimensions x2)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    0 objects, most repeated 0 (none)\n  unions                           1 oneOf/anyOf, 0 with a discriminator, 2 inline variants\n  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces\n  root schema                      object model 1, title words 0\n\nStart from  --preset standard-py314-20261017\n\nAdd (2 options)\n  --naming-strategy full-path   [naming.qualify-shared-inline-names]\n      Inline schemas under different parents share property names (names: 1, e.g. dimensions x2;\n      inline names equal to a component name: 0). Numbered names (Status, Status1) depend on parse\n      order and shift when the schema grows; full-path names each inline model after its parent.\n      caveat: full-path repeats the parent name where a union branch or array item already carries\n      it (#4826).\n      measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two\n      versions 17% -> 0.0%\n      measured: Petstore: Status and Status1 became OrderStatus and PetStatus\n      measured: Stripe API description: the expandable ID string of charge no longer displaces the\n      charge component (ChargeModel)\n      measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and\n      lost\n      trial: recommended - naming-strategy -> recommended: classes 6 -> 6, problem names 1 -> 0; 3\n      of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.\n        Dimensions -> ProductDimensions   #/$defs/Product/dimensions\n        Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions\n        Price -> CatalogPrice   #/price/oneOf/0\n  --class-name Catalog   [root.class-name-for-root-object]\n      The root schema is an object model. Without --class-name its class is Model (with\n      --use-title-as-name, its title: none), and full-path prefixes that name onto root-level\n      models. The suggested name comes from the input file name; replace it with the name the\n      project wants.\n      measured: SchemaStore tsconfig schema: JSONSchemaForTheTypeScriptCompilerSConfigurationFile\n      became TsConfig, names over 40 characters 6 -> 0\n      measured: SchemaStore workflow, docker-compose and package.json schemas: Model became\n      Workflow, Compose and PackageJson\n      trial: recommended - root-name -> recommended: classes 6 -> 6, problem names 1 -> 0; 2 of 6\n      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.\n        Model -> Catalog   #\n        ModelPrice -> CatalogPrice   #/price/oneOf/0\n\nTrial  5 candidates generated in memory without formatting; nothing written\n  candidate                      classes   problems  numbered  long  doubled  displaced  median\n  current                              6  2 (33.3%)         1     0        0          0       7\n  preset                               6  2 (33.3%)         1     0        0          0       7\n  recommended                          6   0 (0.0%)         0     0        0          0      12   selected\n  recommended - naming-strategy        6  1 (16.7%)         1     0        0          0       7\n  recommended - root-name              6  1 (16.7%)         0     0        0          0      10\n  current: the configuration as set, without the preset; never selected\n\nChanges from the current configuration (current -> recommended)\n  4 of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.\n    Dimensions -> ProductDimensions   #/$defs/Product/dimensions\n    Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions\n    Model -> Catalog   #\n\nCommand\n  datamodel-codegen --class-name Catalog --input catalog.json --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14\n\npyproject.toml\n  [tool.datamodel-codegen]\n  class-name = \"Catalog\"\n  input = \"catalog.json\"\n  naming-strategy = \"full-path\"\n  preset = \"standard-py314-20261017\"\n  target-python-version = \"3.14\"\n"
+}

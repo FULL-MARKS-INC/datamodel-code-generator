@@ -1,4 +1,4 @@
-Option recommendations (experimental; quick mode; rules 2026-10-17)
+Option recommendations (experimental; full mode; rules 2026-10-17)
 
 Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
   components                       2, 0 operations
@@ -14,13 +14,19 @@ Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
 
 Start from  --preset standard-py314-20261017
 
-Add (2 options)
+Add (1 option)
   --use-title-as-name   [titles.names-from-unique-titles]
       Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
       x1, Bank Account x1). Titles name them after what they are, instead of their parent property
       and a number.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
+      trial: recommended - title-source -> recommended: classes 4 -> 4, problem names 0 -> 0; 2 of 4
+      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        PaymentCard -> Card   #/components/schemas/Booking/payment/oneOf/0
+        PaymentBankAccount -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+
+Left out after the trial (the rules recommend these)
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -37,14 +43,29 @@ Add (2 options)
       WorkflowDispatchInputString, Boolean, ...)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
+      trial: recommended - union-variant-names -> recommended: classes 4 -> 4, problem names 0 -> 0;
+      0 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added
+
+Trial  5 candidates generated in memory without formatting; nothing written
+  candidate                          classes   problems  numbered  long  doubled  displaced  median
+  current                                  4  1 (25.0%)         1     0        0          0       7
+  preset                                   4  1 (25.0%)         1     0        0          0       7
+  recommended                              4   0 (0.0%)         0     0        0          0       7
+  recommended - title-source               4   0 (0.0%)         0     0        0          0      11
+  recommended - union-variant-names        4   0 (0.0%)         0     0        0          0       7   selected
+  current: the configuration as set, without the preset; never selected
+
+Changes from the current configuration (current -> recommended - union-variant-names)
+  2 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+    Payment -> Card   #/components/schemas/Booking/payment/oneOf/0
+    Payment1 -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
 
 Command
-  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name --use-title-as-name
+  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-title-as-name
 
 pyproject.toml
   [tool.datamodel-codegen]
   input = "titled_variants.yaml"
   preset = "standard-py314-20261017"
   target-python-version = "3.14"
-  use-tag-as-union-variant-name = true
   use-title-as-name = true
