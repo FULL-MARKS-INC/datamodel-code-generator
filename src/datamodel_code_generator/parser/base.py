@@ -335,6 +335,13 @@ def _is_builtin_type_collision(current_name: str, data_type: DataType) -> bool:
     return False
 
 
+def _has_root_field_constraints(root_field: DataModelFieldBase) -> bool:
+    """Return whether a root field has constraints, as Field() arguments or written inside its type."""
+    return (isinstance(constraints := root_field.constraints, ConstraintsBase) and constraints.has_constraints) or any(
+        data_type.CARRIED_CONSTRAINT_KEYWORDS for data_type in (root_field.data_type, *root_field.data_type.data_types)
+    )
+
+
 ComponentId: TypeAlias = int
 Components: TypeAlias = list[list[ModelName]]
 ComponentOf: TypeAlias = dict[ModelName, ComponentId]
@@ -4886,8 +4893,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     root_type_field = root_type_model.fields[0]
                     if (
                         self.field_constraints
-                        and isinstance(root_constraints := root_type_field.constraints, ConstraintsBase)
-                        and root_constraints.has_constraints
+                        and _has_root_field_constraints(root_type_field)
                         and any(
                             data_type.is_dict or data_type.is_union or data_type.is_list
                             for data_type in model_field.data_type.all_data_types
