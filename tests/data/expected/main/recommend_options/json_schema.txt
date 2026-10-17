@@ -482,6 +482,16 @@
           "title": "Doubled",
           "type": "integer"
         },
+        "doubled_union_variants": {
+          "description": "Doubled names of oneOf/anyOf variants.",
+          "title": "Doubled Union Variants",
+          "type": "integer"
+        },
+        "doubled_variant_children": {
+          "description": "Doubled names of the property models of oneOf/anyOf variants.",
+          "title": "Doubled Variant Children",
+          "type": "integer"
+        },
         "doubled_from_spec": {
           "title": "Doubled From Spec",
           "type": "integer"
@@ -535,6 +545,8 @@
         "generic",
         "long",
         "doubled",
+        "doubled_union_variants",
+        "doubled_variant_children",
         "doubled_from_spec",
         "displaced",
         "inline_like_component",
@@ -805,6 +817,12 @@
           "title": "Set",
           "type": "object"
         },
+        "previous": {
+          "additionalProperties": true,
+          "description": "The values the configuration had before the workaround, as pyproject.toml spells them.",
+          "title": "Previous",
+          "type": "object"
+        },
         "arguments": {
           "items": {
             "type": "string"
@@ -816,6 +834,7 @@
       "required": [
         "known_issue",
         "set",
+        "previous",
         "arguments"
       ],
       "title": "RecommendWorkaroundPayload",

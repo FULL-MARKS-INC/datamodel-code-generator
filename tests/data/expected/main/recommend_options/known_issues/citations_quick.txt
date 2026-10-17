@@ -1,34 +1,37 @@
 #4819 integer-enum-null-member: --input 4819.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
   Work around known issues (1 option)
     --enum-field-as-literal all   [#4819 integer-enum-null-member]
-        An integer or number enum that lists null becomes an IntEnum or a value-typed Enum with a None
-        member, which fails at import (integer enums with null: 1, number enums: 0).
+        changes enum-field-as-literal from "one" to "all": An integer or number enum that lists null
+        becomes an IntEnum or a value-typed Enum with a None member, which fails at import (integer
+        enums with null: 1, number enums: 0).
   Command
     datamodel-codegen --class-name Model4819 --enum-field-as-literal all --input 4819.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4821 collapse-root-models-stale-module-import: --input 4821.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
   Work around known issues (1 option)
     --no-collapse-root-models   [#4821 collapse-root-models-stale-module-import]
-        A module that imports a dotted-key module of root models only, and has a field with that
-        module's name, keeps the import after --collapse-root-models writes the root models in place
-        and drops the module, so the package fails to import (modules: 1).
+        changes collapse-root-models from true to false: A module that imports a dotted-key module of
+        root models only, and has a field with that module's name, keeps the import after
+        --collapse-root-models writes the root models in place and drops the module, so the package
+        fails to import (modules: 1).
   Command
     datamodel-codegen --no-collapse-root-models --input 4821.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4823 full-path-dotted-cycle-import: --input 4823.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
   Work around known issues (1 option)
     --no-treat-dot-as-module   [#4823 full-path-dotted-cycle-import]
-        With --naming-strategy full-path or parent-prefixed, inline models of dotted-key schemas whose
-        modules reference each other in a cycle move to a module of their own, and the package fails
-        to import (inline models: 1).
+        changes treat-dot-as-module from null to false: With --naming-strategy full-path or
+        parent-prefixed, inline models of dotted-key schemas whose modules reference each other in a
+        cycle move to a module of their own, and the package fails to import (inline models: 1).
   Command
     datamodel-codegen --input 4823.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --no-treat-dot-as-module
 
 #4830 discriminator-literal-keeps-pattern: --input 4830.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
   Work around known issues (1 option)
     --no-use-annotated   [#4830 discriminator-literal-keeps-pattern]
-        A discriminator property with a pattern keeps the pattern on its Literal tag with Annotated or
-        Field constraints, so pydantic rejects the union at import (tags: 2).
+        changes use-annotated from true to false: A discriminator property with a pattern keeps the
+        pattern on its Literal tag with Annotated or Field constraints, so pydantic rejects the union
+        at import (tags: 2).
   Command
     datamodel-codegen --input 4830.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --no-use-annotated
 
@@ -53,10 +56,10 @@
         known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
   Work around known issues (1 option)
     --enum-field-as-literal none   [#4882 optional-literal-discriminator]
-        A discriminator property that is a single-value enum or const without a default and not
-        required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
-        avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
-        with a default: 0).
+        changes enum-field-as-literal from "one" to "none": A discriminator property that is a
+        single-value enum or const without a default and not required becomes an optional Literal, so
+        pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag
+        has a default (enum tags: 1, const tags: 0, enum tags with a default: 0).
   Command
     datamodel-codegen --enum-field-as-literal none --input 4882.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
@@ -149,6 +152,10 @@
 #4826 full-path-doubles-parent-name: --input 4826.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
   Command
     datamodel-codegen --input 4826.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4876 tag-variant-key-doubled-by-full-path: --input 4876.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path --use-tag-as-union-variant-name
+  Command
+    datamodel-codegen --input 4876.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
 
 #4836 title-as-name-displaces-components: --input 4836.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-title-as-name
   Command

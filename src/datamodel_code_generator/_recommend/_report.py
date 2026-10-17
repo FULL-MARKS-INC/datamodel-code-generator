@@ -92,7 +92,8 @@ _EFFECTS: dict[str, str] = {
 }
 _SYMPTOMS: dict[str, str] = {
     "numbered": "numbered name",
-    "doubled": "doubled name",
+    "doubled_union_variants": "doubled union variant name",
+    "doubled_variant_children": "doubled variant property name",
     "displaced": "displaced component",
     "union_variants_numbered": "numbered union variant",
 }
@@ -290,8 +291,12 @@ def _workaround_lines(workarounds: Sequence[AppliedWorkaround], signals: Signals
     lines = ["", f"Work around known issues ({_count(added, 'option')})"]
     for workaround in workarounds:
         issue = workaround.issue
+        changes = ", ".join(
+            f"{name.replace('_', '-')} from {_value_text(workaround.previous[name])} to {_value_text(value)}"
+            for name, value in workaround.values.items()
+        )
         lines.append(f"  {' '.join(workaround.arguments)}   [#{issue.issue} {issue.id}]")
-        lines.extend(_wrap(_issue_message(issue, signals)))
+        lines.extend(_wrap(f"changes {changes}: {_issue_message(issue, signals)}"))
     return lines
 
 
@@ -470,6 +475,7 @@ def _workaround_payload(workaround: AppliedWorkaround, signals: Signals) -> Reco
     return RecommendWorkaroundPayload(
         known_issue=_known_issue_payload(workaround.issue, signals),
         set=dict(workaround.values),
+        previous=dict(workaround.previous),
         arguments=workaround.arguments,
     )
 

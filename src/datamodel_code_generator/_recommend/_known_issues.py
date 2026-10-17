@@ -57,7 +57,9 @@ Effect: TypeAlias = Literal[
     "names",
     "cli-inexpressible",
 ]
-SymptomMetric: TypeAlias = Literal["numbered", "doubled", "displaced", "union_variants_numbered"]
+SymptomMetric: TypeAlias = Literal[
+    "numbered", "doubled_union_variants", "doubled_variant_children", "displaced", "union_variants_numbered"
+]
 BREAKING_EFFECTS: frozenset[str] = frozenset({"import-error", "generation-error"})
 
 
@@ -123,7 +125,7 @@ class KnownIssuesData(_Data):
 
 @dataclass(frozen=True, slots=True)
 class LoadedIssues:
-    """Known issues with their workarounds as pyproject.toml spells them, and the config fields they test."""
+    """Known issues with their workarounds as pyproject.toml spells them, and the config fields they test or set."""
 
     issues: tuple[KnownIssue, ...]
     by_id: Mapping[str, KnownIssue]
@@ -158,22 +160,29 @@ def load_known_issues() -> LoadedIssues:
         issue.id: tuple((workaround.when, _pyproject_values(workaround.set)) for workaround in issue.workarounds)
         for issue in data.issues
     }
-    fields = frozenset(test.config for issue in data.issues for test in config_tests(issue))
+    fields = frozenset({
+        *(test.config for issue in data.issues for test in config_tests(issue)),
+        *(name for values in workarounds.values() for _, workaround in values for name in workaround),
+    })
     return LoadedIssues(data.issues, {issue.id: issue for issue in data.issues}, workarounds, fields)
 
 
 def issue_values(config: Any) -> dict[str, Any]:
-    """Return the config values the known issues test, as pyproject.toml spells them."""
+    """Return the config values the known issues test or set, as pyproject.toml spells them."""
     return {name: toml_value(getattr(config, name)) for name in load_known_issues().fields}
 
 
 @dataclass(frozen=True, slots=True)
 class AppliedWorkaround:
-    """The config values a configuration takes to avoid a known issue, and their command-line arguments."""
+    """The config values a configuration takes to avoid a known issue.
+
+    ``arguments`` express them on the command line, and ``previous`` are the values the configuration had before.
+    """
 
     issue: KnownIssue
     values: Mapping[str, OptionValue]
     arguments: list[str]
+    previous: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,7 +274,9 @@ def check_configuration(
         ) is not None:
             applied.update(usable)
             arguments = [argument for name, value in usable.items() for argument in option_arguments(name, value) or ()]
-            workarounds.append(AppliedWorkaround(issue, dict(usable), arguments))
+            workarounds.append(
+                AppliedWorkaround(issue, dict(usable), arguments, {name: values[name] for name in usable})
+            )
             values = values_of({**options, **applied})
             continue
         if allowed or (avoid and not issue.applies(counts, values_of(applied))):

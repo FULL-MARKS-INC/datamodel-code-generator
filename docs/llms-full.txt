@@ -4339,7 +4339,7 @@ The counts, presets and options come from your schema and the installed version.
 | Left out after the trial | Options the rules recommend that the selected candidate does without, because your schema's class names score better without them. |
 | Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are in the command only when the candidate with them scores best. |
 | Not recommended | Options a rule argues against for this schema. |
-| Work around known issues | Options added because the configuration would otherwise generate code that fails at import or stop generation, each with its issue number in brackets. |
+| Work around known issues | Options added because the configuration would otherwise generate code that fails at import or stop generation, each with its issue number in brackets and the values it changes (`changes use-annotated from true to false`). |
 | Trial | The compared candidates with their class counts, problem names, and median name length; `selected` marks the recommended one. Candidates that take known-issue workarounds are listed below the table, and a candidate a known issue rejects shows the issue number. |
 | Known issues | Known issues the recommended configuration still has, and options left out because of one, each with its issue number, what it does to the generated code, and the option that avoids it, if any. |
 | Changes from the current configuration | The class names the recommended configuration changes from the configuration you run now, matched by schema location. |
@@ -4380,7 +4380,8 @@ and `disagreements` entries (each with its `rule`, `set` config values, CLI `arg
 hit, and the `trial` candidates and class-name `changes` that measured it), the compared candidates under `trial`
 (each with its `metrics`, the issue numbers of the `workarounds` it takes, and `stability` with `--diff-against`, plus
 the `ranking`, the `selected` label, the `migration` from the current configuration, and the `dropped` and
-`remeasured` counts), the known-issue `workarounds` the command adds, the `known_issues` the recommended
+`remeasured` counts), the known-issue `workarounds` the command adds (each with the `set` values and the `previous`
+values they replace), the `known_issues` the recommended
 configuration has (each with the `known_issue` number, id, effect, and message, the `avoided_by` config values, the
 trial `count` for a names issue, and the rules of the options it `dropped`), `notes`, the full command as
 `arguments`, the `config` table, and the text report as `content`.
@@ -4459,9 +4460,12 @@ candidates anyway, for every input type.
 Some combinations of options and schema shapes hit known bugs of datamodel-code-generator. The recommender knows them
 by issue number and checks the recommended configuration against them:
 
-- **Issues that break the generated code** (it fails at import, or generation stops): the recommendation adds the
-  options that avoid the issue, listed under "Work around known issues", unless you set those options yourself. An
-  option the rules recommend is left out when it causes such an issue or keeps its workaround from applying. In full
+- **Issues that break the generated code** (it fails at import, or generation stops): when the issue's condition
+  matches your schema and configuration, the recommendation adds the options that avoid it, listed under "Work around
+  known issues" with the values they change, unless you set those options yourself. A workaround can change output
+  beyond the issue (for example, `--no-use-annotated` changes how every constraint is written), so it is added only
+  for a schema that hits the issue, never as a default. An option the rules recommend is left out when it causes such
+  an issue or keeps its workaround from applying. In full
   mode, every candidate is checked the same way, and a candidate is rejected without being generated when a known
   issue would stop its generation or when its options cause an issue nothing avoids.
 - **Other issues** (a dropped constraint, a wrong type, valid data rejected, a constraint not checked): listed under
@@ -4593,8 +4597,8 @@ Add (1 option)
       parse order and shift when the schema grows; full-path names each inline model after its
       parent.
       known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
-      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
-      a variant named after its key).
+      parent name already ends with, as for union variants named after their parent
+      (StreamEventStreamEvent).
       measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
       versions 17% -> 0.0%
       measured: Petstore: Status and Status1 became OrderStatus and PetStatus
@@ -4605,10 +4609,10 @@ Add (1 option)
 
 Work around known issues (1 option)
   --enum-field-as-literal none   [#4882 optional-literal-discriminator]
-      A discriminator property that is a single-value enum or const without a default and not
-      required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
-      avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
-      with a default: 0).
+      changes enum-field-as-literal from "one" to "none": A discriminator property that is a
+      single-value enum or const without a default and not required becomes an optional Literal, so
+      pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag
+      has a default (enum tags: 1, const tags: 0, enum tags with a default: 0).
 
 Known issues
   #4882 optional-literal-discriminator (fails at import): left out --enum-field-as-literal all,
@@ -4661,8 +4665,8 @@ Every candidate is then generated for both versions, and the Trial table gains a
   presets, so a rule cannot name an option that does not exist.
 - **Known issues are data.** The known issues ship as `recommender_known_issues.json`: each entry names its issue,
   what it does to the generated code, the schema signals and option values that trigger it, the options that avoid
-  it, and a repro. A test generates every repro and fails once an issue no longer reproduces, so the pull request
-  that fixes a bug also removes it from the recommender.
+  it, and a repro. A test generates every repro and fails once an issue no longer reproduces, and keeps failing
+  until the entry is deleted, so the pull request that fixes a bug also removes it from the recommender.
 - **Every option is registered.** Each option has an entry in the rule data: either the rules that decide it or the
   reason the recommender leaves it to you (input/output paths, the target, runtime behaviour, formatting, and so on).
   A new option cannot be released without that decision.
@@ -51500,8 +51504,8 @@ set on the command line or in pyproject.toml are kept and reported when the rule
           Status1) depend on parse order and shift when the schema grows; full-path names each inline
           model after its parent.
           known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
-          parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
-          a variant named after its key).
+          parent name already ends with, as for union variants named after their parent
+          (StreamEventStreamEvent).
           measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
           versions 17% -> 0.0%
           measured: Petstore: Status and Status1 became OrderStatus and PetStatus

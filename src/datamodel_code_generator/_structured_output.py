@@ -344,6 +344,8 @@ class RecommendNameMetricsPayload(BaseModel):
     generic: int
     long: int = Field(description="Names longer than 40 characters that are not a component key.")
     doubled: int = Field(description="Names repeating a word the schema does not repeat.")
+    doubled_union_variants: int = Field(description="Doubled names of oneOf/anyOf variants.")
+    doubled_variant_children: int = Field(description="Doubled names of the property models of oneOf/anyOf variants.")
     doubled_from_spec: int
     displaced: int = Field(description="Components whose name another class took.")
     inline_like_component: int
@@ -394,6 +396,9 @@ class RecommendWorkaroundPayload(BaseModel):
 
     known_issue: RecommendKnownIssuePayload
     set: dict[str, RecommendOptionValue]
+    previous: dict[str, Any] = Field(
+        description="The values the configuration had before the workaround, as pyproject.toml spells them."
+    )
     arguments: list[str]
 
 

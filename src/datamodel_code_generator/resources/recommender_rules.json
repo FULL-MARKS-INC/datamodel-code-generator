@@ -133,7 +133,8 @@
       "reason": "Inline schemas under different parents share property names (names: {shared_inline_names}, e.g. {shared_inline_name_examples}; inline names equal to a component name: {inline_names_equal_component}). Numbered names (Status, Status1) depend on parse order and shift when the schema grows; full-path names each inline model after its parent.",
       "caveats": [
         "full-path-doubles-parent-name",
-        "full-path-allof-property-unprefixed"
+        "full-path-allof-property-unprefixed",
+        "tag-variant-key-doubled-by-full-path"
       ],
       "evidence": [
         "GitHub REST API description: numbered names 663 -> 53; locations renamed between two versions 17% -> 0.0%",
@@ -280,7 +281,7 @@
       "reason": "Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no sibling shares: {inline_tagged_union_branches}; objects with one required key: {single_key_required_open}); otherwise they are named after their parent and a number.",
       "caveats": [
         "union-variant-tag-behind-allof",
-        "full-path-doubles-parent-name"
+        "tag-variant-key-doubled-by-full-path"
       ],
       "evidence": [
         "OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)",

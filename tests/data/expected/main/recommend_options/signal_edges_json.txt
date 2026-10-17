@@ -71,6 +71,7 @@
     "shared_inline_enum_names": 0,
     "shared_inline_names": 0,
     "shared_inline_object_names": 0,
+    "single_key_object_branches": 0,
     "single_key_required_open": 0,
     "single_key_union_branches": 1,
     "single_value_enum_union_branches": 0,
@@ -114,6 +115,9 @@
       "set": {
         "use_annotated": false
       },
+      "previous": {
+        "use_annotated": true
+      },
       "arguments": [
         "--no-use-annotated"
       ]
@@ -141,5 +145,5 @@
     }
   },
   "config_complete": true,
-  "content": "Option recommendations (experimental; quick mode; rules 2026-10-17)\n\nSchema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)\n  components                       17, 0 operations\n  inline objects / enums           3 / 1, nesting depth 1\n  shared property names            0 (none)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    0 objects, most repeated 0 (none)\n  unions                           1 oneOf/anyOf, 1 with a discriminator, 1 inline variants\n  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (17 of 17); 0 dotted in 0 namespaces\n\nStart from  --preset standard-py314-20261017\n\nAdd  nothing on top of the preset\n\nWork around known issues (1 option)\n  --no-use-annotated   [#4830 discriminator-literal-keeps-pattern]\n      A discriminator property with a pattern keeps the pattern on its Literal tag with Annotated or\n      Field constraints, so pydantic rejects the union at import (tags: 1).\n\nCommand\n  datamodel-codegen --input signal_edges.yaml --preset standard-py314-20261017 --target-python-version 3.14 --no-use-annotated\n\npyproject.toml\n  [tool.datamodel-codegen]\n  input = \"signal_edges.yaml\"\n  preset = \"standard-py314-20261017\"\n  target-python-version = \"3.14\"\n  use-annotated = false\n"
+  "content": "Option recommendations (experimental; quick mode; rules 2026-10-17)\n\nSchema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)\n  components                       17, 0 operations\n  inline objects / enums           3 / 1, nesting depth 1\n  shared property names            0 (none)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    0 objects, most repeated 0 (none)\n  unions                           1 oneOf/anyOf, 1 with a discriminator, 1 inline variants\n  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (17 of 17); 0 dotted in 0 namespaces\n\nStart from  --preset standard-py314-20261017\n\nAdd  nothing on top of the preset\n\nWork around known issues (1 option)\n  --no-use-annotated   [#4830 discriminator-literal-keeps-pattern]\n      changes use-annotated from true to false: A discriminator property with a pattern keeps the\n      pattern on its Literal tag with Annotated or Field constraints, so pydantic rejects the union\n      at import (tags: 1).\n\nCommand\n  datamodel-codegen --input signal_edges.yaml --preset standard-py314-20261017 --target-python-version 3.14 --no-use-annotated\n\npyproject.toml\n  [tool.datamodel-codegen]\n  input = \"signal_edges.yaml\"\n  preset = \"standard-py314-20261017\"\n  target-python-version = \"3.14\"\n  use-annotated = false\n"
 }

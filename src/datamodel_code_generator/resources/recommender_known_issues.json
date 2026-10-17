@@ -841,8 +841,8 @@
           "parent-prefixed"
         ]
       },
-      "symptom": "doubled",
-      "message": "--naming-strategy full-path joins a parent name with a child name that the parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named after its key).",
+      "symptom": "doubled_union_variants",
+      "message": "--naming-strategy full-path joins a parent name with a child name that the parent name already ends with, as for union variants named after their parent (StreamEventStreamEvent).",
       "repro": {
         "input": "4826.yaml",
         "args": [
@@ -856,6 +856,50 @@
           "full-path"
         ],
         "shows": "class StreamEventStreamEvent("
+      }
+    },
+    {
+      "id": "tag-variant-key-doubled-by-full-path",
+      "issue": 4876,
+      "effect": "names",
+      "when": {
+        "all": [
+          {
+            "config": "use_tag_as_union_variant_name",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "naming_strategy",
+            "op": "in",
+            "value": [
+              "full-path",
+              "parent-prefixed"
+            ]
+          },
+          {
+            "signal": "single_key_object_branches",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "symptom": "doubled_variant_children",
+      "message": "With --use-tag-as-union-variant-name and --naming-strategy full-path, the object value of a single-key branch is named after the variant, which is named after the key, plus the key again (ChangesFieldValueFieldValue; branches: {single_key_object_branches}).",
+      "repro": {
+        "input": "4876.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--naming-strategy",
+          "full-path",
+          "--use-tag-as-union-variant-name"
+        ],
+        "shows": "class ItemEditedChangesFieldValueFieldValue("
       }
     },
     {

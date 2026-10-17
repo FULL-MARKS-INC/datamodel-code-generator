@@ -49,6 +49,7 @@ SignalName: TypeAlias = Literal[
     "tagged_behind_ref",
     "single_key_union_branches",
     "single_key_required_open",
+    "single_key_object_branches",
     "single_value_enums",
     "single_value_enum_union_branches",
     "dotted_keys",
@@ -710,8 +711,10 @@ class _Walker:
             if len(properties) == 1 and "oneOf" not in branch and "anyOf" not in branch:
                 self.counts["single_key_union_branches"] += 1
                 ((key, value),) = properties.items()
-                self.counts["single_key_required_open"] += (
-                    key in (branch.get("required") or ()) and _single_literal(value) is None
+                named_by_key = key in (branch.get("required") or ()) and _single_literal(value) is None
+                self.counts["single_key_required_open"] += named_by_key
+                self.counts["single_key_object_branches"] += (
+                    named_by_key and isinstance(value, dict) and "$ref" not in value and _is_object(value)
                 )
 
     @staticmethod

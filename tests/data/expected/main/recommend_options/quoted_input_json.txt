@@ -71,6 +71,7 @@
     "shared_inline_enum_names": 0,
     "shared_inline_names": 0,
     "shared_inline_object_names": 0,
+    "single_key_object_branches": 0,
     "single_key_required_open": 0,
     "single_key_union_branches": 0,
     "single_value_enum_union_branches": 0,

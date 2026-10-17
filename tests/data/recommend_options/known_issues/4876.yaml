@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info: {title: single-key branches, version: "1"}
+paths: {}
+components:
+  schemas:
+    ItemEdited:
+      type: object
+      properties:
+        changes:
+          oneOf:
+            - type: object
+              required: [field_value]
+              properties:
+                field_value:
+                  type: object
+                  properties:
+                    from: {type: string}
+            - type: object
+              required: [body]
+              properties:
+                body:
+                  type: object
+                  properties:
+                    from: {type: string}

@@ -19,7 +19,12 @@ from datamodel_code_generator.__main__ import Config, Exit, main
 from datamodel_code_generator.arguments import arg_parser
 from datamodel_code_generator.config import GenerateConfig
 from datamodel_code_generator.experimental import EXPERIMENTAL_FEATURES
-from tests.conftest import MockHttpxResponse, assert_httpx_get_kwargs, assert_output
+from tests.conftest import (
+    MockHttpxResponse,
+    assert_httpx_get_kwargs,
+    assert_no_uncommented_generated_code,
+    assert_output,
+)
 from tests.main.conftest import (
     DATA_PATH,
     EXPECTED_MAIN_PATH,
@@ -41,6 +46,7 @@ GRAPHQL_INPUT = DATA_PATH / "graphql" / "simple-star-wars.graphql"
 RULES_FILE = "src/datamodel_code_generator/resources/recommender_rules.json"
 KNOWN_ISSUES_FILE = "src/datamodel_code_generator/resources/recommender_known_issues.json"
 KNOWN_ISSUE_INPUTS = INPUT_PATH / "known_issues"
+RETIREMENT_FILE = EXPECTED_PATH / "known_issues" / "retirement.txt"
 REGISTRY_GUIDE = (
     f'Every option needs an entry in "options" of {RULES_FILE}: {{"rules": ["<rule id>"]}} when a rule sets it, '
     'or {"not_recommended": "<category>", "reason": "<why the schema does not decide it>"} with category io, '
@@ -52,8 +58,9 @@ RETIREMENT_GUIDE = (
     "Each known issue the recommender cites has a repro: its input under tests/data/recommend_options/known_issues, "
     f"generated with the arguments in {KNOWN_ISSUES_FILE}. When a fix makes a repro stop reproducing, the fix "
     "retires the issue: delete its entry, its repro input, the rule caveats and option registry entries that name "
-    "it, and its line here."
+    "it, and its line here. A line that records an issue as fixed fails the tests."
 )
+RETIRED = "no longer reproduces"
 BREAKING_EFFECTS = frozenset({"import-error", "generation-error"})
 
 
@@ -657,7 +664,8 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
     """Rules only set registered options, registry entries name the rules that set them, and texts use real signals.
 
     Known issues cite real rules, options, and signals: workaround options list the issue in the registry, an issue
-    that breaks the output has workarounds the command line can express, and every issue has a repro input.
+    that breaks the output has workarounds the command line can express, every issue has a repro input, and the
+    retirement guard's expected file records no issue as fixed, so a fixed issue is deleted rather than recorded.
     """
     shutil.copy(INPUT_PATH / "api.yaml", tmp_path / "api.yaml")
     with chdir(tmp_path):
@@ -668,6 +676,7 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
     payload = json.loads(capsys.readouterr().out)
     data = _rules_data()
     placeholders = {*payload["signals"], *payload["facts"]}
+    assert_no_uncommented_generated_code(RETIREMENT_FILE.read_text(encoding="utf-8"), forbidden_contains=(RETIRED,))
     problems = [
         *_rule_problems(data, placeholders, _newest_release()),
         *_mirror_problems(data["full_trial_max_models"]),
@@ -1034,20 +1043,32 @@ def _reproduction(issue: Mapping[str, Any], run_dir: Path, capsys: pytest.Captur
     text = stderr if target == "stderr" else path.read_text(encoding="utf-8") if path.is_file() else ""
     shows = repro["shows"]
     found = re.search(shows, text, re.DOTALL) is not None if repro.get("regex") else shows in text
-    return "reproduces" if found else f"no longer reproduces: {target} does not show {shows!r}"
+    if found:
+        return "reproduces"
+    return (
+        f"{RETIRED} ({target} does not show {shows!r}); retire it: delete its entry from {KNOWN_ISSUES_FILE}, its "
+        "repro input, and the rule caveats and option registry entries that name it"
+    )
 
 
 def test_known_issues_still_reproduce(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Generate the repro of every known issue the recommender cites and check that the issue still occurs.
 
     This is the retirement guard: a fix that makes a repro stop reproducing changes its line, and the fix then
-    deletes the issue from the recommender's data.
+    deletes the issue from the recommender's data. A fixed issue fails this test however the expected file reads,
+    and an expected file that records one fails test_recommender_rules_match_the_option_registry.
     """
-    lines = [
-        f"#{issue['issue']} {issue['id']}: {_reproduction(issue, tmp_path / issue['id'], capsys)}"
-        for issue in _known_issues()
-    ]
-    assert_output("\n".join([*lines, "", RETIREMENT_GUIDE, ""]), EXPECTED_PATH / "known_issues" / "retirement.txt")
+    report = "\n".join([
+        *(
+            f"{issue['id']} (#{issue['issue']}): {_reproduction(issue, tmp_path / issue['id'], capsys)}"
+            for issue in _known_issues()
+        ),
+        "",
+        RETIREMENT_GUIDE,
+        "",
+    ])
+    assert_no_uncommented_generated_code(report, forbidden_contains=(RETIRED,))
+    assert_output(report, RETIREMENT_FILE)
 
 
 _KEPT_SECTIONS = ("Work around known issues", "Known issues", "Command")

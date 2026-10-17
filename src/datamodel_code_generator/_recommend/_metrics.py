@@ -62,6 +62,7 @@ _UNNAMED_KINDS: Final = frozenset({"object", "enum"})
 _BRANCH_KINDS: Final = ("oneOf", "anyOf", "allOf")
 _ITEM_KINDS: Final = frozenset({"array", "items"})
 _UNION_VARIANT: Final = re.compile(r"(?:^|/)(oneOf|anyOf)/(\d+)(/allOf)?$")
+_VARIANT_CHILD: Final = re.compile(r"(?:^|/)(?:oneOf|anyOf)/\d+(?:/allOf)?/(?!allOf$)[^/]+$")
 _ROOT_REF: Final = re.compile(r"^(?:.*?\.(?:json|ya?ml))?#?/?")
 _TRAILING_DIGITS: Final = re.compile(r"\d+$")
 _DIGITS: Final = re.compile(r"\d+")
@@ -281,6 +282,8 @@ class NameMetrics:
     generic: int
     long: int
     doubled: int
+    doubled_union_variants: int
+    doubled_variant_children: int
     doubled_from_spec: int
     displaced: int
     inline_like_component: int
@@ -304,14 +307,15 @@ def name_metrics(records: Sequence[NameRecord], vocabulary: SchemaVocabulary) ->
     counts = Counter(classes)
     origins = Counter(_origin(record.path) for record in records)
     problems = {index for index, kind in enumerate(classes) if kind in _PROBLEM_CLASSES}
-    doubled = doubled_from_spec = 0
+    doubled: list[str] = []
+    doubled_from_spec = 0
     for index, record in enumerate(records):
         if (segment := _doubled_segment(record.name)) is None:
             continue
         if vocabulary.contains_doubled(segment):
             doubled_from_spec += 1
         else:
-            doubled += 1
+            doubled.append(record.path)
             problems.add(index)
     component_names: dict[str, str] = {}
     for record in records:
@@ -351,7 +355,9 @@ def name_metrics(records: Sequence[NameRecord], vocabulary: SchemaVocabulary) ->
         statuscode=counts["statuscode"],
         generic=counts["generic"],
         long=counts["long"],
-        doubled=doubled,
+        doubled=len(doubled),
+        doubled_union_variants=sum(1 for path in doubled if _UNION_VARIANT.search(path)),
+        doubled_variant_children=sum(1 for path in doubled if _VARIANT_CHILD.search(path)),
         doubled_from_spec=doubled_from_spec,
         displaced=len(displaced),
         inline_like_component=len(inline_like),

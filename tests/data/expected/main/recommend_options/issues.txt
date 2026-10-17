@@ -21,8 +21,8 @@ Add (1 option)
       parse order and shift when the schema grows; full-path names each inline model after its
       parent.
       known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
-      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
-      a variant named after its key).
+      parent name already ends with, as for union variants named after their parent
+      (StreamEventStreamEvent).
       measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
       versions 17% -> 0.0%
       measured: Petstore: Status and Status1 became OrderStatus and PetStatus
@@ -33,10 +33,10 @@ Add (1 option)
 
 Work around known issues (1 option)
   --enum-field-as-literal none   [#4882 optional-literal-discriminator]
-      A discriminator property that is a single-value enum or const without a default and not
-      required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
-      avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
-      with a default: 0).
+      changes enum-field-as-literal from "one" to "none": A discriminator property that is a
+      single-value enum or const without a default and not required becomes an optional Literal, so
+      pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag
+      has a default (enum tags: 1, const tags: 0, enum tags with a default: 0).
 
 Known issues
   #4882 optional-literal-discriminator (fails at import): left out --enum-field-as-literal all,

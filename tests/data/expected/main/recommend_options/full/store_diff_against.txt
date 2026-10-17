@@ -21,8 +21,8 @@ Add (2 options)
       depend on parse order and shift when the schema grows; full-path names each inline model after
       its parent.
       known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
-      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
-      a variant named after its key).
+      parent name already ends with, as for union variants named after their parent
+      (StreamEventStreamEvent).
       measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
       versions 17% -> 0.0%
       measured: Petstore: Status and Status1 became OrderStatus and PetStatus
@@ -52,9 +52,6 @@ Left out after the trial (the rules recommend these)
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
       parent and a number.
-      known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
-      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
-      a variant named after its key).
       measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names
       (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)
       measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805
@@ -91,10 +88,10 @@ Changes from the current configuration (current -> recommended - union-variant-n
     Pet -> AccountProfilePet   at components/schemas/Account > profile > pet
 
 Known issues
-  #4826 full-path-doubles-parent-name (class names; the selected candidate has 3 doubled names):
-      --naming-strategy full-path joins a parent name with a child name that the parent name already
-      ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named
-      after its key).
+  #4826 full-path-doubles-parent-name (class names; the selected candidate has 2 doubled union
+      variant names): --naming-strategy full-path joins a parent name with a child name that the
+      parent name already ends with, as for union variants named after their parent
+      (StreamEventStreamEvent).
 
 Command
   datamodel-codegen --enum-field-as-literal all --input store.yaml --naming-strategy full-path --openapi-scopes schemas paths --output models.py --preset standard-py314-20261017 --target-python-version 3.14
