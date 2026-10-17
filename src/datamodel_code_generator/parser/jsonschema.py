@@ -10037,6 +10037,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 else self._rw_model_variant_references[reference.path, variant].source,
             )
             if item_type is not None:
+                array_owner = root_model
                 array_type = next(
                     (
                         data_type
@@ -10046,8 +10047,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     None,
                 )
                 if array_type is None:
-                    array_type = next(
-                        nested
+                    array_owner, array_type = next(
+                        (array_model, nested)
                         for data_type in root_model.fields[0].data_type.all_data_types
                         if (array_ref := data_type.reference) is not None
                         and (array_model := cast("DataModel | None", array_ref.source)) is not None
@@ -10056,6 +10057,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                         if nested.is_list or nested.is_sequence or nested.is_set or nested.is_tuple
                     )
                 array_type.data_types = [item_type]
+                self.generation_store.note_changed_models(array_owner)
             if literal_values:
                 literal_validation(root_model, literal_values)
         return root_data_type
