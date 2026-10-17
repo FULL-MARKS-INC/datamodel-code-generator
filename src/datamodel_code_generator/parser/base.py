@@ -2593,6 +2593,44 @@ def _msgspec_union_message(name: str, refusal: _MsgspecRefusal, *, discriminated
     )
 
 
+def _literal_member(data_type: DataType) -> tuple[str, bool] | None:
+    """Return the first member of a class or module written as a ``Literal`` value in a type, as written.
+
+    The flag tells an enum member that ``--input-model`` or ``x-python-import`` symbols transport, which is one for
+    sure, from a dotted ``x-python-type`` value, which may also name a constant of a module, such as
+    ``http.client.HTTP_PORT``, that the generator cannot tell from an enum member.
+    """
+    from datamodel_code_generator._python_type_annotation import (  # noqa: PLC0415
+        PythonTypeRuntimeSymbol,
+        iter_literal_members,
+        render_python_type_expr,
+    )
+
+    return next(
+        (
+            (render_python_type_expr(member), isinstance(member, PythonTypeRuntimeSymbol))
+            for nested in data_type.all_data_types
+            if nested.python_type is not None
+            for member in iter_literal_members(nested.python_type.expression)
+        ),
+        None,
+    )
+
+
+def _msgspec_literal_member_message(name: str, member: tuple[str, bool]) -> str:
+    """Describe a ``Literal`` value written as a member, which msgspec decodes only as None, bool, int or str."""
+    value, enum_member = member
+    if enum_member:
+        return (
+            f"msgspec cannot decode {name}: its Literal holds the enum member {value}, while a msgspec Literal holds "
+            "only None, bool, int and str values."
+        )
+    return (
+        f"msgspec decodes {name} only if {value} is a plain None, bool, int or str value: a msgspec Literal holds "
+        "no other value, such as an enum member."
+    )
+
+
 def _msgspec_null_enum_message(model: Enum) -> str | None:
     """Describe an enum whose null member msgspec refuses, if the other members are all str or all int."""
     values = {field.name: get_raw_enum_member_value(field.default) for field in model.fields}
@@ -5011,7 +5049,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                                 )
                             ) is not None:
                                 model_field.__dict__[_TYPE_DEPENDENT_CONSTRAINTS_KEY] = type_dependent_constraints
-                            model_field.inherit_untaken_constraints(root_type_field)
 
                         replacement_context = generation_store._replace_data_type_and_detach_data_type_ref(  # noqa: SLF001
                             data_type,
@@ -5025,7 +5062,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                             model_field.constraints = ConstraintsBase.merge_constraints(
                                 root_type_field.constraints, model_field.constraints
                             )
-                            model_field.inherit_untaken_constraints(root_type_field)
                         discriminator = root_type_field.extras.get("discriminator")
                         if discriminator and root_type_field.SUPPORTS_DISCRIMINATOR:
                             has_any_variant = any(_is_any_variant(dt) for dt in copied_data_type.data_types)
@@ -5067,6 +5103,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     if replacement_context is None:  # pragma: no cover
                         continue
                     model_field.inherit_unconstrained_union_members(root_type_field)
+                    model_field.inherit_untaken_constraints(
+                        root_type_field, whole_type=isinstance(field_, self.data_model_field_type)
+                    )
                     with replacement_context:
                         for d in copied_data_type.all_data_types:
                             _register_data_type_import(
@@ -5504,6 +5543,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             for field in model.fields:
                 if field.is_class_var:
                     continue
+                member = _literal_member(field.data_type)
                 discriminated = bool(field.extras.get("discriminator"))
                 refusal = next(
                     filter(
@@ -5512,8 +5552,15 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     ),
                     _NO_MSGSPEC_REFUSAL,
                 )
-                if refusal[0] and (refusal[1] is not None or not (discriminated and self.use_msgspec_tagged_unions)):
-                    name = model.class_name if self._is_root_model(model) else f"{model.class_name}.{field.name}"
+                refused = bool(refusal[0]) and (
+                    refusal[1] is not None or not (discriminated and self.use_msgspec_tagged_unions)
+                )
+                if member is None and not refused:
+                    continue
+                name = model.class_name if self._is_root_model(model) else f"{model.class_name}.{field.name}"
+                if member is not None:
+                    warn(_msgspec_literal_member_message(name, member), stacklevel=2)
+                if refused:
                     warn(_msgspec_union_message(name, refusal, discriminated=discriminated), stacklevel=2)
 
     def _apply_inherited_field_default(
@@ -6304,7 +6351,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Keep the constraints that the emitted type decides only when the override type at ``path`` takes them.
 
         An output model that writes constraints as ``Field()`` arguments also decides the number constraints of a
-        declared number this way, and remembers the ones it leaves out to warn about them.
+        declared number this way, and remembers the ones it leaves out to warn about them. The untaken constraints of
+        the members, items and values that collapsing inlines into the field leave with the type the override replaces.
         """
         type_dependent = field.__dict__.get(_TYPE_DEPENDENT_CONSTRAINTS_KEY) or {}
         constraints = field.constraints
