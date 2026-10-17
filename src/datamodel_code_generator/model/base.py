@@ -81,6 +81,9 @@ _NESTED_MODEL_DEFAULT_FACTORY_ORDER_KEY = "_nested_model_default_factory_order"
 _NESTED_MODEL_DEFAULT_FACTORY_RECURSIVE_PATHS_KEY = "_nested_model_default_factory_recursive_paths"
 _NESTED_MODEL_REQUIRED_CONSTRUCTOR_FIELDS_KEY = "_nested_model_required_constructor_fields"
 _REQUIRED_INHERITED_DEFAULT_FACTORY_KEY = "_required_inherited_default_factory"
+_UNTAKEN_CONSTRAINTS_KEY = "_untaken_constraints"
+_UNTAKEN_CONSTRAINT_MINIMUMS_KEY = "_untaken_constraint_minimums"
+_OVERRIDDEN_CONSTRAINTS_KEY = "_overridden_constraints"
 _RUNTIME_EXPRESSION_IMPORTS_FIELD_KEY = "_runtime_expression_imports"
 _EXTRA_TEMPLATE_DATA_MAPPING_ERROR = "extra template data must be a dictionary"
 _EXTRA_TEMPLATE_DATA_KEY_ERROR = "extra template data keys must be strings"
@@ -625,6 +628,51 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
     def dropped_constraints_warning(self) -> str | None:
         """Return a warning naming the constraints the output model leaves out on this field's type, if any."""
         return None
+
+    def _generated_without_constraints(self, reason: str, count: int) -> str:
+        """Return the dropped constraints warning for ``reason``, naming the model and field that leave them out.
+
+        The field of a root model is named by its model alone.
+        """
+        owner = getattr(self.parent, "class_name", "")
+        if self.name and not getattr(self.parent, "IS_ROOT_MODEL", False):
+            owner = f"{owner}.{self.name}"
+        return f"{reason}; {owner} is generated without {'this constraint' if count == 1 else 'these constraints'}."
+
+    @property
+    def untaken_constraints(self) -> tuple[dict[str, Any], dict[str, str]]:
+        """Return the declared number constraints the field's type does not take, and the target taking some of them.
+
+        The second mapping names, for a constraint an explicit later target model version takes, that version.
+        """
+        return self.__dict__.get(_UNTAKEN_CONSTRAINTS_KEY, {}), self.__dict__.get(_UNTAKEN_CONSTRAINT_MINIMUMS_KEY, {})
+
+    def record_untaken_constraints(self, untaken: dict[str, Any], minimums: dict[str, str]) -> None:
+        """Remember the declared number constraints the field's type does not take, to warn about them."""
+        self.__dict__[_UNTAKEN_CONSTRAINTS_KEY] = untaken
+        if minimums:
+            self.__dict__[_UNTAKEN_CONSTRAINT_MINIMUMS_KEY] = minimums
+
+    def pop_untaken_constraints(self) -> dict[str, Any]:
+        """Forget the remembered untaken constraints and return them."""
+        self.__dict__.pop(_UNTAKEN_CONSTRAINT_MINIMUMS_KEY, None)
+        return self.__dict__.pop(_UNTAKEN_CONSTRAINTS_KEY, {})
+
+    def inherit_untaken_constraints(self, source: DataModelFieldBase) -> None:
+        """Take over the untaken constraints of a collapsed root field, to warn about them on this field."""
+        untaken, minimums = source.untaken_constraints
+        if untaken:
+            own_untaken, own_minimums = self.untaken_constraints
+            self.record_untaken_constraints({**untaken, **own_untaken}, {**minimums, **own_minimums})
+
+    @property
+    def overridden_constraints(self) -> tuple[str, int] | None:
+        """Return the type ``--type-overrides`` replaces on the field and how many constraints leave with it, if any."""
+        return self.__dict__.get(_OVERRIDDEN_CONSTRAINTS_KEY)
+
+    def record_overridden_constraints(self, replaced: str, count: int) -> None:
+        """Remember that ``--type-overrides`` replaces the type hint ``replaced`` and ``count`` constraints with it."""
+        self.__dict__[_OVERRIDDEN_CONSTRAINTS_KEY] = (replaced, count)
 
     def unconstrain_union_members(self) -> None:
         """Write union members without the constraints the output model cannot check on one member alone."""
