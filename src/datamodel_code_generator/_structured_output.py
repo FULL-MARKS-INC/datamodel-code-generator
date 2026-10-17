@@ -318,17 +318,6 @@ class RecommendOptionPayload(BaseModel):
     evidence: list[str]
 
 
-class RecommendRejectedPayload(BaseModel):
-    """A preset the recommendation does not start from: no option turns off a value a rule rejects."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    preset: str
-    rule: str
-    arguments: list[str]
-    reason: str
-
-
 class RecommendBaselinePayload(BaseModel):
     """The dated preset the recommendation starts from."""
 
@@ -338,7 +327,6 @@ class RecommendBaselinePayload(BaseModel):
     family: str
     configured: bool = Field(description="Whether the configuration already selects this preset.")
     covers: list[RecommendOptionPayload] = Field(description="Rule outcomes the preset already sets.")
-    rejected: list[RecommendRejectedPayload]
 
 
 class RecommendDisagreementPayload(BaseModel):

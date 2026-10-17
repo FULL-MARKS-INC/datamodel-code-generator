@@ -12,10 +12,14 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from datamodel_code_generator._recommend._signals import SignalName  # noqa: TC001 - used at runtime by Pydantic
+from datamodel_code_generator._recommend._signals import (
+    SignalName,
+    normalize_name,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from collections.abc import Set as AbstractSet
 
     from datamodel_code_generator._recommend._signals import Signals
 
@@ -198,14 +202,6 @@ def load_rules() -> LoadedRules:
 
     resource = files("datamodel_code_generator.resources").joinpath(RULES_RESOURCE)
     data = RulesData.model_validate_json(resource.read_text(encoding="utf-8"))
-    if unknown := sorted({
-        field
-        for rule in data.rules
-        for field in (*rule.set, *rule.value_from)
-        if f"--{field.replace('_', '-')}" not in _option_strings().get(field, ())
-    }):  # pragma: no cover
-        msg = f"{RULES_RESOURCE} sets fields without a CLI option: {', '.join(unknown)}"
-        raise ValueError(msg)
     values = {
         rule.id: {item.field_name: item.pyproject_value for item in PresetConfig(**rule.set).items()}
         for rule in data.rules
@@ -227,17 +223,18 @@ def matches(condition: Condition, counts: Mapping[str, int]) -> bool:
     return not matches(condition.not_, counts)
 
 
-def pascal_case_input_stem(stem: str | None) -> str | None:
-    """Return a class name made of the words of an input file name."""
+def pascal_case_input_stem(stem: str | None, taken: AbstractSet[str]) -> str | None:
+    """Return a class name made of the words of an input file name, unless a named schema already has that name."""
     if not stem or not (words := _WORDS.findall(stem)):
         return None
     name = "".join(word[:1].upper() + word[1:] for word in words)
-    return name if name[0].isalpha() else f"Model{name}"
+    name = name if name[0].isalpha() else f"Model{name}"
+    return None if normalize_name(name) in taken else name
 
 
 def format_text(template: str, signals: Signals) -> str:
-    """Fill a rule text with signal counts and facts."""
-    return template.format_map({**signals.counts, **signals.facts})
+    """Fill a rule text with signal counts and facts, writing none for an empty fact."""
+    return template.format_map({**signals.counts, **{name: value or "none" for name, value in signals.facts.items()}})
 
 
 def _applies(rule: Rule, input_file_type: str, output_model_type: str) -> bool:
@@ -265,7 +262,7 @@ def decide(
             or not matches(rule.when, signals.counts)
         ):
             continue
-        if (name := pascal_case_input_stem(input_stem) if rule.value_from else "") is None:
+        if (name := pascal_case_input_stem(input_stem, signals.component_names) if rule.value_from else "") is None:
             continue
         decided.add(rule.decision)
         decisions.append(

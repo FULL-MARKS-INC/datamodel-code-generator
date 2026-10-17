@@ -323,14 +323,15 @@ Otherwise, record why the recommender leaves the option to the user, with one of
 ```
 
 Use `pending` only while a rule for the option is being measured: give the follow-up id in `follow_up` and the
-release it must be decided by in `release`, such as `"release": "0.86.0"`. Once a newer version is built, the
-registry test fails until the entry gets a rule or a category.
+release it must be decided by in `release`, such as `"release": "0.86.0"`. Once `CHANGELOG.md` lists that release,
+the registry test fails until the entry gets a rule or a category.
 
 `test_every_option_is_registered_with_the_recommender` in `tests/main/test_main_recommend_options.py` fails when a
 config field or CLI option has no entry (`Options missing from the recommender registry: ...`) or an entry has no
 option. `test_recommender_rules_match_the_option_registry` fails when an entry names a rule that does not set that
-field, when a rule sets a field whose entry does not list it, or when a `pending` entry lacks `follow_up` and `release`
-or outlives its release. Both messages name this file.
+field, when a rule sets a field whose entry does not list it or that has no CLI option, or when a `pending` entry
+lacks `follow_up` and `release` or outlives its release (`Rule data problems: ...`). Both failures show the entry
+format above.
 
 ### Step 5: Generate and verify documentation
 

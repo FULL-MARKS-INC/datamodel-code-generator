@@ -1,6 +1,6 @@
 Option recommendations (experimental; quick mode; rules 2026-10-17)
 
-Schema  OpenAPI 3.1.0
+Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
   components                       2, 0 operations
   inline objects / enums           2 / 0, nesting depth 1
   shared property names            0 (none)
@@ -12,10 +12,15 @@ Schema  OpenAPI 3.1.0
   union branch tags                2 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
   component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces
 
-Start from  --preset practical-py314-20261017
-  already sets --use-title-as-name   [titles.names-from-unique-titles]
+Start from  --preset standard-py314-20261017
 
-Add (1 option)
+Add (2 options)
+  --use-title-as-name   [titles.names-from-unique-titles]
+      Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
+      x1, Bank Account x1). Titles name them after what they are, instead of their parent property
+      and a number.
+      measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
+      of Source and Source1
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -33,15 +38,13 @@ Add (1 option)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
 
-Notes
-  - The rules were calibrated on the 20261015 presets.
-
 Command
-  datamodel-codegen --input titled_variants.yaml --preset practical-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name
+  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name --use-title-as-name
 
 pyproject.toml
   [tool.datamodel-codegen]
   input = "titled_variants.yaml"
-  preset = "practical-py314-20261017"
+  preset = "standard-py314-20261017"
   target-python-version = "3.14"
   use-tag-as-union-variant-name = true
+  use-title-as-name = true

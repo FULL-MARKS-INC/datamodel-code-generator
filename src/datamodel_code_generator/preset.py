@@ -794,9 +794,9 @@ def get_latest_preset_name() -> str:
     return max(get_preset_names(), key=_preset_name_sort_key)
 
 
-def latest_preset_name(family: Literal["standard", "practical"], target_python_version: PythonVersion) -> str:
-    """Return the newest dated preset of a family for a target Python version."""
-    names = _STANDARD_PRESET_NAMES_BY_TARGET if family == "standard" else _PRACTICAL_PRESET_NAMES_BY_TARGET
+def latest_preset_name(family: str, target_python_version: PythonVersion) -> str:
+    """Return the newest dated preset of a family, standard or practical, for a target Python version."""
+    names = {"standard": _STANDARD_PRESET_NAMES_BY_TARGET, "practical": _PRACTICAL_PRESET_NAMES_BY_TARGET}[family]
     return names[target_python_version].value
 
 

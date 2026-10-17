@@ -33,9 +33,6 @@ Add (2 options)
       measured: SchemaStore workflow, docker-compose and package.json schemas: Model became
       Workflow, Compose and PackageJson
 
-Notes
-  - The rules were calibrated on the 20261015 presets.
-
 Command
   datamodel-codegen --class-name ServiceConfig --enum-field-as-literal all --input service-config.json --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14
 

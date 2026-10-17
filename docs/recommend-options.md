@@ -88,7 +88,7 @@ components:
 ```text
 Option recommendations (experimental; quick mode; rules 2026-10-17)
 
-Schema  OpenAPI 3.1.0
+Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
   components                       2, 0 operations
   inline objects / enums           2 / 0, nesting depth 1
   shared property names            0 (none)
@@ -100,10 +100,15 @@ Schema  OpenAPI 3.1.0
   union branch tags                2 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
   component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces
 
-Start from  --preset practical-py314-20261017
-  already sets --use-title-as-name   [titles.names-from-unique-titles]
+Start from  --preset standard-py314-20261017
 
-Add (1 option)
+Add (2 options)
+  --use-title-as-name   [titles.names-from-unique-titles]
+      Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
+      x1, Bank Account x1). Titles name them after what they are, instead of their parent property
+      and a number.
+      measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
+      of Source and Source1
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -121,18 +126,16 @@ Add (1 option)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
 
-Notes
-  - The rules were calibrated on the 20261015 presets.
-
 Command
-  datamodel-codegen --input titled_variants.yaml --preset practical-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name
+  datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-tag-as-union-variant-name --use-title-as-name
 
 pyproject.toml
   [tool.datamodel-codegen]
   input = "titled_variants.yaml"
-  preset = "practical-py314-20261017"
+  preset = "standard-py314-20261017"
   target-python-version = "3.14"
   use-tag-as-union-variant-name = true
+  use-title-as-name = true
 ```
 
 <!-- fmt: on -->
@@ -143,7 +146,7 @@ The counts, presets and options come from your schema and the installed version.
 | Section | Meaning |
 |---|---|
 | Schema | The signals the rules read: components, inline objects and enums, shared property names, repeated shapes, titles, unions and their tags, key style. |
-| Start from | The latest dated preset of the family (`standard` or `practical`) that needs the fewest extra options, and the rules it already satisfies. A family that cannot express a rule's value is listed with `not`. |
+| Start from | The latest dated `standard` preset for your output model type and target Python version, and the rules it already satisfies. It is the `practical` preset only when you configured a practical preset, or when no option can set a value a rule needs on the standard preset (the notes then say which). |
 | Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), and `measured:` lines with the effect seen on public schemas. |
 | Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are not in the command. |
 | Not recommended | Options a rule argues against for this schema. |
@@ -164,8 +167,9 @@ Options you set on the command line or in `pyproject.toml` always stay as you se
 report lists it under "Your configuration" instead of changing it. Adopting a new naming option can rename generated
 classes, so review imports of the generated models before switching an existing project.
 
-`--http-headers` and `--http-query-parameters` are not repeated in the printed command, and URLs are shown redacted;
-add them again when you run it.
+`--http-headers` and `--http-query-parameters` are not repeated in the printed command, and URLs are shown without
+their user information, query, and fragment; add them again when you run it. A remote input is read once, checked
+against the remote reference lock as generation checks it (`--locked`, `--lockfile`), and the lock is never written.
 
 ## JSON output
 
@@ -181,12 +185,15 @@ The payload has `kind: "recommend-options"` and contains the `signals`, the star
 values and CLI `arguments`), `notes`, the full command as `arguments`, the `config` table, and the text report as
 `content`. `rules_revision` identifies the rule data that produced it.
 
-## What `quick` does
-
-`--recommend-options` with no value runs `quick`, the only mode in this release:
+## What it measures
 
 - It reads the input once and measures the schema signals; no models are generated, so it is fast even on large
   specifications.
+- For OpenAPI, it measures what your `--openapi-scopes` generate: component schemas with the `schemas` scope
+  (otherwise only those the operations reference), and request, response, parameter, webhook, and request body
+  schemas with those scopes, filtered by `--openapi-include-paths`. Swagger 2.0 `definitions` are measured as well.
+  For AsyncAPI, it measures component schemas and the payload and header schemas of messages in components and
+  channels, including multi-format schema objects.
 - It applies the rules to the signals and computes the options on top of the latest preset for your output model type
   and target Python version.
 - Schema rules cover OpenAPI, AsyncAPI, and JSON Schema documents. For other input types, a directory input, or
@@ -194,7 +201,8 @@ values and CLI `arguments`), `notes`, the full command as `arguments`, the `conf
 - When `--target-python-version` is not set, it assumes the default target and says so in the notes.
 
 It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`, more than one `--job`,
-`--generate-pyproject-config`, or `--generate-cli-command`.
+`--generate-pyproject-config`, `--generate-cli-command`, `--generate-prompt`, `--install-skill`,
+`--list-deprecations`, or `--list-experimental`.
 
 ## How recommendations are maintained
 
@@ -204,16 +212,16 @@ It cannot be combined with `--check`, `--watch`, `--diff-against`, `--all-jobs`,
 - **Every option is registered.** Each option has an entry in the rule data: either the rules that decide it or the
   reason the recommender leaves it to you (input/output paths, the target, runtime behaviour, formatting, and so on).
   A new option cannot be released without that decision.
-- **Re-calibration.** The rules were derived from measurements of class names on public API descriptions and
-  schemas. They are re-checked against a set of public schemas over time, and rule changes go through normal reviewed
-  pull requests. The report notes when the rules were calibrated on older presets than the one it recommends.
+- **Calibration.** The rules were derived from measurements of class names on public API descriptions and
+  schemas, and rule changes go through normal reviewed pull requests. The report notes when the rules were
+  calibrated on other presets than the one it starts from.
 - **Presets stay immutable.** A dated preset never changes. An option that the rules recommend for most schemas is
   proposed for a new dated preset; once it exists, the recommendation starts from it and stops listing that option.
 
 ## FAQ
 
 **Does it generate code?**
-No. `quick` only reads the schema and evaluates the rules.
+No. It only reads the schema and evaluates the rules.
 
 **Does it change my `pyproject.toml`?**
 No. It prints a command and a configuration block; you decide what to apply.

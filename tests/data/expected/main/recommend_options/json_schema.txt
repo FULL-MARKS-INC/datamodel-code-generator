@@ -25,21 +25,13 @@
           },
           "title": "Covers",
           "type": "array"
-        },
-        "rejected": {
-          "items": {
-            "$ref": "#/$defs/RecommendRejectedPayload"
-          },
-          "title": "Rejected",
-          "type": "array"
         }
       },
       "required": [
         "preset",
         "family",
         "configured",
-        "covers",
-        "rejected"
+        "covers"
       ],
       "title": "RecommendBaselinePayload",
       "type": "object"
@@ -246,39 +238,6 @@
         "evidence"
       ],
       "title": "RecommendOptionPayload",
-      "type": "object"
-    },
-    "RecommendRejectedPayload": {
-      "additionalProperties": false,
-      "description": "A preset the recommendation does not start from: no option turns off a value a rule rejects.",
-      "properties": {
-        "preset": {
-          "title": "Preset",
-          "type": "string"
-        },
-        "rule": {
-          "title": "Rule",
-          "type": "string"
-        },
-        "arguments": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Arguments",
-          "type": "array"
-        },
-        "reason": {
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "preset",
-        "rule",
-        "arguments",
-        "reason"
-      ],
-      "title": "RecommendRejectedPayload",
       "type": "object"
     }
   },

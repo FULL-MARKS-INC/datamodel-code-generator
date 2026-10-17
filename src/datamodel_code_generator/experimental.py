@@ -185,8 +185,8 @@ EXPERIMENTAL_FEATURES: dict[ExperimentalFeatureId, ExperimentalFeature] = {
         note=(
             "--recommend-options reads the input schema, measures naming-relevant signals of OpenAPI, AsyncAPI, and "
             "JSON Schema documents, and prints the latest dated preset to start from with the options to add, as a "
-            "command and a pyproject.toml block. Options set on the command line or in pyproject.toml are kept. "
-            "'quick' applies the rules without generating code."
+            "command and a pyproject.toml block, without generating code. Options set on the command line or in "
+            "pyproject.toml are kept."
         ),
     ),
     "cli-option.schema-validator-type": ExperimentalFeature(

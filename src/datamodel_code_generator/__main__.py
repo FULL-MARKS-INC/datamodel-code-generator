@@ -55,14 +55,17 @@ match schema_output_name:
         sys.stdout.write(f"{structured_output_json_schema()}\n")
         sys.exit(0)
 
-# Fast path for Agent Skill installation (avoid importing generation dependencies)
-if any(arg == "--install-skill" or arg.startswith("--install-skill=") for arg in sys.argv[1:]):  # pragma: no cover
+# Fast path for Agent Skill installation (avoid importing generation dependencies); --recommend-options (any
+# abbreviation starts with --rec) rejects --install-skill and --generate-prompt in _main, so these fast paths step aside
+if not any(arg.startswith("--rec") for arg in sys.argv[1:]) and any(
+    arg == "--install-skill" or arg.startswith("--install-skill=") for arg in sys.argv[1:]
+):  # pragma: no cover
     from datamodel_code_generator._agent_skill_cli import run_agent_skill_installer
 
     sys.exit(run_agent_skill_installer(sys.argv[1:]))
 
 # Fast path for prompt helper outputs
-if any(
+if not any(arg.startswith("--rec") for arg in sys.argv[1:]) and any(
     arg.startswith(("--generate-prompt", "--output-format-json-schema=")) or arg == "--output-format-json-schema"
     for arg in sys.argv[1:]
 ):  # pragma: no cover
@@ -107,6 +110,7 @@ if any(
 import difflib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -219,6 +223,7 @@ EXCLUDED_CONFIG_OPTIONS: frozenset[str] = frozenset({
 
 SENSITIVE_COMMAND_OPTIONS: frozenset[str] = frozenset({"--http-headers", "--http-query-parameters"})
 REDACTED_COMMAND_ARGUMENT = "<redacted>"
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 BATCH_UNSAFE_CLI_FIELDS: frozenset[str] = frozenset({"input", "input_model", "output", "url"})
 BATCH_COMMAND_ONLY_CONFIG_FIELDS: frozenset[str] = frozenset({"list_deprecations", "list_experimental"})
 BATCH_CONFIG_CONTEXT_FIELDS: frozenset[str] = frozenset({"use_annotated", "use_specialized_enum"})
@@ -1118,7 +1123,8 @@ def _pyproject_config_data(args: Namespace) -> dict[str, TomlValue]:
 
 
 def _toml_key(key: str) -> str:
-    return key if key and all(char.isalnum() or char in "-_" for char in key) else json.dumps(key, ensure_ascii=False)
+    """Return a TOML key: bare when it uses only ASCII letters, digits, hyphens, and underscores, otherwise quoted."""
+    return key if _TOML_BARE_KEY.fullmatch(key) else json.dumps(key, ensure_ascii=False)
 
 
 def _format_pyproject_config(
@@ -1549,8 +1555,40 @@ def _recommend_options_conflict(args: Namespace) -> str | None:
         (len(args.job or ()) > 1, "more than one --job"),
         (args.generate_pyproject_config, "--generate-pyproject-config"),
         (args.generate_cli_command, "--generate-cli-command"),
+        (args.generate_prompt is not None, "--generate-prompt"),
+        (args.install_skill is not None, "--install-skill"),
+        (args.list_deprecations is not None, "--list-deprecations"),
+        (args.list_experimental is not None, "--list-experimental"),
     )
     return next((option for conflict, option in conflicts if conflict), None)
+
+
+def _cli_arguments(config: Mapping[str, TomlValue]) -> list[str]:
+    """Return the CLI arguments for configuration values keyed by field name, as an argument list."""
+    arguments: list[str] = []
+    for key, value in sorted(config.items()):
+        option = f"--{key.replace('_', '-')}"
+        match value:
+            case bool():
+                negative = _negative_boolean_options().get(key)
+                arguments.extend([option] if value else [negative] if negative else [])
+            case list() | tuple():
+                arguments.extend([option, *(str(item) for item in value)])
+            case _:
+                arguments.extend([option, str(value)])
+    return arguments
+
+
+def _recommend_lock_observer(config: Config, pyproject_path: Path | None) -> Any:
+    """Return the remote lock check for a URL input, as generation applies it; the lock is never written."""
+    plan = _remote_lock_plan(config, pyproject_path)
+    if config.url is None or not plan.active:
+        return None
+    from datamodel_code_generator.remote_lock import RemoteReferenceLock  # noqa: PLC0415
+
+    return RemoteReferenceLock.open(
+        plan.path, update=plan.policy == "update", locked=plan.policy == "locked"
+    ).record_response
 
 
 def _run_recommend_options(  # noqa: PLR0913
@@ -1558,6 +1596,7 @@ def _run_recommend_options(  # noqa: PLR0913
     config: Config,
     pyproject_config: Mapping[str, Any],
     cli_config_args: Mapping[str, _RawConfigValue],
+    pyproject_path: Path | None,
     *,
     table: tuple[str, ...] = ("tool", "datamodel-codegen"),
     selector: tuple[str, ...] = (),
@@ -1565,6 +1604,7 @@ def _run_recommend_options(  # noqa: PLR0913
     """Print option recommendations for the resolved configuration (experimental)."""
     from datamodel_code_generator._recommend import RecommendRequest, recommend_options  # noqa: PLC0415
     from datamodel_code_generator._recommend._report import render_json, render_text  # noqa: PLC0415
+    from datamodel_code_generator.remote_lock import RemoteLockError  # noqa: PLC0415
 
     preset_on_command_line = "preset" in cli_config_args
     explicit = set(cli_config_args) if preset_on_command_line else {*pyproject_config, *cli_config_args}
@@ -1581,14 +1621,14 @@ def _run_recommend_options(  # noqa: PLR0913
                 table=table,
                 selector=selector,
                 mode=args.recommend_options,
+                response_observer=_recommend_lock_observer(config, pyproject_path),
             )
         )
-    except Error as e:
+    except (Error, RemoteLockError) as e:
         print(str(e), file=sys.stderr)  # noqa: T201
         return Exit.ERROR
-    command = shlex.join(["datamodel-codegen", *recommendation.command_selector]) + generate_cli_command(
-        recommendation.command_values
-    ).removeprefix("datamodel-codegen")
+    arguments = [*recommendation.command_selector, *_cli_arguments(recommendation.command_values)]
+    command = shlex.join(["datamodel-codegen", *arguments])
     pyproject = (
         None
         if recommendation.config_values is None
@@ -1599,7 +1639,7 @@ def _run_recommend_options(  # noqa: PLR0913
     )
     content = render_text(recommendation, command=command, pyproject=pyproject)
     if args.output_format == "json":
-        print(render_json(recommendation, content=content, arguments=shlex.split(command)[1:]))  # noqa: T201
+        print(render_json(recommendation, content=content, arguments=arguments))  # noqa: T201
     else:
         print(content, end="")  # noqa: T201
     return Exit.OK
@@ -2589,6 +2629,10 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
 
     arg_parser.parse_args(args, namespace=namespace)
 
+    if namespace.recommend_options is not None and (conflict := _recommend_options_conflict(namespace)):
+        print(f"Error: --recommend-options cannot be used with {conflict}", file=sys.stderr)  # noqa: T201
+        return Exit.ERROR
+
     if (agent := namespace.install_skill) is not None:
         from datamodel_code_generator._agent_skill_cli import install_agent_skill_command  # noqa: PLC0415
 
@@ -2632,10 +2676,6 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
         print(_recommend_options_json_schema())  # noqa: T201
         return Exit.OK
 
-    if namespace.recommend_options is not None and (conflict := _recommend_options_conflict(namespace)):
-        print(f"Error: --recommend-options cannot be used with {conflict}", file=sys.stderr)  # noqa: T201
-        return Exit.ERROR
-
     if namespace.generate_pyproject_config:
         config_data = _pyproject_config_data(namespace)
         config_output = _format_pyproject_config(config_data)
@@ -2674,6 +2714,7 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
                 job_plan.config,
                 job_plan.raw_config,
                 job_plan.cli_config_args,
+                job_plan.pyproject_path,
                 table=("tool", "datamodel-codegen", "jobs", job_plan.name),
                 selector=("--job", job_plan.name),
             )
@@ -2765,17 +2806,6 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
                 raise
             print(f"Invalid configuration: {e}", file=sys.stderr)  # noqa: T201
             return Exit.ERROR
-        if namespace.recommend_options is not None:
-            return _run_recommend_options(
-                namespace,
-                config,
-                pyproject_config,
-                cli_config_args,
-                selector=() if namespace.profile is None else ("--profile", namespace.profile),
-                table=("tool", "datamodel-codegen")
-                if namespace.profile is None
-                else ("tool", "datamodel-codegen", "profiles", namespace.profile),
-            )
 
     watch_dependencies = dependencies
     if config.watch:
@@ -2835,6 +2865,19 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
             file=sys.stderr,
         )
         return Exit.ERROR
+
+    if namespace.recommend_options is not None:
+        return _run_recommend_options(
+            namespace,
+            config,
+            pyproject_config,
+            cli_config_args,
+            pyproject_path,
+            selector=() if namespace.profile is None else ("--profile", namespace.profile),
+            table=("tool", "datamodel-codegen")
+            if namespace.profile is None
+            else ("tool", "datamodel-codegen", "profiles", namespace.profile),
+        )
 
     if config.url and config.allow_remote_refs is None:
         config.allow_remote_refs = True

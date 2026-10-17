@@ -7,9 +7,10 @@ rule data; it never generates code.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from datamodel_code_generator import Error
 from datamodel_code_generator._recommend._rules import (
@@ -27,9 +28,13 @@ if TYPE_CHECKING:
     from datamodel_code_generator._recommend._signals import SchemaKind, Signals
 
 RecommendMode: TypeAlias = Literal["quick"]
-Family: TypeAlias = Literal["standard", "practical"]
 InputSource: TypeAlias = Literal["file", "url", "stdin", "directory", "input-model"]
 _ANALYSED_TYPES: dict[str, SchemaKind] = {"openapi": "openapi", "jsonschema": "jsonschema", "asyncapi": "asyncapi"}
+_DOCUMENT_NAMES: dict[SchemaKind, str] = {
+    "openapi": "an OpenAPI",
+    "jsonschema": "a JSON Schema",
+    "asyncapi": "an AsyncAPI",
+}
 _DEFAULT_TABLE = ("tool", "datamodel-codegen")
 _SENSITIVE_FIELDS = frozenset({"http_headers", "http_query_parameters"})
 
@@ -52,6 +57,7 @@ class RecommendRequest:
     table: tuple[str, ...] = _DEFAULT_TABLE
     selector: tuple[str, ...] = ()
     mode: RecommendMode = "quick"
+    response_observer: Callable[[str, Any, Any, bytes], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,15 +80,6 @@ class Disagreement:
     kind: Literal["explicit", "preset", "newer-preset"]
 
 
-@dataclass(frozen=True, slots=True)
-class Rejection:
-    """A preset family the recommendation does not start from because a rule value cannot be expressed on it."""
-
-    preset: str
-    decision: Decision
-    arguments: list[str]
-
-
 @dataclass(slots=True)
 class Recommendation:
     """Everything a recommendation reports, before rendering."""
@@ -99,7 +96,6 @@ class Recommendation:
     family: str
     preset_configured: bool
     covers: list[Option] = field(default_factory=list)
-    rejected: list[Rejection] = field(default_factory=list)
     recommendations: list[Option] = field(default_factory=list)
     consider: list[Option] = field(default_factory=list)
     not_recommended: list[Option] = field(default_factory=list)
@@ -142,6 +138,7 @@ def _read_input(request: RecommendRequest) -> tuple[str | None, InputSource, str
             DEFAULT_HTTP_TIMEOUT if config.http_timeout is None else config.http_timeout,
             allow_private_network=bool(config.allow_private_network),
             http_backend=config.http_backend,
+            response_observer=request.response_observer,
             encoding=config.encoding,
         )
         return text, "url", Path(config.url.path).stem
@@ -168,7 +165,7 @@ def _input_file_type(config: Any, text: str | None) -> str | None:
     return infer_input_type(text).value
 
 
-def _measure(text: str, kind: SchemaKind) -> Signals:
+def _measure(text: str, kind: SchemaKind, config: Any) -> Signals:
     from datamodel_code_generator._recommend._signals import measure_signals  # noqa: PLC0415
     from datamodel_code_generator._source import load_data  # noqa: PLC0415
     from datamodel_code_generator.util import get_yaml_parse_errors  # noqa: PLC0415
@@ -176,9 +173,14 @@ def _measure(text: str, kind: SchemaKind) -> Signals:
     try:
         document = load_data(text)
     except (TypeError, ValueError, *get_yaml_parse_errors()) as e:
-        msg = f"Unable to read the input as a {kind} document: {e}"
+        msg = f"Unable to read the input as {_DOCUMENT_NAMES[kind]} document: {e}"
         raise Error(msg) from e
-    return measure_signals(document, kind)
+    return measure_signals(
+        document,
+        kind,
+        openapi_scopes=frozenset(scope.value for scope in config.openapi_scopes or ()) or frozenset({"schemas"}),
+        include_paths=config.openapi_include_paths or (),
+    )
 
 
 def _option(decision: Decision, values: Mapping[str, OptionValue]) -> Option:
@@ -251,18 +253,18 @@ def _plan(
     return plan
 
 
-def _option_count(plan: _Plan) -> int:
-    return sum(len(option.values) for option in plan.delta)
-
-
 def _start(decisions: Sequence[Decision], request: RecommendRequest, recommendation: Recommendation) -> _Plan:
-    """Choose the preset to start from: the configured one, or the latest preset that needs the fewest options."""
+    """Choose the preset to start from: the configured one, else the first family whose presets express every rule.
+
+    The families are tried in rule-data order (standard first), so another family is only chosen when a rule value
+    has no option on the families before it; the notes say which value that is.
+    """
     from datamodel_code_generator.preset import latest_preset_name  # noqa: PLC0415
 
     config = request.config
     target = config.target_python_version
     if (configured := config.preset) is not None:
-        family = cast("Family", configured.partition("-")[0])
+        family = configured.partition("-")[0]
         plan = _plan(configured, family, decisions, request, configured=True)
         if (latest := latest_preset_name(family, target)) != configured:
             recommendation.disagreements.append(Disagreement("preset", configured, latest, None, "newer-preset"))
@@ -271,12 +273,12 @@ def _start(decisions: Sequence[Decision], request: RecommendRequest, recommendat
         _plan(latest_preset_name(family, target), family, decisions, request, configured=False)
         for family in load_rules().data.families
     ]
-    chosen = min(plans, key=lambda plan: (bool(plan.blocked), _option_count(plan)))
-    recommendation.rejected.extend(
-        Rejection(plan.preset, decision, [f"--{name.replace('_', '-')}"])
-        for plan in plans
-        if plan is not chosen
-        for decision, name, _ in plan.blocked
+    chosen = next((plan for plan in plans if not plan.blocked), plans[0])
+    recommendation.notes.extend(
+        f"Starting from {chosen.preset}: no option sets --{name.replace('_', '-')} to {json.dumps(value)} on "
+        f"{plan.preset} [{decision.rule.id}]."
+        for plan in plans[: plans.index(chosen)]
+        for decision, name, value in plan.blocked
     )
     return chosen
 
@@ -317,7 +319,7 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
     input_file_type = _input_file_type(config, text)
     output_model_type = config.output_model_type.value
     signals = (
-        _measure(text, kind)
+        _measure(text, kind, config)
         if text is not None and (kind := _ANALYSED_TYPES.get(input_file_type or "")) is not None
         else None
     )

@@ -6,10 +6,12 @@ import json
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, get_args
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
 SignalName: TypeAlias = Literal[
     "components",
@@ -61,10 +63,10 @@ FactName: TypeAlias = Literal[
     "duplicate_title_examples",
     "key_style",
     "root_title",
+    "scopes",
 ]
 SchemaKind: TypeAlias = Literal["openapi", "jsonschema", "asyncapi"]
 SIGNAL_NAMES: frozenset[str] = frozenset(get_args(SignalName))
-FACT_NAMES: frozenset[str] = frozenset(get_args(FactName))
 
 _HTTP_METHODS = frozenset({"get", "put", "post", "delete", "patch", "head", "options", "trace"})
 _SCHEMA_MAP_KEYWORDS = ("properties", "patternProperties", "dependentSchemas")
@@ -94,13 +96,15 @@ _TAG_REFERENCE_DEPTH = 5
 
 @dataclass(frozen=True, slots=True)
 class Signals:
-    """Counts and example texts measured on one schema document."""
+    """Counts and example texts measured on one schema document, and the normalized names of its schemas."""
 
     counts: Mapping[str, int]
     facts: Mapping[str, str]
+    component_names: frozenset[str] = frozenset()
 
 
-def _normalize(name: str) -> str:
+def normalize_name(name: str) -> str:
+    """Return a name reduced to lowercase letters and digits, as class names compare after case conversion."""
     return _NORMALIZE.sub("", name.lower())
 
 
@@ -167,25 +171,125 @@ def _resolve_local(document: Mapping[str, Any], ref: object) -> object:
     return node
 
 
+def _items(value: object) -> Iterable[tuple[str, Any]]:
+    return value.items() if isinstance(value, dict) else ()
+
+
+def _unwrap(node: object) -> object:
+    """Return the schema of an AsyncAPI multi-format schema object, or the schema itself."""
+    if isinstance(node, dict) and ("schemaFormat" in node or node.keys() == {"schema"}):
+        return node.get("schema")
+    return node
+
+
+def _uses_definitions(document: Mapping[str, Any], kind: SchemaKind) -> bool:
+    """Return whether named schemas live in definitions/$defs: JSON Schema, or a Swagger 2.0 document."""
+    return kind == "jsonschema" or "swagger" in document
+
+
 def _components(document: Mapping[str, Any], kind: SchemaKind) -> dict[str, Any]:
     """Return the named schemas of a document: $defs and definitions, or components/schemas."""
-    if kind == "jsonschema":
-        return {
-            key: value
-            for keyword in ("$defs", "definitions")
-            if isinstance(section := document.get(keyword), dict)
-            for key, value in section.items()
-        }
-    section = components.get("schemas") if isinstance(components := document.get("components"), dict) else None
-    return section if isinstance(section, dict) else {}
+    if _uses_definitions(document, kind):
+        return {key: value for keyword in ("$defs", "definitions") for key, value in _items(document.get(keyword))}
+    components = document.get("components")
+    return {
+        key: _unwrap(value)
+        for key, value in _items(components.get("schemas") if isinstance(components, dict) else None)
+    }
 
 
-def _component_refs(kind: SchemaKind, components: Iterable[str]) -> dict[str, str]:
-    prefixes = ("#/$defs/", "#/definitions/") if kind == "jsonschema" else ("#/components/schemas/",)
+def _component_refs(document: Mapping[str, Any], kind: SchemaKind, components: Iterable[str]) -> dict[str, str]:
+    prefixes = ("#/$defs/", "#/definitions/") if _uses_definitions(document, kind) else ("#/components/schemas/",)
     return {f"{prefix}{key}": key for key in components for prefix in prefixes}
 
 
+def _media_schemas(key: str, container: object) -> Iterator[tuple[str, object]]:
+    """Yield the media type schemas of a request body or response."""
+    content = container.get("content") if isinstance(container, dict) else None
+    for media_type, media in _items(content):
+        yield f"{key} {media_type}", media.get("schema") if isinstance(media, dict) else None
+
+
+def _path_selected(path: str, include_paths: Sequence[str]) -> bool:
+    slashed = path if path.startswith("/") else f"/{path}"
+    return not include_paths or any(
+        fnmatch(slashed, pattern if pattern.startswith("/") else f"/{pattern}") for pattern in include_paths
+    )
+
+
+def _operation_schemas(
+    document: Mapping[str, Any], scopes: AbstractSet[str], include_paths: Sequence[str]
+) -> Iterator[tuple[str, object]]:
+    """Yield the request, response, parameter, and request body schemas the OpenAPI scopes generate."""
+    api = "api" in scopes
+    for section in ("paths", "webhooks"):
+        items = document.get(section) if api or section in scopes else None
+        for path, item in _items(items):
+            if section == "webhooks" or _path_selected(path, include_paths):
+                for method, operation in _items(item):
+                    yield from _operation_parts(f"{path} {method}", operation, parameters=api or "parameters" in scopes)
+    components = document.get("components")
+    bodies = (
+        components.get("requestBodies") if isinstance(components, dict) and (api or "requestbodies" in scopes) else None
+    )
+    for name, body in _items(bodies):
+        yield from _media_schemas(name, body)
+
+
+def _operation_parts(key: str, operation: object, *, parameters: bool) -> Iterator[tuple[str, object]]:
+    if not isinstance(operation, dict) or key.rpartition(" ")[2] not in _HTTP_METHODS:
+        return
+    yield from _media_schemas(f"{key} request", operation.get("requestBody"))
+    for status, response in _items(operation.get("responses")):
+        yield from _media_schemas(f"{key} {status}", response)
+    fields = {
+        name: parameter.get("schema")
+        for parameter in operation.get("parameters") or ()
+        if parameters
+        if isinstance(parameter, dict) and isinstance(name := parameter.get("name"), str)
+    }
+    yield f"{key} parameters", {"type": "object", "properties": fields} if fields else None
+
+
+def _message_schemas(document: Mapping[str, Any]) -> Iterator[tuple[str, object]]:
+    """Yield the payload and header schemas of AsyncAPI messages in components and channels."""
+    components = document.get("components")
+    components = components if isinstance(components, dict) else {}
+    messages = list(_items(components.get("messages")))
+    for name, channel in [*_items(document.get("channels")), *_items(components.get("channels"))]:
+        messages.extend(
+            (f"{name} {operation}", _operation_message(channel, operation)) for operation in ("publish", "subscribe")
+        )
+        messages.extend((f"{name} {key}", message) for key, message in _items(_get(channel, "messages")))
+    for name, message in messages:
+        variants = _get(message, "oneOf")
+        for index, variant in enumerate(variants if isinstance(variants, list) else [message]):
+            for part in ("payload", "headers"):
+                yield f"{name} {index} {part}", _unwrap(_get(variant, part))
+
+
+def _get(node: object, key: str) -> object:
+    return node.get(key) if isinstance(node, dict) else None
+
+
+def _operation_message(channel: object, operation: str) -> object:
+    return _get(_get(channel, operation), "message")
+
+
+def _count_operations(document: Mapping[str, Any], kind: SchemaKind) -> int:
+    """Count OpenAPI path operations, or AsyncAPI channel and top-level operations."""
+    if kind == "openapi":
+        return sum(method in _HTTP_METHODS for _, item in _items(document.get("paths")) for method, _ in _items(item))
+    return len(dict(_items(document.get("operations")))) + sum(
+        isinstance(_get(channel, operation), dict)
+        for _, channel in _items(document.get("channels"))
+        for operation in ("publish", "subscribe")
+    )
+
+
 def _schema_label(document: Mapping[str, Any], kind: SchemaKind) -> str:
+    if "swagger" in document:
+        return f"Swagger {document['swagger']}"
     if kind == "jsonschema":
         schema_uri = document.get("$schema")
         return f"JSON Schema ({schema_uri})" if isinstance(schema_uri, str) else "JSON Schema"
@@ -227,30 +331,42 @@ class _Walker:
         values = node.get("enum")
         self.counts["single_value_enums"] += isinstance(values, list) and len(values) == 1 and "const" not in node
 
+    def record_reference(self, node: Mapping[str, Any], component: str) -> bool:
+        """Record a reference to a named schema; return whether the node is a reference."""
+        if not isinstance(ref := node.get("$ref"), str):
+            return False
+        if (target := self.refs.get(ref)) is not None:
+            self.references[component].add(target)
+        return True
+
     def walk_named(self, key: str, node: object) -> None:
-        """Walk one named schema; the schema itself is the first parent model."""
-        if isinstance(node, dict):
+        """Walk one named schema; the schema itself is the first parent model.
+
+        Subschemas reached without a property (array items, union branches, allOf parts) are named after the
+        schema itself, so they get an empty name and do not count as names shared with other parents.
+        """
+        if isinstance(node, dict) and not self.record_reference(node, key):
             self.count_single_value_enum(node)
-            self.walk_children(node, parent=key, name=_normalize(key), depth=0, component=key)
+            self.walk_children(node, parent=key, name="", depth=0, component=key)
+
+    def record_name(self, name: str, parent: str, parents: defaultdict[str, set[str]]) -> None:
+        """Record the parent of an inline model named after a property."""
+        if name:
+            self.name_parents[name].add(parent)
+            parents[name].add(parent)
 
     def walk(self, node: object, *, parent: str, name: str, depth: int, component: str) -> None:
         """Walk one inline schema reached under a parent model through a property or keyword."""
-        if not isinstance(node, dict) or _is_null(node):
-            return
-        if isinstance(ref := node.get("$ref"), str):
-            if (target := self.refs.get(ref)) is not None:
-                self.references[component].add(target)
+        if not isinstance(node, dict) or _is_null(node) or self.record_reference(node, component):
             return
         self.count_single_value_enum(node)
         if _is_enum(node):
             self.counts["inline_enums"] += 1
-            self.name_parents[name].add(parent)
-            self.enum_name_parents[name].add(parent)
+            self.record_name(name, parent, self.enum_name_parents)
             self.enum_shapes[self.shape(node)] += 1
         if _is_object(node):
             self.counts["inline_objects"] += 1
-            self.name_parents[name].add(parent)
-            self.object_name_parents[name].add(parent)
+            self.record_name(name, parent, self.object_name_parents)
             self.object_shapes[self.shape(node)] += 1
             if isinstance(title := node.get("title"), str) and title.strip():
                 self.counts["inline_titled_objects"] += 1
@@ -265,7 +381,9 @@ class _Walker:
         for keyword in _SCHEMA_MAP_KEYWORDS:
             members = node.get(keyword)
             for member_name, member in members.items() if isinstance(members, dict) else ():
-                self.walk(member, parent=parent, name=_normalize(str(member_name)), depth=depth, component=component)
+                self.walk(
+                    member, parent=parent, name=normalize_name(str(member_name)), depth=depth, component=component
+                )
         for keyword in ("oneOf", "anyOf"):
             if isinstance(branches := node.get(keyword), list):
                 self.count_variants(node, [branch for branch in branches if isinstance(branch, dict)])
@@ -380,24 +498,27 @@ def _reference_cycles(references: Mapping[str, set[str]]) -> int:
 
 def _count_titles(counts: Counter[str], titles: Mapping[str, str], components: Iterable[str]) -> Counter[str]:
     """Count component titles that collide or repeat keys; return the shared titles with their group sizes."""
-    keys = {_normalize(key) for key in components}
-    groups = Counter(_normalize(title) for title in titles.values())
+    keys = {normalize_name(key) for key in components}
+    groups = Counter(normalize_name(title) for title in titles.values())
     shared = {title: count for title, count in groups.items() if count > 1}
     counts["titled_components"] = len(titles)
     counts["component_title_duplicate_groups"] = len(shared)
     counts["component_titles_in_duplicate_groups"] = sum(shared.values())
     counts["component_titles_equal_own_key"] = sum(
-        _normalize(title) == _normalize(key) for key, title in titles.items()
+        normalize_name(title) == normalize_name(key) for key, title in titles.items()
     )
     counts["component_titles_equal_other_key"] = sum(
-        (normalized := _normalize(title)) != _normalize(key) and normalized in keys for key, title in titles.items()
+        (normalized := normalize_name(title)) != normalize_name(key) and normalized in keys
+        for key, title in titles.items()
     )
-    return Counter({title: shared[_normalize(title)] for title in titles.values() if _normalize(title) in shared})
+    return Counter({
+        title: shared[normalize_name(title)] for title in titles.values() if normalize_name(title) in shared
+    })
 
 
 def _count_names(counts: Counter[str], walker: _Walker, components: Iterable[str]) -> Counter[str]:
     """Count inline model names shared by parents or taken by components; return the shared names."""
-    keys = {_normalize(key) for key in components}
+    keys = {normalize_name(key) for key in components}
     shared = Counter({name: len(parents) for name, parents in walker.name_parents.items() if len(parents) > 1})
     counts["shared_inline_names"] = len(shared)
     counts["shared_inline_object_names"] = sum(len(parents) > 1 for parents in walker.object_name_parents.values())
@@ -413,13 +534,47 @@ def _count_names(counts: Counter[str], walker: _Walker, components: Iterable[str
     return shared
 
 
-def measure_signals(document: Mapping[str, Any], kind: SchemaKind) -> Signals:
-    """Measure the naming-relevant signals of one OpenAPI, AsyncAPI, or JSON Schema document."""
-    components = _components(document, kind)
-    walker = _Walker(document, _component_refs(kind, components))
+def _walk_components(walker: _Walker, components: Mapping[str, Any], roots: Iterable[str] | None) -> dict[str, Any]:
+    """Walk the named schemas generation emits: all of them, or those the roots reference when roots are given."""
+    pending = (
+        sorted(components)
+        if roots is None
+        else sorted({target for root in roots for target in walker.references[root]})
+    )
+    walked: dict[str, Any] = {}
+    while pending:
+        if (key := pending.pop()) not in walked:
+            walked[key] = components[key]
+            walker.walk_named(key, components[key])
+            pending.extend(sorted(walker.references[key] - walked.keys()))
+    return dict(sorted(walked.items()))
+
+
+def measure_signals(
+    document: Mapping[str, Any],
+    kind: SchemaKind,
+    *,
+    openapi_scopes: AbstractSet[str] = frozenset({"schemas"}),
+    include_paths: Sequence[str] = (),
+) -> Signals:
+    """Measure the naming-relevant signals of one OpenAPI, AsyncAPI, or JSON Schema document.
+
+    For OpenAPI, the scopes select what is measured as generation would emit it: component schemas with the schemas
+    scope (otherwise only those the operations reference), and request, response, and parameter schemas with the
+    path scopes.
+    """
+    all_components = _components(document, kind)
+    walker = _Walker(document, _component_refs(document, kind, all_components))
     counts = walker.counts
-    for key, node in components.items():
+    extra: list[tuple[str, object]] = []
+    if kind == "openapi":
+        extra = list(_operation_schemas(document, openapi_scopes, include_paths))
+    elif kind == "asyncapi":
+        extra = list(_message_schemas(document))
+    for key, node in extra:
         walker.walk_named(key, node)
+    whole = kind != "openapi" or bool({"schemas", "api"} & openapi_scopes)
+    components = _walk_components(walker, all_components, None if whole else [key for key, _ in extra])
     named = {key: node for key, node in components.items() if isinstance(node, dict)}
     counts["component_enums"] = sum(_is_enum(node) for node in named.values())
     titles = {
@@ -430,17 +585,11 @@ def measure_signals(document: Mapping[str, Any], kind: SchemaKind) -> Signals:
     root_title = ""
     if kind == "jsonschema":
         root = {key: value for key, value in document.items() if key not in {"definitions", "$defs"}}
-        walker.walk_children(root, parent="#", name="model", depth=0, component="")
+        walker.walk_children(root, parent="#", name="", depth=0, component="")
         counts["root_is_object"] = _is_object(root) or root.get("type") == "object"
         root_title = title.strip() if isinstance(title := root.get("title"), str) else ""
         counts["root_title_words"] = len(root_title.split())
-    paths = document.get("paths") if kind == "openapi" else None
-    counts["operations"] = sum(
-        method in _HTTP_METHODS
-        for item in (paths.values() if isinstance(paths, dict) else ())
-        if isinstance(item, dict)
-        for method in item
-    )
+    counts["operations"] = _count_operations(document, kind)
     counts["components"] = len(components)
     counts["all_enums"] = counts["inline_enums"] + counts["component_enums"]
     counts["max_inline_depth"] = walker.max_depth
@@ -459,10 +608,12 @@ def measure_signals(document: Mapping[str, Any], kind: SchemaKind) -> Signals:
         counts={name: int(counts[name]) for name in sorted(SIGNAL_NAMES)},
         facts={
             "schema": _schema_label(document, kind),
+            "scopes": ", ".join(sorted(openapi_scopes)) if kind == "openapi" else "",
             "shared_inline_name_examples": _example_text(shared_names),
             "inline_title_examples": _example_text(walker.inline_titles),
             "duplicate_title_examples": _example_text(shared_titles),
             "key_style": "".join(f"{style} ({count} of {len(components)})" for style, count in styles),
             "root_title": root_title,
         },
+        component_names=frozenset(normalize_name(key) for key in all_components),
     )

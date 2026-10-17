@@ -752,12 +752,10 @@ General options:
                         with --install-skill.
   --profile PROFILE     Use a named profile from pyproject.toml
                         [tool.datamodel-codegen.profiles.<name>]
-  --recommend-options [{quick}]
-                        Analyse the input schema and print the options to add
+  --recommend-options   Analyse the input schema and print the options to add
                         on top of the latest dated preset, with the reasons,
                         as a command and a pyproject.toml block, then exit
-                        (experimental). 'quick' (the default) applies the
-                        schema rules without generating code.
+                        (experimental).
   --skill-scope {project,user}
                         Installation scope for --install-skill (default:
                         project). Project installs use .agents/skills or

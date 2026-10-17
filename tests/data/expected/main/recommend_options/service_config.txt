@@ -51,9 +51,6 @@ Consider (the schema also has signals against these)
       measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
       lost
 
-Notes
-  - The rules were calibrated on the 20261015 presets.
-
 Command
   datamodel-codegen --class-name ServiceConfig --enum-field-as-literal all --input service-config.json --preset standard-py314-20261017 --target-python-version 3.14
 

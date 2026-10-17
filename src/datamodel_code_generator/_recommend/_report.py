@@ -10,11 +10,10 @@ from datamodel_code_generator._recommend._rules import format_text
 from datamodel_code_generator._recommend._signals import Signals
 
 if TYPE_CHECKING:
-    from datamodel_code_generator._recommend import Disagreement, Option, Recommendation, Rejection
+    from datamodel_code_generator._recommend import Disagreement, Option, Recommendation
     from datamodel_code_generator._structured_output import (
         RecommendDisagreementPayload,
         RecommendOptionPayload,
-        RecommendRejectedPayload,
     )
 
 _WIDTH = 100
@@ -81,7 +80,8 @@ def _signal_lines(signals: Signals, input_file_type: str | None) -> list[str]:
     values = {**signals.counts, **{name: value or "none" for name, value in signals.facts.items()}}
     rows = [*_SIGNAL_LINES, _ROOT_LINE] if input_file_type == "jsonschema" else list(_SIGNAL_LINES)
     width = max(len(label) for label, _ in rows)
-    return [f"Schema  {signals.facts['schema']}"] + [
+    scopes = f" (OpenAPI scopes: {signals.facts['scopes']})" if signals.facts["scopes"] else ""
+    return [f"Schema  {signals.facts['schema']}{scopes}"] + [
         f"  {label.ljust(width)}  {template.format_map(values)}" for label, template in rows
     ]
 
@@ -121,11 +121,6 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
     lines.extend(("", f"Start from  --preset {recommendation.preset}"))
     lines.extend(
         f"  already sets {' '.join(option.arguments)}   [{option.decision.rule.id}]" for option in recommendation.covers
-    )
-    lines.extend(
-        f"  not {rejection.preset}: {' '.join(rejection.arguments)} cannot be turned off on it   "
-        f"[{rejection.decision.rule.id}]"
-        for rejection in recommendation.rejected
     )
     added = sum(len(option.values) for option in recommendation.recommendations)
     lines.extend((
@@ -174,17 +169,6 @@ def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
         contested_reason=format_text(rule.contested_reason, signals) if option.decision.contested else None,
         caveats=[format_text(caveat, signals) for caveat in rule.caveats],
         evidence=list(rule.evidence),
-    )
-
-
-def _rejected_payload(rejection: Rejection, signals: Signals) -> RecommendRejectedPayload:
-    from datamodel_code_generator._structured_output import RecommendRejectedPayload  # noqa: PLC0415
-
-    return RecommendRejectedPayload(
-        preset=rejection.preset,
-        rule=rejection.decision.rule.id,
-        arguments=rejection.arguments,
-        reason=format_text(rejection.decision.rule.reason, signals),
     )
 
 
@@ -242,7 +226,6 @@ def render_json(recommendation: Recommendation, *, content: str, arguments: list
             family=recommendation.family,
             configured=recommendation.preset_configured,
             covers=[_option_payload(option, signals) for option in recommendation.covers],
-            rejected=[_rejected_payload(rejection, signals) for rejection in recommendation.rejected],
         ),
         recommendations=[_option_payload(option, signals) for option in recommendation.recommendations],
         consider=[_option_payload(option, signals) for option in recommendation.consider],

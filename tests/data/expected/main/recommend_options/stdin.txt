@@ -20,7 +20,6 @@ Add  nothing on top of the preset
 Notes
   - Target Python is not set: the recommendation assumes 3.10, the default. Set
     --target-python-version to start from the preset of the Python version the project runs.
-  - The rules were calibrated on the 20261015 presets.
 
 Command
   datamodel-codegen --formatters builtin --input-file-type jsonschema --preset standard-py310-20261017
