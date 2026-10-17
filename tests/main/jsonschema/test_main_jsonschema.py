@@ -3539,6 +3539,24 @@ def test_main_jsonschema_field_type_collision_cross_module(
             "Bar",
             id="child-module-first-rename-type-base-model-exact-import",
         ),
+        pytest.param(
+            "field_type_collision_inherited_modules_package",
+            DataModelType.PydanticV2BaseModel,
+            ["--field-type-collision-strategy", "rename-type"],
+            "field_type_collision_inherited_modules_package/base_model_rename_type",
+            "child",
+            "Bar",
+            id="packages-first-rename-type-base-model",
+        ),
+        pytest.param(
+            "field_type_collision_inherited_modules_package",
+            DataModelType.PydanticV2BaseModel,
+            ["--field-type-collision-strategy", "rename-type", "--use-exact-imports"],
+            "field_type_collision_inherited_modules_package/base_model_rename_type_exact",
+            "child",
+            "Bar",
+            id="packages-first-rename-type-base-model-exact-import",
+        ),
     ],
 )
 def test_main_jsonschema_field_type_collision_inherited_modules(
@@ -3553,7 +3571,7 @@ def test_main_jsonschema_field_type_collision_inherited_modules(
     """Rename an inherited field named like its type, or the type, under one name in every module of its family.
 
     The child keeps the alias of a renamed field, and imports a renamed type by its new name, whichever of the
-    modules comes first.
+    modules comes first, also where the type or its importer is a package ``__init__``.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / input_name,
@@ -8389,7 +8407,8 @@ def test_main_subscript_annotation_at_line_length(
 ) -> None:
     """Test the built-in formatter splits an `Annotated[...]` or `Union[...]` annotation like black.
 
-    Black splits the annotation once `<annotation> = (` exceeds the line, even when the annotation alone fits.
+    Black splits the annotation once `<annotation> = (` exceeds the line, even when the annotation alone fits, and
+    then splits a `Field(...)` default that overflows the closing line.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / f"{name}.json",
