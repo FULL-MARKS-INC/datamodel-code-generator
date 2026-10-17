@@ -1,0 +1,10 @@
+openapi: 3.1.0
+info: {title: int formats, version: "1"}
+paths: {}
+components:
+  schemas:
+    Counter:
+      type: object
+      properties:
+        hits: {type: integer, format: int32}
+        total: {type: integer, format: int64}

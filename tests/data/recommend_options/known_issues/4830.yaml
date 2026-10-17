@@ -1,0 +1,21 @@
+openapi: 3.1.0
+info: {title: discriminator with pattern, version: "1"}
+paths: {}
+components:
+  schemas:
+    Card:
+      type: object
+      properties:
+        type: {type: string, pattern: 'card|wallet'}
+      required: [type]
+    Wallet:
+      type: object
+      properties:
+        type: {type: string, pattern: 'card|wallet'}
+      required: [type]
+    PaymentRequest:
+      type: object
+      properties:
+        paymentMethod:
+          oneOf: [{$ref: '#/components/schemas/Card'}, {$ref: '#/components/schemas/Wallet'}]
+          discriminator: {propertyName: type, mapping: {card: '#/components/schemas/Card', wallet: '#/components/schemas/Wallet'}}

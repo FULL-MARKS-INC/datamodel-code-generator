@@ -73,7 +73,7 @@
               }
             ]
           },
-          "description": "Options added on top of the preset, as config values.",
+          "description": "Options added on top of the preset, including known-issue workarounds, as config values.",
           "title": "Set",
           "type": "object"
         },
@@ -88,6 +88,14 @@
           "description": "False for the configuration as set without the recommended preset.",
           "title": "Selectable",
           "type": "boolean"
+        },
+        "workarounds": {
+          "description": "Known issues, by GitHub issue number, whose workarounds it takes.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Workarounds",
+          "type": "array"
         },
         "error": {
           "anyOf": [
@@ -127,11 +135,70 @@
         "set",
         "arguments",
         "selectable",
+        "workarounds",
         "error",
         "metrics",
         "stability"
       ],
       "title": "RecommendCandidatePayload",
+      "type": "object"
+    },
+    "RecommendCitationPayload": {
+      "additionalProperties": false,
+      "description": "A known issue the recommended configuration has, or that kept options out of it.",
+      "properties": {
+        "known_issue": {
+          "$ref": "#/$defs/RecommendKnownIssuePayload"
+        },
+        "avoided_by": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "description": "Config values that avoid the issue; empty when no option does or when options were left out.",
+          "title": "Avoided By",
+          "type": "object"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a names issue in full mode: the selected candidate's count of the issue's symptom metric, which counts every class name with that symptom, not only those the issue causes.",
+          "title": "Count"
+        },
+        "dropped": {
+          "description": "Rule ids of the options left out because of the issue.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Dropped",
+          "type": "array"
+        }
+      },
+      "required": [
+        "known_issue",
+        "avoided_by",
+        "count",
+        "dropped"
+      ],
+      "title": "RecommendCitationPayload",
       "type": "object"
     },
     "RecommendContextPayload": {
@@ -251,6 +318,47 @@
         "analysed"
       ],
       "title": "RecommendInputPayload",
+      "type": "object"
+    },
+    "RecommendKnownIssuePayload": {
+      "additionalProperties": false,
+      "description": "A known issue of generation that a recommendation cites.",
+      "properties": {
+        "issue": {
+          "description": "The GitHub issue number.",
+          "title": "Issue",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "effect": {
+          "enum": [
+            "import-error",
+            "generation-error",
+            "wrong-type",
+            "lost-constraint",
+            "rejects-valid",
+            "not-enforced",
+            "names",
+            "cli-inexpressible"
+          ],
+          "title": "Effect",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue",
+        "id",
+        "effect",
+        "message"
+      ],
+      "title": "RecommendKnownIssuePayload",
       "type": "object"
     },
     "RecommendNameChangePayload": {
@@ -528,11 +636,12 @@
           "description": "Why the schema also argues against the values; set only for consider entries.",
           "title": "Contested Reason"
         },
-        "caveats": {
+        "known_issues": {
+          "description": "Known issues the option can hit with the recommended configuration.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/RecommendKnownIssuePayload"
           },
-          "title": "Caveats",
+          "title": "Known Issues",
           "type": "array"
         },
         "evidence": {
@@ -561,7 +670,7 @@
         "arguments",
         "reason",
         "contested_reason",
-        "caveats",
+        "known_issues",
         "evidence",
         "trial"
       ],
@@ -667,6 +776,49 @@
         "remeasured"
       ],
       "title": "RecommendTrialPayload",
+      "type": "object"
+    },
+    "RecommendWorkaroundPayload": {
+      "additionalProperties": false,
+      "description": "Config values the recommendation adds to avoid a known issue that breaks the output.",
+      "properties": {
+        "known_issue": {
+          "$ref": "#/$defs/RecommendKnownIssuePayload"
+        },
+        "set": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "title": "Set",
+          "type": "object"
+        },
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Arguments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "known_issue",
+        "set",
+        "arguments"
+      ],
+      "title": "RecommendWorkaroundPayload",
       "type": "object"
     }
   },
@@ -774,6 +926,22 @@
       ],
       "description": "The candidates full mode compared; null in quick mode."
     },
+    "workarounds": {
+      "description": "Options the recommendation adds to avoid known issues that break the output.",
+      "items": {
+        "$ref": "#/$defs/RecommendWorkaroundPayload"
+      },
+      "title": "Workarounds",
+      "type": "array"
+    },
+    "known_issues": {
+      "description": "Known issues the recommended configuration has, or that kept options out of it.",
+      "items": {
+        "$ref": "#/$defs/RecommendCitationPayload"
+      },
+      "title": "Known Issues",
+      "type": "array"
+    },
     "notes": {
       "items": {
         "type": "string"
@@ -830,6 +998,8 @@
     "not_recommended",
     "disagreements",
     "trial",
+    "workarounds",
+    "known_issues",
     "notes",
     "arguments",
     "config",

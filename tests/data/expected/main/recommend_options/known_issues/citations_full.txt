@@ -1,0 +1,212 @@
+#4819 integer-enum-null-member: --input 4819.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Work around known issues (1 option)
+    --enum-field-as-literal all   [#4819 integer-enum-null-member]
+        An integer or number enum that lists null becomes an IntEnum or a value-typed Enum with a None
+        member, which fails at import (integer enums with null: 1, number enums: 0).
+    current: with the workarounds of #4819
+    recommended: with the workarounds of #4819
+  Command
+    datamodel-codegen --enum-field-as-literal all --input 4819.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4821 collapse-root-models-stale-module-import: --input 4821.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Work around known issues (1 option)
+    --no-collapse-root-models   [#4821 collapse-root-models-stale-module-import]
+        A module that imports a dotted-key module of root models only, and has a field with that
+        module's name, keeps the import after --collapse-root-models writes the root models in place
+        and drops the module, so the package fails to import (modules: 1).
+    current: with the workarounds of #4821
+  Command
+    datamodel-codegen --no-collapse-root-models --input 4821.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4823 full-path-dotted-cycle-import: --input 4823.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
+  Work around known issues (1 option)
+    --no-treat-dot-as-module   [#4823 full-path-dotted-cycle-import]
+        With --naming-strategy full-path or parent-prefixed, inline models of dotted-key schemas whose
+        modules reference each other in a cycle move to a module of their own, and the package fails
+        to import (inline models: 1).
+    current: with the workarounds of #4823
+  Command
+    datamodel-codegen --input 4823.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --no-treat-dot-as-module
+
+#4830 discriminator-literal-keeps-pattern: --input 4830.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Work around known issues (1 option)
+    --no-use-annotated   [#4830 discriminator-literal-keeps-pattern]
+        A discriminator property with a pattern keeps the pattern on its Literal tag with Annotated or
+        Field constraints, so pydantic rejects the union at import (tags: 2).
+    current: with the workarounds of #4830
+  Command
+    datamodel-codegen --input 4830.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --no-use-annotated
+
+#4831 schema-validators-pattern-model-forward-ref: --input 4831.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --generate-schema-validators
+  Known issues
+    #4831 schema-validators-pattern-model-forward-ref (fails at import): --generate-schema-validators
+        writes a patternProperties rule that names a model; when that model is defined later in the
+        module, the module fails with NameError (pattern values that reference a schema: 1). No option
+        avoids it.
+  Command
+    datamodel-codegen --generate-schema-validators --input 4831.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4877 msgspec-allof-independent-bases: --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
+    current    rejected: known issue #4877 msgspec-allof-independent-bases
+  Known issues
+    #4877 msgspec-allof-independent-bases (stops generation): msgspec.Struct output stops for the
+        whole input when an allOf extends two schemas that both declare properties; Pydantic and
+        dataclass outputs are not affected (allOf schemas: 1). No option avoids it.
+  Command
+    datamodel-codegen --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
+
+#4882 optional-literal-discriminator: --input 4882.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
+  Work around known issues (1 option)
+    --enum-field-as-literal none   [#4882 optional-literal-discriminator]
+        A discriminator property that is a single-value enum or const without a default and not
+        required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
+        avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
+        with a default: 0).
+    current: with the workarounds of #4882
+    recommended: with the workarounds of #4882
+  Command
+    datamodel-codegen --enum-field-as-literal none --input 4882.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4827 unique-items-set-drops-item-constraints: --input 4827.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+  Known issues
+    #4827 unique-items-set-drops-item-constraints (drops a constraint): --use-unique-items-as-set
+        drops the constraints of the items of uniqueItems arrays when --collapse-root-models and
+        Annotated or Field constraints are on (arrays: 2). --no-collapse-root-models avoids it.
+  Command
+    datamodel-codegen --input 4827.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+
+#4832 decimal-multiple-of-ignored-with-annotated: --input 4832.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-decimal-for-multiple-of
+  Known issues
+    #4832 decimal-multiple-of-ignored-with-annotated (drops a constraint):
+        --use-decimal-for-multiple-of has no effect with Annotated or Field constraints, so multipleOf
+        stays a float check (numbers with multipleOf: 1). --no-use-annotated avoids it.
+  Command
+    datamodel-codegen --input 4832.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-decimal-for-multiple-of
+
+#4833 allof-primitive-constraints-dropped: --input 4833.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4833 allof-primitive-constraints-dropped (drops a constraint): Constraints inside an allOf of
+        primitive schemas are dropped with Annotated or Field constraints (allOf schemas: 2).
+        --no-use-annotated avoids it.
+  Command
+    datamodel-codegen --input 4833.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4834 collapse-reuse-merges-set-and-list: --input 4834.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+  Known issues
+    #4834 collapse-reuse-merges-set-and-list (wrong type): --collapse-reuse-models merges objects that
+        differ only in uniqueItems, so a field gets a set instead of a list or the reverse (groups of
+        such objects: 1). collapse-reuse-models = false in pyproject.toml avoids it.
+  Command
+    datamodel-codegen --input 4834.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+
+#4835 pattern-properties-drop-additional-properties: --input 4835.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4835 pattern-properties-drop-additional-properties (rejects valid data): patternProperties beside
+        a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so
+        keys that additionalProperties allows are rejected (objects: 1). --generate-schema-validators
+        avoids it.
+  Command
+    datamodel-codegen --input 4835.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4848 int32-int64-range-not-enforced: --input 4848.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4848 int32-int64-range-not-enforced (does not check a constraint): Integers with format int32 or
+        int64 and no bounds become plain int, so values outside the format's range are accepted; no
+        option adds the bounds (integers: 2).
+  Command
+    datamodel-codegen --input 4848.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4849 prefix-items-positions-lost: --input 4849.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4849 prefix-items-positions-lost (drops a constraint): prefixItems with items: false, or without
+        as many items as it lists, becomes a list of the item types, so positions are not checked
+        (arrays: 2).
+  Command
+    datamodel-codegen --input 4849.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4850 schema-validators-not-const-enum: --input 4850.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --generate-schema-validators
+  Known issues
+    #4850 schema-validators-not-const-enum (does not check a constraint): --generate-schema-validators
+        does not check not with const or enum, so the excluded values are accepted (schemas: 2).
+  Command
+    datamodel-codegen --generate-schema-validators --input 4850.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4851 schema-validators-oneof-exclusivity: --input 4851.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --generate-schema-validators
+  Known issues
+    #4851 schema-validators-oneof-exclusivity (does not check a constraint):
+        --generate-schema-validators checks that only one oneOf branch matches only for branches that
+        list required properties alone, so a value matching several branches is accepted (oneOf
+        schemas: 2).
+  Command
+    datamodel-codegen --generate-schema-validators --input 4851.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
+
+#4824 singular-name-compound-word: --input 4824.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4824 singular-name-compound-word (class names): Item models of plural compound property names are
+        singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them
+        (properties: 1).
+  Command
+    datamodel-codegen --input 4824.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4825 primary-first-component-displaced: --input 4825.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
+  Command
+    datamodel-codegen --input 4825.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
+
+#4826 full-path-doubles-parent-name: --input 4826.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
+  Known issues
+    #4826 full-path-doubles-parent-name (class names; the selected candidate has 2 doubled names):
+        --naming-strategy full-path joins a parent name with a child name that the parent name already
+        ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named
+        after its key).
+  Command
+    datamodel-codegen --input 4826.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4836 title-as-name-displaces-components: --input 4836.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-title-as-name
+  Known issues
+    #4836 title-as-name-displaces-components (class names; the selected candidate has 1 displaced
+        component): --use-title-as-name names every titled schema after its title, so an inline schema
+        that copies a component's title can take the component's name; a scope for it is requested.
+  Command
+    datamodel-codegen --input 4836.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-title-as-name
+
+#4839 union-variant-tag-behind-allof: --input 4839.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
+  Known issues
+    #4839 union-variant-tag-behind-allof (class names; the selected candidate has 2 numbered union
+        variants): Tag-based variant names do not read a tag that a variant declares only through
+        allOf or $ref, so those variants stay numbered (branches: 2).
+  Command
+    datamodel-codegen --input 4839.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
+
+#4840 parent-prefixed-equals-full-path: --input 4840.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy parent-prefixed
+  Known issues
+    #4840 parent-prefixed-equals-full-path (class names): --naming-strategy parent-prefixed gives the
+        same class names as full-path, not the underscore-joined names its help describes.
+  Command
+    datamodel-codegen --input 4840.yaml --input-file-type openapi --naming-strategy parent-prefixed --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4845 full-path-allof-property-unprefixed: --input 4845.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
+  Known issues
+    #4845 full-path-allof-property-unprefixed (class names; the selected candidate has 2 numbered
+        names): --naming-strategy full-path does not prefix the models it builds from a property's
+        allOf, so they stay numbered (Issue1, Issue2; allOf properties: 2).
+  Command
+    datamodel-codegen --input 4845.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4846 annotated-constrained-primitive-root-models: --input 4846.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+  Known issues
+    #4846 annotated-constrained-primitive-root-models (class names; the selected candidate has 1
+        displaced component): With --use-annotated, a constrained primitive in a union or array
+        becomes a named root model, which can take a component's name (Account becomes AccountModel;
+        branches and items: 2).
+  Command
+    datamodel-codegen --input 4846.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
+
+#4847 allof-nested-union-members-numbered: --input 4847.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
+  Known issues
+    #4847 allof-nested-union-members-numbered (class names; the selected candidate has 3 numbered
+        names): An allOf with a nested oneOf or anyOf numbers the union members (Event2, Event3), and
+        tag-based variant names name the helper classes instead (allOf schemas: 1).
+  Command
+    datamodel-codegen --input 4847.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name

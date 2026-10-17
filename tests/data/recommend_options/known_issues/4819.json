@@ -1,0 +1,8 @@
+{
+  "title": "Pet",
+  "type": "object",
+  "properties": {
+    "level": {"type": "integer", "enum": [1, 2, null]},
+    "color": {"type": "string", "enum": ["red", "blue", null]}
+  }
+}

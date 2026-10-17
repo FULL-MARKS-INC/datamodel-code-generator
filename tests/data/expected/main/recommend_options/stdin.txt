@@ -17,6 +17,11 @@ Start from  --preset standard-py310-20261017
 
 Add  nothing on top of the preset
 
+Known issues
+  #4849 prefix-items-positions-lost (drops a constraint): prefixItems with items: false, or without
+      as many items as it lists, becomes a list of the item types, so positions are not checked
+      (arrays: 1).
+
 Notes
   - Target Python is not set: the recommendation assumes 3.10, the default. Set
     --target-python-version to start from the preset of the Python version the project runs.

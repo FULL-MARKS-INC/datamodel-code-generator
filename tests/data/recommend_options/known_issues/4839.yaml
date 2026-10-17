@@ -1,0 +1,33 @@
+openapi: 3.1.0
+info: {title: tags, version: "1"}
+paths: {}
+components:
+  schemas:
+    EventBase:
+      type: object
+      properties:
+        event_id: {type: string}
+    TextDelta:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, const: text.delta}
+        delta: {type: string}
+    ServerEvent:
+      oneOf:
+        - allOf:
+            - $ref: '#/components/schemas/EventBase'
+            - type: object
+              required: [type]
+              properties:
+                type: {type: string, const: session.created}
+        - allOf:
+            - $ref: '#/components/schemas/TextDelta'
+            - type: object
+              properties:
+                stream_id: {type: string}
+        - type: object
+          required: [type]
+          properties:
+            type: {type: string, const: error}
+            message: {type: string}

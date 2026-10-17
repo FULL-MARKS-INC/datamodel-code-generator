@@ -1,0 +1,8 @@
+{
+  "title": "Settings",
+  "type": "object",
+  "properties": {
+    "level": {"allOf": [{"type": "integer", "minimum": 0}, {"maximum": 10}]},
+    "code": {"allOf": [{"type": "string", "minLength": 2}, {"pattern": "^[A-Z]+$"}]}
+  }
+}

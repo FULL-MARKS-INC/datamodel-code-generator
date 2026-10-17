@@ -1,0 +1,22 @@
+openapi: 3.1.0
+info: {title: two bases, version: '1'}
+paths: {}
+components:
+  schemas:
+    Named:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+    Timestamped:
+      type: object
+      required: [created_at]
+      properties:
+        created_at: {type: string}
+    Project:
+      allOf:
+      - $ref: '#/components/schemas/Named'
+      - $ref: '#/components/schemas/Timestamped'
+      - type: object
+        properties:
+          id: {type: integer}

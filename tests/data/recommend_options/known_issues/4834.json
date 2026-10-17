@@ -1,0 +1,12 @@
+{
+  "title": "Root",
+  "type": "object",
+  "properties": {
+    "labels": {"$ref": "#/$defs/Labels"},
+    "history": {"$ref": "#/$defs/History"}
+  },
+  "$defs": {
+    "Labels": {"type": "object", "properties": {"names": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}}},
+    "History": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}}}
+  }
+}

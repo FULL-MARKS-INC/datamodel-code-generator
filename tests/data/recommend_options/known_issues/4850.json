@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ticket",
+  "type": "object",
+  "properties": {
+    "floor": {"type": "integer", "not": {"enum": [13]}},
+    "code": {"type": "string", "not": {"const": "none"}},
+    "a": {"type": "string"},
+    "b": {"type": "string"}
+  },
+  "not": {"required": ["a", "b"]}
+}

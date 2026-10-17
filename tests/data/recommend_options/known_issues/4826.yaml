@@ -1,0 +1,13 @@
+openapi: 3.1.0
+info: {title: full-path stutter, version: "1"}
+paths: {}
+components:
+  schemas:
+    StreamEvent:
+      oneOf:
+        - type: object
+          properties:
+            delta: {type: string}
+        - type: object
+          properties:
+            done: {type: boolean}

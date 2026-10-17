@@ -678,6 +678,18 @@ def docs_examples() -> tuple[DocsExample, ...]:
             path=EXPECTED_MAIN / "recommend_options" / "titled_variants.txt",
         ),
         _file_example(
+            "recommend-options.known-issues.schema",
+            "recommend-options.md",
+            language="yaml",
+            path=TEST_DATA / "recommend_options" / "issues.yaml",
+        ),
+        _file_example(
+            "recommend-options.known-issues.report",
+            "recommend-options.md",
+            language="text",
+            path=EXPECTED_MAIN / "recommend_options" / "issues.txt",
+        ),
+        _file_example(
             "model-reuse.use-type-alias.schema",
             "model-reuse.md",
             language="json",

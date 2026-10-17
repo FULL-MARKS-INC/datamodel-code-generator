@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Contact",
+  "type": "object",
+  "properties": {
+    "reach": {"oneOf": [
+      {"type": "object", "required": ["email"], "properties": {"email": {"type": "string"}}},
+      {"type": "object", "required": ["phone"], "properties": {"phone": {"type": "string"}}}
+    ]},
+    "step": {"oneOf": [
+      {"type": "integer", "multipleOf": 2},
+      {"type": "integer", "multipleOf": 3}
+    ]}
+  }
+}

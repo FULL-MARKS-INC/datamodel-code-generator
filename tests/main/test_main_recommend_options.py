@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from contextlib import suppress
 from importlib.resources import files
 from pathlib import Path
 from string import Formatter
@@ -14,7 +15,7 @@ import pytest
 from packaging.version import Version
 
 from datamodel_code_generator import chdir
-from datamodel_code_generator.__main__ import Config, Exit
+from datamodel_code_generator.__main__ import Config, Exit, main
 from datamodel_code_generator.arguments import arg_parser
 from datamodel_code_generator.config import GenerateConfig
 from datamodel_code_generator.experimental import EXPERIMENTAL_FEATURES
@@ -28,7 +29,7 @@ from tests.main.conftest import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     from tests.conftest import HttpxGetMockFactory
 
@@ -38,16 +39,31 @@ CHANGELOG = Path(__file__).parents[2] / "CHANGELOG.md"
 RECOMMEND_DOCS = Path(__file__).parents[2] / "docs" / "recommend-options.md"
 GRAPHQL_INPUT = DATA_PATH / "graphql" / "simple-star-wars.graphql"
 RULES_FILE = "src/datamodel_code_generator/resources/recommender_rules.json"
+KNOWN_ISSUES_FILE = "src/datamodel_code_generator/resources/recommender_known_issues.json"
+KNOWN_ISSUE_INPUTS = INPUT_PATH / "known_issues"
 REGISTRY_GUIDE = (
     f'Every option needs an entry in "options" of {RULES_FILE}: {{"rules": ["<rule id>"]}} when a rule sets it, '
     'or {"not_recommended": "<category>", "reason": "<why the schema does not decide it>"} with category io, '
     "target, preset, style, runtime-behaviour, formatting, compat, debug, platform, command, or pending (pending "
-    "also needs follow_up and release). See Adding a New CLI Option in docs/development-contributing.md."
+    "also needs follow_up and release). An option that a known-issue workaround sets also lists the issue ids under "
+    f'"known_issues" (see {KNOWN_ISSUES_FILE}). See Adding a New CLI Option in docs/development-contributing.md.'
 )
+RETIREMENT_GUIDE = (
+    "Each known issue the recommender cites has a repro: its input under tests/data/recommend_options/known_issues, "
+    f"generated with the arguments in {KNOWN_ISSUES_FILE}. When a fix makes a repro stop reproducing, the fix "
+    "retires the issue: delete its entry, its repro input, the rule caveats and option registry entries that name "
+    "it, and its line here."
+)
+BREAKING_EFFECTS = frozenset({"import-error", "generation-error"})
 
 
 def _rules_data() -> dict[str, Any]:
     return json.loads(files("datamodel_code_generator.resources").joinpath("recommender_rules.json").read_text())
+
+
+def _known_issues() -> list[dict[str, Any]]:
+    resource = files("datamodel_code_generator.resources").joinpath("recommender_known_issues.json")
+    return json.loads(resource.read_text())["issues"]
 
 
 def _inputs(*paths: Path) -> dict[str, Path]:
@@ -92,8 +108,10 @@ data. For a schema of up to 3000 estimated models, it then generates the candida
 (the preset, the recommendation, and the recommendation without or with each option), compares their class
 names, and recommends the best candidate, with class names before and after each option. It prints the
 latest dated preset to start from, the options to add with the reason for each, options it advises against,
-the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
-on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
+the compared candidates, and the resulting command and pyproject.toml block. It also checks the recommendation
+against known generation issues: it adds the options that avoid an issue that would break the generated code,
+and lists the known issues the configuration still has, with their issue numbers. Nothing is written. Options
+set on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
 `--output-format json` for a structured payload.""",
     input_schema="recommend_options/api.yaml",
     cli_args=["--input", "api.yaml", "--input-file-type", "openapi", "--recommend-options"],
@@ -109,8 +127,10 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     (the preset, the recommendation, and the recommendation without or with each option), compares their class
     names, and recommends the best candidate, with class names before and after each option. It prints the
     latest dated preset to start from, the options to add with the reason for each, options it advises against,
-    the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
-    on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
+    the compared candidates, and the resulting command and pyproject.toml block. It also checks the recommendation
+    against known generation issues: it adds the options that avoid an issue that would break the generated code,
+    and lists the known issues the configuration still has, with their issue numbers. Nothing is written. Options
+    set on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
     `--output-format json` for a structured payload.
     """
     _recommend(
@@ -174,6 +194,16 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
         pytest.param("api.yaml", ["--preset", "practical-py314-20261017"], "api_practical.txt", id="preset-value"),
         pytest.param("api.yaml", ["--preset", "standard-py314-20261015"], "api_older_preset.txt", id="older-preset"),
         pytest.param("api.yaml", ["--output-model-type", "typing.TypedDict"], "api_typed_dict.txt", id="typed-dict"),
+        pytest.param("issues.yaml", [], "issues.txt", id="known-issues"),
+        pytest.param(
+            "dotted_cycle.yaml",
+            ["--treat-dot-as-module"],
+            "dotted_cycle_explicit.txt",
+            id="known-issue-option-left-out",
+        ),
+        pytest.param(
+            "signal_edges.yaml", ["--output-format", "json"], "signal_edges_json.txt", id="known-issue-signal-edges"
+        ),
     ],
 )
 def test_recommend_options_for_schemas(
@@ -479,7 +509,7 @@ def _rule_problems(data: dict[str, Any], placeholders: set[str], newest_release:
         *(
             f"rule {rule['id']} uses the unknown placeholder {{{name}}}"
             for rule in rules
-            for text in (rule["reason"], rule.get("contested_reason", ""), *rule.get("caveats", ()))
+            for text in (rule["reason"], rule.get("contested_reason", ""))
             for _, name, _, _ in Formatter().parse(text)
             if name and name not in placeholders
         ),
@@ -519,8 +549,116 @@ def _mirror_problems(limit: int) -> list[str]:
     ]
 
 
+def _config_tests(condition: object) -> Iterator[dict[str, Any]]:
+    """Yield the config tests of a rule or known-issue condition."""
+    if isinstance(condition, dict):
+        if "config" in condition:
+            yield condition
+        for nested in (*condition.get("all", ()), *condition.get("any", ()), condition.get("not")):
+            yield from _config_tests(nested)
+
+
+def _config_spelling(field: str, value: object) -> object:
+    """Return a config value as pyproject.toml spells it after the config model reads it."""
+    validated = getattr(GenerateConfig.model_validate({field: value}), field)
+    return getattr(validated, "value", validated)
+
+
+def _cli_spelling(field: str, value: object) -> str:
+    return f"--{'no-' if value is False else ''}{field.replace('_', '-')}"
+
+
+def _known_issue_problems(data: dict[str, Any], issues: list[dict[str, Any]], placeholders: set[str]) -> list[str]:
+    """Return the inconsistencies between the known issues, the rules, the option registry, and the CLI options."""
+    ids = [issue["id"] for issue in issues]
+    option_strings = {action.dest: action.option_strings for action in arg_parser._actions}
+    workaround_fields = {
+        (issue["id"], field)
+        for issue in issues
+        for workaround in issue.get("workarounds", ())
+        for field in workaround["set"]
+    }
+    registered = {
+        (issue_id, field) for field, entry in data["options"].items() for issue_id in entry.get("known_issues", ())
+    }
+    tests = [
+        (issue["id"], test)
+        for issue in issues
+        for condition in (issue.get("when"), *(workaround.get("when") for workaround in issue.get("workarounds", ())))
+        for test in _config_tests(condition)
+    ]
+    return [
+        *(f"known issue id {issue_id} repeats" for issue_id in sorted({i for i in ids if ids.count(i) > 1})),
+        *(
+            f"rule {rule['id']} cites {caveat}, which is not a known issue"
+            for rule in data["rules"]
+            for caveat in rule.get("caveats", ())
+            if caveat not in ids
+        ),
+        *(
+            f"rule {rule['id']} tests the config value {test['config']}; rules decide from schema signals"
+            for rule in data["rules"]
+            for condition in (rule["when"], rule.get("contested_when"))
+            for test in _config_tests(condition)
+        ),
+        *(
+            f"known issue {issue['id']} ({issue['effect']}) needs a when condition"
+            for issue in issues
+            if "when" not in issue and issue["effect"] not in {"names", "cli-inexpressible"}
+        ),
+        *(
+            f"known issue {issue['id']} has a symptom, which only names issues have"
+            for issue in issues
+            if "symptom" in issue and issue["effect"] != "names"
+        ),
+        *(
+            f"known issue {issue_id} tests {test['config']}, which is not a config field"
+            for issue_id, test in tests
+            if test["config"] not in GenerateConfig.model_fields
+        ),
+        *(
+            f"known issue {issue_id} compares {test['config']} with {value!r}, spelled {spelled!r} in pyproject.toml"
+            for issue_id, test in tests
+            if test["config"] in GenerateConfig.model_fields
+            for value in (test["value"] if test["op"] == "in" else [test["value"]])
+            if (spelled := _config_spelling(test["config"], value)) != value
+        ),
+        *(
+            f"known issue {issue_id} sets {field}; list it in options.{field}.known_issues"
+            for issue_id, field in sorted(workaround_fields - registered)
+        ),
+        *(
+            f"options.{field}.known_issues lists {issue_id}, whose workarounds do not set it"
+            for issue_id, field in sorted(registered - workaround_fields)
+        ),
+        *(
+            f"known issue {issue['id']} breaks the output, so its workaround needs {_cli_spelling(field, value)}"
+            for issue in issues
+            if issue["effect"] in BREAKING_EFFECTS
+            for workaround in issue.get("workarounds", ())
+            for field, value in workaround["set"].items()
+            if _cli_spelling(field, value if value is False else True) not in option_strings.get(field, ())
+        ),
+        *(
+            f"known issue {issue['id']} uses the unknown placeholder {{{name}}}"
+            for issue in issues
+            for _, name, _, _ in Formatter().parse(issue["message"])
+            if name and name not in placeholders
+        ),
+        *(
+            f"known issue {issue['id']} has no repro input {issue['repro']['input']}"
+            for issue in issues
+            if not (KNOWN_ISSUE_INPUTS / issue["repro"]["input"]).is_file()
+        ),
+    ]
+
+
 def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Rules only set registered options, registry entries name the rules that set them, and texts use real signals."""
+    """Rules only set registered options, registry entries name the rules that set them, and texts use real signals.
+
+    Known issues cite real rules, options, and signals: workaround options list the issue in the registry, an issue
+    that breaks the output has workarounds the command line can express, and every issue has a repro input.
+    """
     shutil.copy(INPUT_PATH / "api.yaml", tmp_path / "api.yaml")
     with chdir(tmp_path):
         run_main_with_args(
@@ -529,9 +667,11 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
         )
     payload = json.loads(capsys.readouterr().out)
     data = _rules_data()
+    placeholders = {*payload["signals"], *payload["facts"]}
     problems = [
-        *_rule_problems(data, {*payload["signals"], *payload["facts"]}, _newest_release()),
+        *_rule_problems(data, placeholders, _newest_release()),
         *_mirror_problems(data["full_trial_max_models"]),
+        *_known_issue_problems(data, _known_issues(), set(payload["signals"])),
     ]
     assert_output(
         "\n".join([
@@ -658,6 +798,27 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
             ("full",),
             "full/json_data.txt",
             id="json-data",
+        ),
+        pytest.param(
+            [INPUT_PATH / "issues.yaml"],
+            ["--input", "issues.yaml", "--target-python-version", "3.14"],
+            ("full",),
+            "full/issues.txt",
+            id="known-issues",
+        ),
+        pytest.param(
+            [INPUT_PATH / "issues.yaml"],
+            ["--input", "issues.yaml", "--output-format", "json", "--target-python-version", "3.14"],
+            ("full",),
+            "full/issues_json.txt",
+            id="known-issues-json",
+        ),
+        pytest.param(
+            [KNOWN_ISSUE_INPUTS / "4830.yaml"],
+            ["--input", "4830.yaml", "--no-use-annotated", "--field-constraints", "--target-python-version", "3.14"],
+            ("full",),
+            "full/known_issue_explicit.txt",
+            id="known-issue-explicit-options",
         ),
     ],
 )
@@ -857,3 +1018,70 @@ def test_recommend_options_full_reports_generation_errors(
             expected_stderr_contains=expected_stderr,
             use_builtin_default_formatter=False,
         )
+
+
+def _reproduction(issue: Mapping[str, Any], run_dir: Path, capsys: pytest.CaptureFixture[str]) -> str:
+    """Generate a known issue's repro in its own directory and return whether the symptom still shows."""
+    repro = issue["repro"]
+    run_dir.mkdir()
+    shutil.copy(KNOWN_ISSUE_INPUTS / repro["input"], run_dir / repro["input"])
+    output = repro.get("output", "model.py")
+    with chdir(run_dir), suppress(SystemExit):
+        main(["--input", repro["input"], *repro["args"], *(() if output is None else ("--output", output))])
+    stderr = capsys.readouterr().err
+    target = repro.get("file", "model.py")
+    path = run_dir / target
+    text = stderr if target == "stderr" else path.read_text(encoding="utf-8") if path.is_file() else ""
+    shows = repro["shows"]
+    found = re.search(shows, text, re.DOTALL) is not None if repro.get("regex") else shows in text
+    return "reproduces" if found else f"no longer reproduces: {target} does not show {shows!r}"
+
+
+def test_known_issues_still_reproduce(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Generate the repro of every known issue the recommender cites and check that the issue still occurs.
+
+    This is the retirement guard: a fix that makes a repro stop reproducing changes its line, and the fix then
+    deletes the issue from the recommender's data.
+    """
+    lines = [
+        f"#{issue['issue']} {issue['id']}: {_reproduction(issue, tmp_path / issue['id'], capsys)}"
+        for issue in _known_issues()
+    ]
+    assert_output("\n".join([*lines, "", RETIREMENT_GUIDE, ""]), EXPECTED_PATH / "known_issues" / "retirement.txt")
+
+
+_KEPT_SECTIONS = ("Work around known issues", "Known issues", "Command")
+_KEPT_LINES = ("known issue #", "with the workarounds of")
+
+
+def _citations(report: str) -> list[str]:
+    """Return the parts of a text report about known issues: their sections, caveats, trial rows, and the command."""
+    return [
+        line
+        for section in report.split("\n\n")
+        for line in section.splitlines()
+        if section.startswith(_KEPT_SECTIONS) or any(text in line for text in _KEPT_LINES)
+    ]
+
+
+@pytest.mark.parametrize("mode", ["quick", "full"])
+def test_recommend_options_cites_known_issues(mode: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Recommend options for the repro of every known issue, which the recommendation avoids or cites.
+
+    The options that have no --no-* form are cited where a preset sets them (see api_practical.txt), so that issue
+    has no recommendation here: its repro is a command line the CLI rejects.
+    """
+    blocks: list[str] = []
+    for issue in _known_issues():
+        if issue["effect"] == "cli-inexpressible":
+            continue
+        repro = issue["repro"]
+        shutil.copy(KNOWN_ISSUE_INPUTS / repro["input"], tmp_path / repro["input"])
+        args = ["--input", repro["input"], *repro["args"]]
+        with chdir(tmp_path):
+            run_main_with_args([*args, "--recommend-options", mode], use_builtin_default_formatter=False)
+        lines = _citations(capsys.readouterr().out)
+        blocks.append(
+            "\n".join([f"#{issue['issue']} {issue['id']}: {' '.join(args)}", *(f"  {line}" for line in lines)])
+        )
+    assert_output("\n\n".join(blocks) + "\n", EXPECTED_PATH / "known_issues" / f"citations_{mode}.txt")

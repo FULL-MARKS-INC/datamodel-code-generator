@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, get_args
 
+from datamodel_code_generator.reference import get_singular_name
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
     from collections.abc import Set as AbstractSet
@@ -55,6 +57,30 @@ SignalName: TypeAlias = Literal[
     "root_is_object",
     "root_title_words",
     "estimated_models",
+    "integer_enums_with_null",
+    "number_enums_with_null",
+    "module_imports_named_like_fields",
+    "inline_models_in_dotted_cycles",
+    "unique_items_with_constrained_items",
+    "objects_differing_in_unique_items",
+    "discriminator_tags_with_pattern",
+    "optional_enum_discriminator_tags",
+    "optional_const_discriminator_tags",
+    "defaulted_enum_discriminator_tags",
+    "defaulted_const_discriminator_tags",
+    "pattern_properties_model_values",
+    "pattern_properties_with_additional",
+    "number_multiple_of",
+    "allof_primitive_constraints",
+    "allof_properties",
+    "allof_nested_unions",
+    "allof_independent_bases",
+    "constrained_primitive_branches",
+    "unbounded_int32_int64",
+    "prefix_items_not_fixed",
+    "not_const_or_enum",
+    "oneof_overlapping_branches",
+    "singularized_compound_names",
 ]
 FactName: TypeAlias = Literal[
     "schema",
@@ -92,6 +118,14 @@ _CONSTRAINT_ONLY_KEYWORDS = frozenset({"type", "properties", "required", "descri
 _NORMALIZE = re.compile(r"[^a-z0-9]")
 _EXAMPLE_LIMIT = 4
 _TAG_REFERENCE_DEPTH = 5
+_PRIMITIVE_TYPES = frozenset({"string", "integer", "number", "boolean"})
+_BOUND_KEYWORDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
+_CONSTRAINT_KEYWORDS = _BOUND_KEYWORDS | {"minLength", "maxLength", "pattern", "multipleOf"}
+_UNION_KEYWORDS = ("oneOf", "anyOf")
+_REQUIRED_ONLY_KEYWORDS = frozenset({"required", "description", "title", "$comment"})
+_WIDE_INTEGER_FORMATS = frozenset({"int32", "int64"})
+_NAME_WORDS = re.compile(r"[A-Z][a-z0-9]*|[a-z0-9]+")
+_SEPARATORS = re.compile(r"[^A-Za-z0-9]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +169,46 @@ def _single_literal(node: object) -> tuple[str, object] | None:
     return None
 
 
+def _type(node: Mapping[str, Any]) -> str | None:
+    """Return the type of a schema that declares a single type."""
+    return kind if isinstance(kind := node.get("type"), str) else None
+
+
+def _constrained_primitive(node: object) -> bool:
+    """Return whether a schema is a primitive type with its own constraints and no reference."""
+    return (
+        isinstance(node, dict)
+        and "$ref" not in node
+        and _type(node) in _PRIMITIVE_TYPES
+        and not _CONSTRAINT_KEYWORDS.isdisjoint(node)
+    )
+
+
+def _null_enum_type(node: Mapping[str, Any]) -> str | None:
+    """Return integer or number for an enum of that type which lists null without being nullable."""
+    values = node.get("enum")
+    if not isinstance(values, list) or None not in values or node.get("nullable") is True:
+        return None
+    return kind if (kind := _type(node)) in {"integer", "number"} else None
+
+
+def _fixed_prefix_items(node: Mapping[str, Any], prefix_items: list[Any]) -> bool:
+    """Return whether an array with prefixItems has exactly as many items as it lists, which becomes a tuple."""
+    return node.get("minItems") == node.get("maxItems") == len(prefix_items)
+
+
+def _class_words(name: str) -> list[str]:
+    return _NAME_WORDS.findall("".join(word[:1].upper() + word[1:] for word in _SEPARATORS.split(name)))
+
+
+def _singularizes_compound(name: str) -> bool:
+    """Return whether singularizing a compound property name as one word differs from singularizing its last word."""
+    if len(words := _class_words(name)) < 2:  # noqa: PLR2004
+        return False
+    whole = "".join(words)
+    return get_singular_name(whole) != "".join(words[:-1]) + get_singular_name(words[-1])
+
+
 def _subschemas(node: Mapping[str, Any]) -> Iterator[object]:
     """Yield the subschemas of a schema object that are not keyed by a name."""
     for keyword in _SUBSCHEMA_KEYWORDS:
@@ -173,6 +247,52 @@ def _resolve_local(document: Mapping[str, Any], ref: object) -> object:
 
 def _items(value: object) -> Iterable[tuple[str, Any]]:
     return value.items() if isinstance(value, dict) else ()
+
+
+def _list(value: object) -> list[dict[str, Any]]:
+    """Return the schema objects of a list of subschemas, or none."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _list_of(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
+def _declares_properties(node: object) -> bool:
+    """Return whether a schema declares properties itself or in an inline allOf member."""
+    return isinstance(node, dict) and (
+        _is_object(node) or any("$ref" not in member and _is_object(member) for member in _list(node.get("allOf")))
+    )
+
+
+def _ancestors(document: Mapping[str, Any], ref: str) -> set[str]:
+    """Return the references a schema extends through allOf, transitively."""
+    seen: set[str] = set()
+    pending = [ref]
+    while pending:
+        target = _resolve_local(document, pending.pop())
+        parents = {member["$ref"] for member in _list(_get(target, "allOf")) if isinstance(member.get("$ref"), str)}
+        pending.extend(parents - seen)
+        seen |= parents
+    return seen
+
+
+def _field_owners(document: Mapping[str, Any], ref: str) -> frozenset[str]:
+    """Return the schemas that declare the properties a referenced schema has: itself and what it extends."""
+    return frozenset(
+        owner for owner in (ref, *_ancestors(document, ref)) if _declares_properties(_resolve_local(document, owner))
+    )
+
+
+def _root_model(node: object) -> bool:
+    """Return whether a named schema becomes a root model: a primitive, an array, or a union, not an object or enum."""
+    return (
+        isinstance(node, dict)
+        and not _is_object(node)
+        and not _is_enum(node)
+        and "allOf" not in node
+        and (_type(node) in {*_PRIMITIVE_TYPES, "array"} or any(keyword in node for keyword in _UNION_KEYWORDS))
+    )
 
 
 def _unwrap(node: object) -> object:
@@ -316,19 +436,155 @@ class _Walker:
         self.enum_shapes: Counter[int] = Counter()
         self.references: defaultdict[str, set[str]] = defaultdict(set)
         self.max_depth = 0
+        self.property_names: defaultdict[str, set[str]] = defaultdict(set)
+        self.inline_models: Counter[str] = Counter()
+        self.unique_shapes: set[int] = set()
+        self.shape_memo: dict[tuple[int, bool], int] = {}
+        self.objects: list[Mapping[str, Any]] = []
+        self.unique_items = False
 
-    def shape(self, node: object) -> int:
-        """Return an interned id of a schema's structure, ignoring documentation keywords."""
-        key: object = ("v", type(node).__name__, repr(node))
+    def shape(self, node: object, *, loose: bool = False) -> int:
+        """Return an interned id of a schema's structure, ignoring documentation keywords.
+
+        A loose shape also ignores ``uniqueItems``, so it equals the shape of the schema without them. The shapes of
+        the document's objects and lists are remembered, since enclosing schemas take them again.
+        """
+        container = isinstance(node, dict | list)
+        if container and (known := self.shape_memo.get((id(node), loose))) is not None:
+            return known
+        children: list[int] = []
         if isinstance(node, dict):
-            key = tuple(
-                (name, self.shape(value))
+            items = [
+                (name, self.shape(value, loose=loose))
                 for name, value in sorted(node.items())
-                if name not in _SHAPE_IGNORED_KEYWORDS and not name.startswith("x-")
-            )
+                if name not in _SHAPE_IGNORED_KEYWORDS
+                and not name.startswith("x-")
+                and not (loose and name == "uniqueItems")
+            ]
+            key: object = tuple(items)
+            children = [child for _, child in items]
         elif isinstance(node, list):
-            key = ("l", *(self.shape(value) for value in node))
-        return self.shape_ids.setdefault(key, len(self.shape_ids))
+            children = [self.shape(value, loose=loose) for value in node]
+            key = ("l", *children)
+        else:
+            key = ("v", type(node).__name__, repr(node))
+        shape = self.shape_ids.setdefault(key, len(self.shape_ids))
+        if not loose and (
+            (isinstance(node, dict) and "uniqueItems" in node) or not self.unique_shapes.isdisjoint(children)
+        ):
+            self.unique_shapes.add(shape)
+        if container:
+            self.shape_memo[id(node), loose] = shape
+        return shape
+
+    def unique_item_variants(self) -> int:
+        """Count the groups of object schemas that differ only in uniqueItems; a schema without any counts none."""
+        groups: defaultdict[int, set[int]] = defaultdict(set)
+        for node in self.objects if self.unique_items else ():
+            shape = self.shape(node)
+            groups[self.shape(node, loose=True) if shape in self.unique_shapes else shape].add(shape)
+        return sum(len(group) > 1 for group in groups.values())
+
+    def inspect(self, node: Mapping[str, Any]) -> None:
+        """Count the constructs of one schema object that known generation issues depend on."""
+        counts = self.counts
+        if (kind := _null_enum_type(node)) is not None:
+            counts[f"{kind}_enums_with_null"] += 1
+        self.unique_items = self.unique_items or "uniqueItems" in node
+        items = node.get("items")
+        counts["unique_items_with_constrained_items"] += node.get("uniqueItems") is True and _constrained_primitive(
+            items
+        )
+        counts["constrained_primitive_branches"] += _constrained_primitive(items) + sum(
+            _constrained_primitive(branch) for keyword in _UNION_KEYWORDS for branch in _list(node.get(keyword))
+        )
+        counts["number_multiple_of"] += node.get("type") == "number" and "multipleOf" in node
+        counts["unbounded_int32_int64"] += (
+            node.get("type") == "integer"
+            and node.get("format") in _WIDE_INTEGER_FORMATS
+            and _BOUND_KEYWORDS.isdisjoint(node)
+        )
+        if isinstance(prefix_items := node.get("prefixItems"), list):
+            counts["prefix_items_not_fixed"] += not _fixed_prefix_items(node, prefix_items)
+        counts["not_const_or_enum"] += isinstance(negated := node.get("not"), dict) and not {
+            "const",
+            "enum",
+        }.isdisjoint(negated)
+        if isinstance(patterns := node.get("patternProperties"), dict) and patterns:
+            counts["pattern_properties_model_values"] += sum(
+                isinstance(value, dict) and isinstance(value.get("$ref"), str) for value in patterns.values()
+            )
+            counts["pattern_properties_with_additional"] += isinstance(node.get("additionalProperties"), dict)
+        if (
+            "discriminator" not in node
+            and len(branches := [b for b in _list(node.get("oneOf")) if not _is_null(b)]) > 1
+        ):
+            counts["oneof_overlapping_branches"] += any(
+                not branch.keys() <= _REQUIRED_ONLY_KEYWORDS for branch in branches
+            )
+        if members := _list(node.get("allOf")):
+            self.inspect_all_of(members)
+        if isinstance(discriminator := node.get("discriminator"), dict) and isinstance(
+            name := discriminator.get("propertyName"), str
+        ):
+            self.inspect_discriminator(node, name)
+
+    def inspect_all_of(self, members: list[dict[str, Any]]) -> None:
+        """Count an allOf that nests a union, merges constrained primitives, or extends two independent bases."""
+        counts = self.counts
+        inline = [member for member in members if "$ref" not in member]
+        counts["allof_nested_unions"] += any(keyword in member for member in inline for keyword in _UNION_KEYWORDS)
+        counts["allof_primitive_constraints"] += (
+            len(inline) == len(members)
+            and any(_type(member) in _PRIMITIVE_TYPES for member in inline)
+            and any(not _CONSTRAINT_KEYWORDS.isdisjoint(member) for member in inline)
+            and not any(_is_object(member) or "allOf" in member or "items" in member for member in inline)
+            and not any(keyword in member for member in inline for keyword in _UNION_KEYWORDS)
+        )
+        owners = [_field_owners(self.document, ref) for member in members if isinstance(ref := member.get("$ref"), str)]
+        counts["allof_independent_bases"] += any(
+            first and second and not first <= second and not second <= first for first in owners for second in owners
+        )
+
+    def inspect_discriminator(self, node: Mapping[str, Any], name: str) -> None:
+        """Count the discriminator properties of union branches that keep a pattern or are optional single values.
+
+        Optional single values count only in a union that generation discriminates: one with a mapping, or whose
+        branches all have distinct single-value tags. A tag with a default counts apart, by its form.
+        """
+        counts = self.counts
+        tags = [
+            self.tag_property(branch, name)
+            for keyword in _UNION_KEYWORDS
+            for branch in _list(node.get(keyword))
+            if not _is_null(branch)
+        ]
+        literals = [None if schema is None else _single_literal(schema) for schema, _ in tags]
+        values = {json.dumps(literal[1], sort_keys=True) for literal in literals if literal is not None}
+        discriminated = isinstance(node["discriminator"].get("mapping"), dict) or len(values) == len(tags)
+        for (schema, required), literal in zip(tags, literals, strict=True):
+            if schema is None:
+                continue
+            counts["discriminator_tags_with_pattern"] += "pattern" in schema
+            if discriminated and not required and literal is not None:
+                counts[f"{'defaulted' if 'default' in schema else 'optional'}_{literal[0]}_discriminator_tags"] += 1
+
+    def tag_property(self, branch: Mapping[str, Any], name: str, depth: int = 0) -> tuple[dict[str, Any] | None, bool]:
+        """Return the schema of a property a branch declares, directly or through $ref and allOf, and if required."""
+        if depth > _TAG_REFERENCE_DEPTH:
+            return None, False
+        if isinstance(target := _resolve_local(self.document, branch.get("$ref")), dict):
+            return self.tag_property(target, name, depth + 1)
+        properties = branch.get("properties")
+        schema = properties.get(name) if isinstance(properties, dict) else None
+        required = name in _list_of(branch.get("required"))
+        for member in _list(branch.get("allOf")):
+            found, member_required = self.tag_property(member, name, depth + 1)
+            schema = found if schema is None else schema
+            required = required or member_required
+        if isinstance(schema, dict) and isinstance(resolved := _resolve_local(self.document, schema.get("$ref")), dict):
+            schema = resolved
+        return (schema if isinstance(schema, dict) else None), required
 
     def count_single_value_enum(self, node: Mapping[str, Any]) -> None:
         """Count a schema whose enum has exactly one value and that declares no const."""
@@ -351,6 +607,9 @@ class _Walker:
         """
         if isinstance(node, dict) and not self.record_reference(node, key):
             self.count_single_value_enum(node)
+            self.inspect(node)
+            if _is_object(node):
+                self.objects.append(node)
             self.walk_children(node, parent=key, name="", depth=0, component=key)
 
     def record_name(self, name: str, parent: str, parents: defaultdict[str, set[str]]) -> None:
@@ -364,13 +623,17 @@ class _Walker:
         if not isinstance(node, dict) or _is_null(node) or self.record_reference(node, component):
             return
         self.count_single_value_enum(node)
+        self.inspect(node)
         if _is_enum(node):
             self.counts["inline_enums"] += 1
+            self.inline_models[component] += 1
             self.record_name(name, parent, self.enum_name_parents)
             self.enum_shapes[self.shape(node)] += 1
         if _is_object(node):
             self.counts["inline_objects"] += 1
+            self.inline_models[component] += 1
             self.record_name(name, parent, self.object_name_parents)
+            self.objects.append(node)
             self.object_shapes[self.shape(node)] += 1
             if isinstance(title := node.get("title"), str) and title.strip():
                 self.counts["inline_titled_objects"] += 1
@@ -382,6 +645,8 @@ class _Walker:
 
     def walk_children(self, node: Mapping[str, Any], *, parent: str, name: str, depth: int, component: str) -> None:
         """Walk the subschemas of one schema object."""
+        for member_name, member in _items(node.get("properties")):
+            self.inspect_property(str(member_name), member, component)
         for keyword in _SCHEMA_MAP_KEYWORDS:
             members = node.get(keyword)
             for member_name, member in members.items() if isinstance(members, dict) else ():
@@ -393,6 +658,22 @@ class _Walker:
                 self.count_variants(node, [branch for branch in branches if isinstance(branch, dict)])
         for member in _subschemas(node):
             self.walk(member, parent=parent, name=name, depth=depth, component=component)
+
+    def inspect_property(self, name: str, node: object, component: str) -> None:
+        """Record a property name of a named schema; count allOf properties and compound plural array names."""
+        self.property_names[component].add(normalize_name(name))
+        if not isinstance(node, dict) or "$ref" in node:
+            return
+        self.counts["allof_properties"] += any(
+            "$ref" in member or _is_object(member) for member in _list(node.get("allOf"))
+        )
+        items = node.get("items")
+        self.counts["singularized_compound_names"] += (
+            isinstance(items, dict)
+            and "$ref" not in items
+            and (_is_object(items) or _is_enum(items))
+            and _singularizes_compound(name)
+        )
 
     def count_variants(self, node: Mapping[str, Any], branches: list[dict[str, Any]]) -> None:
         """Count one oneOf/anyOf: its inline variants, and the literal tags and keys that could name them."""
@@ -488,8 +769,8 @@ def _reachable(start: str, edges: Mapping[str, set[str]]) -> set[str]:
     return seen
 
 
-def _reference_cycles(references: Mapping[str, set[str]]) -> int:
-    """Count groups of two or more dotted-key namespaces whose schemas reference each other in a cycle."""
+def _reference_cycles(references: Mapping[str, set[str]]) -> set[frozenset[str]]:
+    """Return the groups of two or more dotted-key namespaces whose schemas reference each other in a cycle."""
     edges: defaultdict[str, set[str]] = defaultdict(set)
     for source, targets in references.items():
         edges[_module(source)].update(_module(target) for target in targets)
@@ -497,7 +778,40 @@ def _reference_cycles(references: Mapping[str, set[str]]) -> int:
     groups = {
         frozenset({module, *(other for other in reach[module] if module in reach.get(other, ()))}) for module in reach
     }
-    return sum(len(group) > 1 for group in groups)
+    return {group for group in groups if len(group) > 1}
+
+
+def _shadowed_module_imports(walker: _Walker, components: Mapping[str, Any]) -> int:
+    """Count modules that import a dotted-key module of root models only, and have a field named like it.
+
+    The import is aliased after the field; once --collapse-root-models writes the root models in place, the module is
+    not generated, but the aliased import stays.
+    """
+    namespaces: defaultdict[str, list[str]] = defaultdict(list)
+    for key in components:
+        namespaces[_module(key)].append(key)
+    vanishing = {
+        namespace
+        for namespace, keys in namespaces.items()
+        if namespace and all(_root_model(components[key]) for key in keys)
+    }
+    count = 0
+    for module, keys in namespaces.items():
+        names = set().union(*(walker.property_names[key] for key in keys))
+        imported = {_module(target) for key in keys for target in walker.references[key]} & vanishing - {module}
+        count += sum(normalize_name(namespace.rpartition(".")[2]) in names for namespace in imported)
+    return count
+
+
+def _count_modules(counts: Counter[str], walker: _Walker, components: Mapping[str, Any], dotted: list[str]) -> None:
+    """Count the dotted-key namespaces in reference cycles, their inline models, and imports a field name shadows."""
+    cycles = _reference_cycles(walker.references) if dotted else set()
+    cyclic = set().union(*cycles)
+    counts["dotted_namespace_reference_cycles"] = len(cycles)
+    counts["inline_models_in_dotted_cycles"] = sum(
+        walker.inline_models[key] for key in dotted if _module(key) in cyclic
+    )
+    counts["module_imports_named_like_fields"] = _shadowed_module_imports(walker, components) if dotted else 0
 
 
 def _count_titles(counts: Counter[str], titles: Mapping[str, str], components: Iterable[str]) -> Counter[str]:
@@ -589,6 +903,7 @@ def measure_signals(
     root_title = ""
     if kind == "jsonschema":
         root = {key: value for key, value in document.items() if key not in {"definitions", "$defs"}}
+        walker.inspect(root)
         walker.walk_children(root, parent="#", name="", depth=0, component="")
         counts["root_is_object"] = _is_object(root) or root.get("type") == "object"
         root_title = title.strip() if isinstance(title := root.get("title"), str) else ""
@@ -603,7 +918,8 @@ def measure_signals(
     dotted = [key for key in components if "." in key]
     counts["dotted_keys"] = len(dotted)
     counts["dotted_key_namespaces"] = len({_module(key) for key in dotted})
-    counts["dotted_namespace_reference_cycles"] = _reference_cycles(walker.references) if dotted else 0
+    _count_modules(counts, walker, components, dotted)
+    counts["objects_differing_in_unique_items"] = walker.unique_item_variants()
     counts["estimated_models"] = (
         counts["components"] + counts["inline_objects"] + counts["inline_enums"] + counts["inline_union_variants"]
     )

@@ -2441,8 +2441,10 @@ data. For a schema of up to 3000 estimated models, it then generates the candida
 (the preset, the recommendation, and the recommendation without or with each option), compares their class
 names, and recommends the best candidate, with class names before and after each option. It prints the
 latest dated preset to start from, the options to add with the reason for each, options it advises against,
-the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
-on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
+the compared candidates, and the resulting command and pyproject.toml block. It also checks the recommendation
+against known generation issues: it adds the options that avoid an issue that would break the generated code,
+and lists the known issues the configuration still has, with their issue numbers. Nothing is written. Options
+set on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
 `--output-format json` for a structured payload.
 
 **Related:** [`--enum-field-as-literal`](typing-customization.md#enum-field-as-literal), [`--naming-strategy`](model-customization.md#naming-strategy), `--output-format`, [`--preset`](base-options.md#preset)
@@ -2682,10 +2684,6 @@ on the command line or in pyproject.toml are kept and reported when the rules su
           Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
           sibling shares: 2; objects with one required key: 0); otherwise they are named after their
           parent and a number.
-          caveat: Tags that only a referenced schema declares through allOf are not used (branches: 0;
-          #4839).
-          caveat: With --naming-strategy full-path, a single-key branch whose value is an object repeats
-          the key (FieldValueFieldValue).
           measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names
           (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)
           measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805
@@ -2706,8 +2704,9 @@ on the command line or in pyproject.toml are kept and reported when the rules su
           x3, state x2, total x2; inline names equal to a component name: 0). Numbered names (Status,
           Status1) depend on parse order and shift when the schema grows; full-path names each inline
           model after its parent.
-          caveat: full-path repeats the parent name where a union branch or array item already carries
-          it (#4826).
+          known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
+          parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
+          a variant named after its key).
           measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
           versions 17% -> 0.0%
           measured: Petstore: Status and Status1 became OrderStatus and PetStatus
@@ -2741,7 +2740,7 @@ on the command line or in pyproject.toml are kept and reported when the rules su
       recommended - naming-strategy                              9   0 (0.0%)         0     0        0          0       5   selected
       recommended - enum-shape                                  15  2 (13.3%)         0     0        2          0      11
       recommended - reuse                                       17  2 (11.8%)         0     0        2          0      14
-      recommended - dotted-keys                                 14  2 (14.3%)         0     0        2          0       7
+      recommended - dotted-keys                                  9  2 (22.2%)         0     0        2          0      10
       recommended - union-variant-names                          9  2 (22.2%)         1     0        2          0      10
       recommended - naming-strategy - enum-shape                15  3 (20.0%)         3     0        0          0       6
       recommended - naming-strategy - reuse                     14   0 (0.0%)         0     0        0          0       5
@@ -2750,6 +2749,7 @@ on the command line or in pyproject.toml are kept and reported when the rules su
       current: the configuration as set, without the preset; never selected
       the last 4 rows: the selected configuration without or with one option, to measure each option on
       it; never selected
+      recommended - dotted-keys: with the workarounds of #4823
 
     Changes from the current configuration (current -> recommended - naming-strategy)
       4 of 9 classes matched by schema location renamed (0 only renumbered), 13 removed, 0 added, e.g.

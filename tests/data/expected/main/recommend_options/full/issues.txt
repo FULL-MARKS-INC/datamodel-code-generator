@@ -1,0 +1,88 @@
+Option recommendations (experimental; full mode; rules 2026-10-17)
+
+Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
+  components                       6, 0 operations
+  inline objects / enums           3 / 6, nesting depth 1
+  shared property names            2 (type x2, status x2)
+  inline names = component names   0
+  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets
+  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key
+  inline titles                    0 objects, most repeated 0 (none)
+  unions                           2 oneOf/anyOf, 1 with a discriminator, 2 inline variants
+  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
+  component keys                   PascalCase (6 of 6); 0 dotted in 0 namespaces
+
+Start from  --preset standard-py314-20261017
+
+Add (1 option)
+  --naming-strategy full-path   [naming.qualify-shared-inline-names]
+      Inline schemas under different parents share property names (names: 2, e.g. type x2, status
+      x2; inline names equal to a component name: 0). Numbered names (Status, Status1) depend on
+      parse order and shift when the schema grows; full-path names each inline model after its
+      parent.
+      known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
+      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
+      a variant named after its key).
+      measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
+      versions 17% -> 0.0%
+      measured: Petstore: Status and Status1 became OrderStatus and PetStatus
+      measured: Stripe API description: the expandable ID string of charge no longer displaces the
+      charge component (ChargeModel)
+      measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
+      lost
+      trial: preset -> recommended: classes 15 -> 15, problem names 4 -> 2; 9 of 15 classes matched
+      by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        StreamEvent1 -> StreamEventStreamEvent   at components/schemas/StreamEvent > oneOf 0
+        StreamEvent2 -> StreamEventStreamEvent1   at components/schemas/StreamEvent > oneOf 1
+        Status1 -> EpisodeStatus   at components/schemas/Episode > status
+
+Work around known issues (1 option)
+  --enum-field-as-literal none   [#4882 optional-literal-discriminator]
+      A discriminator property that is a single-value enum or const without a default and not
+      required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
+      avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
+      with a default: 0).
+
+Trial  3 candidates generated in memory without formatting; nothing written
+  candidate    classes   problems  numbered  long  doubled  displaced  median
+  current           15  4 (26.7%)         4     0        0          0       7
+  preset            15  4 (26.7%)         4     0        0          0       7
+  recommended       15  2 (13.3%)         1     0        2          0      10   selected
+  current: the configuration as set, without the preset; never selected
+  preset: with the workarounds of #4882
+  recommended: with the workarounds of #4882
+
+Changes from the current configuration (current -> recommended)
+  9 of 15 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+    StreamEvent1 -> StreamEventStreamEvent   at components/schemas/StreamEvent > oneOf 0
+    StreamEvent2 -> StreamEventStreamEvent1   at components/schemas/StreamEvent > oneOf 1
+    Status1 -> EpisodeStatus   at components/schemas/Episode > status
+
+Known issues
+  #4882 optional-literal-discriminator (fails at import): left out --enum-field-as-literal all,
+      which keeps the workaround above from applying.
+  #4835 pattern-properties-drop-additional-properties (rejects valid data): patternProperties beside
+      a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so
+      keys that additionalProperties allows are rejected (objects: 1). --generate-schema-validators
+      avoids it.
+  #4848 int32-int64-range-not-enforced (does not check a constraint): Integers with format int32 or
+      int64 and no bounds become plain int, so values outside the format's range are accepted; no
+      option adds the bounds (integers: 1).
+  #4824 singular-name-compound-word (class names): Item models of plural compound property names are
+      singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them
+      (properties: 1).
+  #4826 full-path-doubles-parent-name (class names; the selected candidate has 2 doubled names):
+      --naming-strategy full-path joins a parent name with a child name that the parent name already
+      ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named
+      after its key).
+
+Command
+  datamodel-codegen --enum-field-as-literal none --input issues.yaml --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14
+
+pyproject.toml
+  [tool.datamodel-codegen]
+  enum-field-as-literal = "none"
+  input = "issues.yaml"
+  naming-strategy = "full-path"
+  preset = "standard-py314-20261017"
+  target-python-version = "3.14"

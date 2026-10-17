@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: Signal edge cases
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Kind:
+      type: string
+      pattern: '^[a-z]+$'
+    Card:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/Kind'
+    WalletBase:
+      type: object
+      properties:
+        kind:
+          const: wallet
+    Wallet:
+      allOf:
+        - $ref: '#/components/schemas/WalletBase'
+        - type: object
+          required: [kind]
+    LoopA:
+      allOf:
+        - $ref: '#/components/schemas/LoopB'
+    LoopB:
+      allOf:
+        - $ref: '#/components/schemas/LoopA'
+    Payment:
+      type: object
+      properties:
+        method:
+          oneOf:
+            - $ref: '#/components/schemas/Card'
+            - $ref: '#/components/schemas/Wallet'
+            - $ref: '#/components/schemas/LoopA'
+            - type: object
+              properties:
+                other:
+                  type: string
+          discriminator:
+            propertyName: kind
+    Named:
+      type: object
+      properties:
+        name:
+          type: string
+    Labeled:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - type: object
+          properties:
+            label:
+              type: string
+    Item:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - $ref: '#/components/schemas/Labeled'
+    Diamond:
+      allOf:
+        - $ref: '#/components/schemas/Labeled'
+        - $ref: '#/components/schemas/LoopA'
+        - type: object
+          properties:
+            extra:
+              type: string
+    Holder:
+      allOf:
+        - $ref: '#/components/schemas/Diamond'
+        - $ref: '#/components/schemas/Named'
+    Nullable:
+      type: object
+      properties:
+        level:
+          type: [integer, 'null']
+          enum: [1, 2, null]
+        code:
+          type: [string, 'null']
+          maxLength: 3
+        range:
+          allOf:
+            - type: [integer, 'null']
+              minimum: 0
+            - maximum: 9
+    Pair:
+      type: [array, 'null']
+      items:
+        type: string
+    Timestamped:
+      type: object
+      properties:
+        created_at:
+          type: string
+    NamedAlias:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+    Project:
+      allOf:
+        - $ref: '#/components/schemas/NamedAlias'
+        - $ref: '#/components/schemas/Timestamped'

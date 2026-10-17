@@ -1,0 +1,22 @@
+openapi: 3.1.0
+info: {title: constrained branch, version: "1"}
+paths: {}
+components:
+  schemas:
+    Fee:
+      type: object
+      properties:
+        account:
+          anyOf:
+            - type: string
+              maxLength: 5000
+            - $ref: '#/components/schemas/Account'
+        tags:
+          type: array
+          items:
+            type: string
+            maxLength: 20
+    Account:
+      type: object
+      properties:
+        id: {type: string}

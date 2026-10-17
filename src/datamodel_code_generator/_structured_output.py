@@ -367,6 +367,54 @@ class RecommendNameStabilityPayload(BaseModel):
     locations: RecommendNameChangesPayload
 
 
+class RecommendKnownIssuePayload(BaseModel):
+    """A known issue of generation that a recommendation cites."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    issue: int = Field(description="The GitHub issue number.")
+    id: str
+    effect: Literal[
+        "import-error",
+        "generation-error",
+        "wrong-type",
+        "lost-constraint",
+        "rejects-valid",
+        "not-enforced",
+        "names",
+        "cli-inexpressible",
+    ]
+    message: str
+
+
+class RecommendWorkaroundPayload(BaseModel):
+    """Config values the recommendation adds to avoid a known issue that breaks the output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    known_issue: RecommendKnownIssuePayload
+    set: dict[str, RecommendOptionValue]
+    arguments: list[str]
+
+
+class RecommendCitationPayload(BaseModel):
+    """A known issue the recommended configuration has, or that kept options out of it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    known_issue: RecommendKnownIssuePayload
+    avoided_by: dict[str, RecommendOptionValue] = Field(
+        description="Config values that avoid the issue; empty when no option does or when options were left out."
+    )
+    count: int | None = Field(
+        description=(
+            "For a names issue in full mode: the selected candidate's count of the issue's symptom metric, which "
+            "counts every class name with that symptom, not only those the issue causes."
+        )
+    )
+    dropped: list[str] = Field(description="Rule ids of the options left out because of the issue.")
+
+
 class RecommendCandidatePayload(BaseModel):
     """One compared configuration and the class names it generates, or the error that rejected it."""
 
@@ -374,9 +422,12 @@ class RecommendCandidatePayload(BaseModel):
 
     label: str
     preset: str | None = Field(description="The preset the candidate starts from; null for the configuration as set.")
-    set: dict[str, RecommendOptionValue] = Field(description="Options added on top of the preset, as config values.")
+    set: dict[str, RecommendOptionValue] = Field(
+        description="Options added on top of the preset, including known-issue workarounds, as config values."
+    )
     arguments: list[str]
     selectable: bool = Field(description="False for the configuration as set without the recommended preset.")
+    workarounds: list[int] = Field(description="Known issues, by GitHub issue number, whose workarounds it takes.")
     error: str | None
     metrics: RecommendNameMetricsPayload | None
     stability: RecommendNameStabilityPayload | None
@@ -429,7 +480,9 @@ class RecommendOptionPayload(BaseModel):
     contested_reason: str | None = Field(
         description="Why the schema also argues against the values; set only for consider entries."
     )
-    caveats: list[str]
+    known_issues: list[RecommendKnownIssuePayload] = Field(
+        description="Known issues the option can hit with the recommended configuration."
+    )
     evidence: list[str]
     trial: RecommendOptionTrialPayload | None = Field(
         description=(
@@ -491,6 +544,12 @@ class RecommendOptionsPayload(BaseModel):
     not_recommended: list[RecommendOptionPayload]
     disagreements: list[RecommendDisagreementPayload]
     trial: RecommendTrialPayload | None = Field(description="The candidates full mode compared; null in quick mode.")
+    workarounds: list[RecommendWorkaroundPayload] = Field(
+        description="Options the recommendation adds to avoid known issues that break the output."
+    )
+    known_issues: list[RecommendCitationPayload] = Field(
+        description="Known issues the recommended configuration has, or that kept options out of it."
+    )
     notes: list[str]
     arguments: list[str] = Field(
         description=(

@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: Media API
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Track:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [track]
+        status:
+          type: string
+          enum: [draft, live]
+        name:
+          type: string
+    Episode:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [episode]
+        status:
+          type: string
+          enum: [draft, live, removed]
+        show:
+          type: string
+    Queue:
+      type: object
+      properties:
+        current:
+          oneOf:
+            - $ref: '#/components/schemas/Track'
+            - $ref: '#/components/schemas/Episode'
+          discriminator:
+            propertyName: type
+        mode:
+          type: string
+          enum: [shuffle, repeat]
+        level:
+          type: string
+          enum: [low, high]
+    StreamEvent:
+      oneOf:
+        - type: object
+          properties:
+            delta:
+              type: string
+        - type: object
+          properties:
+            done:
+              type: boolean
+    Counter:
+      type: object
+      properties:
+        hits:
+          type: integer
+          format: int32
+        actions_caches:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+    Filters:
+      type: object
+      properties:
+        matrix:
+          type: object
+          patternProperties:
+            '^(include|exclude)$':
+              type: array
+              items:
+                type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string

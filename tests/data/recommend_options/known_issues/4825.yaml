@@ -1,0 +1,20 @@
+openapi: 3.0.3
+info: {title: displaced, version: "1"}
+paths: {}
+components:
+  schemas:
+    build:
+      type: object
+      properties:
+        package:
+          type: object
+          properties:
+            path: {type: string}
+    package:
+      type: object
+      properties:
+        name: {type: string}
+    holder:
+      type: object
+      properties:
+        pkg: {$ref: '#/components/schemas/package'}

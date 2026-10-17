@@ -1,0 +1,8 @@
+{
+  "title": "Config",
+  "type": "object",
+  "properties": {
+    "assignees": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "ports": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true}
+  }
+}

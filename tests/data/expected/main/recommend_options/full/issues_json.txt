@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "format": "json",
+  "kind": "recommend-options",
+  "mode": "full",
+  "rules_revision": "2026-10-17",
+  "calibrated_presets": "20261017",
+  "input": {
+    "source": "file",
+    "input_file_type": "openapi",
+    "document": "OpenAPI 3.1.0",
+    "analysed": true
+  },
+  "context": {
+    "output_model_type": "pydantic_v2.BaseModel",
+    "target_python_version": "3.14"
+  },
+  "signals": {
+    "all_enums": 6,
+    "allof_independent_bases": 0,
+    "allof_nested_unions": 0,
+    "allof_primitive_constraints": 0,
+    "allof_properties": 0,
+    "component_enums": 0,
+    "component_title_duplicate_groups": 0,
+    "component_titles_equal_other_key": 0,
+    "component_titles_equal_own_key": 0,
+    "component_titles_in_duplicate_groups": 0,
+    "components": 6,
+    "constrained_primitive_branches": 0,
+    "defaulted_const_discriminator_tags": 0,
+    "defaulted_enum_discriminator_tags": 0,
+    "discriminated_unions": 1,
+    "discriminator_tags_with_pattern": 0,
+    "dotted_key_namespaces": 0,
+    "dotted_keys": 0,
+    "dotted_namespace_reference_cycles": 0,
+    "duplicate_inline_enum_shapes": 0,
+    "duplicate_inline_enums": 0,
+    "duplicate_inline_objects": 0,
+    "duplicate_inline_shapes": 0,
+    "estimated_models": 17,
+    "inline_enums": 6,
+    "inline_models_in_dotted_cycles": 0,
+    "inline_names_equal_component": 0,
+    "inline_object_union_variants": 2,
+    "inline_objects": 3,
+    "inline_scalar_union_variants": 0,
+    "inline_tagged_union_branches": 0,
+    "inline_title_max_repeat": 0,
+    "inline_titled_objects": 0,
+    "inline_titled_union_variants": 0,
+    "inline_union_variants": 2,
+    "integer_enums_with_null": 0,
+    "max_inline_depth": 1,
+    "module_imports_named_like_fields": 0,
+    "not_const_or_enum": 0,
+    "number_enums_with_null": 0,
+    "number_multiple_of": 0,
+    "objects_differing_in_unique_items": 0,
+    "oneof_overlapping_branches": 1,
+    "operations": 0,
+    "optional_const_discriminator_tags": 0,
+    "optional_enum_discriminator_tags": 1,
+    "parent_copy_union_branches": 0,
+    "pattern_properties_model_values": 0,
+    "pattern_properties_with_additional": 1,
+    "prefix_items_not_fixed": 0,
+    "root_is_object": 0,
+    "root_title_words": 0,
+    "shared_inline_enum_names": 2,
+    "shared_inline_names": 2,
+    "shared_inline_object_names": 0,
+    "single_key_required_open": 0,
+    "single_key_union_branches": 2,
+    "single_value_enum_union_branches": 0,
+    "single_value_enums": 2,
+    "singularized_compound_names": 1,
+    "tagged_behind_ref": 0,
+    "titled_components": 0,
+    "unbounded_int32_int64": 1,
+    "unions": 2,
+    "unique_items_with_constrained_items": 0
+  },
+  "facts": {
+    "schema": "OpenAPI 3.1.0",
+    "scopes": "schemas",
+    "shared_inline_name_examples": "type x2, status x2",
+    "inline_title_examples": "",
+    "duplicate_title_examples": "",
+    "key_style": "PascalCase (6 of 6)",
+    "root_title": ""
+  },
+  "baseline": {
+    "preset": "standard-py314-20261017",
+    "family": "standard",
+    "configured": false,
+    "covers": []
+  },
+  "recommendations": [
+    {
+      "rule": "naming.qualify-shared-inline-names",
+      "decision": "naming-strategy",
+      "set": {
+        "naming_strategy": "full-path"
+      },
+      "arguments": [
+        "--naming-strategy",
+        "full-path"
+      ],
+      "reason": "Inline schemas under different parents share property names (names: 2, e.g. type x2, status x2; inline names equal to a component name: 0). Numbered names (Status, Status1) depend on parse order and shift when the schema grows; full-path names each inline model after its parent.",
+      "contested_reason": null,
+      "known_issues": [
+        {
+          "issue": 4826,
+          "id": "full-path-doubles-parent-name",
+          "effect": "names",
+          "message": "--naming-strategy full-path joins a parent name with a child name that the parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named after its key)."
+        }
+      ],
+      "evidence": [
+        "GitHub REST API description: numbered names 663 -> 53; locations renamed between two versions 17% -> 0.0%",
+        "Petstore: Status and Status1 became OrderStatus and PetStatus",
+        "Stripe API description: the expandable ID string of charge no longer displaces the charge component (ChargeModel)",
+        "SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and lost"
+      ],
+      "trial": {
+        "before": "preset",
+        "after": "recommended",
+        "changes": {
+          "matched": 15,
+          "renamed": 9,
+          "renumbered": 0,
+          "removed": 0,
+          "added": 0,
+          "examples": [
+            {
+              "location": "components/schemas/StreamEvent > oneOf 0",
+              "before": "StreamEvent1",
+              "after": "StreamEventStreamEvent"
+            },
+            {
+              "location": "components/schemas/StreamEvent > oneOf 1",
+              "before": "StreamEvent2",
+              "after": "StreamEventStreamEvent1"
+            },
+            {
+              "location": "components/schemas/Episode > status",
+              "before": "Status1",
+              "after": "EpisodeStatus"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "left_out": [],
+  "consider": [],
+  "not_recommended": [],
+  "disagreements": [],
+  "trial": {
+    "metrics_version": 1,
+    "candidates": [
+      {
+        "label": "current",
+        "preset": null,
+        "set": {},
+        "arguments": [],
+        "selectable": false,
+        "workarounds": [],
+        "error": null,
+        "metrics": {
+          "types": 15,
+          "component": 6,
+          "inline": 9,
+          "operation": 0,
+          "readable": 11,
+          "numbered": 4,
+          "statuscode": 0,
+          "generic": 0,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 2,
+          "union_variants": 2,
+          "union_variants_parent_numbered": 2,
+          "union_variants_numbered": 2,
+          "median_length": 7,
+          "max_length": 12,
+          "problems": 4,
+          "problems_percent": 26.7
+        },
+        "stability": null
+      },
+      {
+        "label": "preset",
+        "preset": "standard-py314-20261017",
+        "set": {
+          "enum_field_as_literal": "none"
+        },
+        "arguments": [
+          "--enum-field-as-literal",
+          "none"
+        ],
+        "selectable": true,
+        "workarounds": [
+          4882
+        ],
+        "error": null,
+        "metrics": {
+          "types": 15,
+          "component": 6,
+          "inline": 9,
+          "operation": 0,
+          "readable": 11,
+          "numbered": 4,
+          "statuscode": 0,
+          "generic": 0,
+          "long": 0,
+          "doubled": 0,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 2,
+          "union_variants": 2,
+          "union_variants_parent_numbered": 2,
+          "union_variants_numbered": 2,
+          "median_length": 7,
+          "max_length": 12,
+          "problems": 4,
+          "problems_percent": 26.7
+        },
+        "stability": null
+      },
+      {
+        "label": "recommended",
+        "preset": "standard-py314-20261017",
+        "set": {
+          "naming_strategy": "full-path",
+          "enum_field_as_literal": "none"
+        },
+        "arguments": [
+          "--naming-strategy",
+          "full-path",
+          "--enum-field-as-literal",
+          "none"
+        ],
+        "selectable": true,
+        "workarounds": [
+          4882
+        ],
+        "error": null,
+        "metrics": {
+          "types": 15,
+          "component": 6,
+          "inline": 9,
+          "operation": 0,
+          "readable": 14,
+          "numbered": 1,
+          "statuscode": 0,
+          "generic": 0,
+          "long": 0,
+          "doubled": 2,
+          "doubled_from_spec": 0,
+          "displaced": 0,
+          "inline_like_component": 0,
+          "union_variants": 2,
+          "union_variants_parent_numbered": 0,
+          "union_variants_numbered": 1,
+          "median_length": 10,
+          "max_length": 23,
+          "problems": 2,
+          "problems_percent": 13.3
+        },
+        "stability": null
+      }
+    ],
+    "ranking": [
+      "recommended",
+      "current",
+      "preset"
+    ],
+    "selected": "recommended",
+    "current": "current",
+    "migration": {
+      "matched": 15,
+      "renamed": 9,
+      "renumbered": 0,
+      "removed": 0,
+      "added": 0,
+      "examples": [
+        {
+          "location": "components/schemas/StreamEvent > oneOf 0",
+          "before": "StreamEvent1",
+          "after": "StreamEventStreamEvent"
+        },
+        {
+          "location": "components/schemas/StreamEvent > oneOf 1",
+          "before": "StreamEvent2",
+          "after": "StreamEventStreamEvent1"
+        },
+        {
+          "location": "components/schemas/Episode > status",
+          "before": "Status1",
+          "after": "EpisodeStatus"
+        }
+      ]
+    },
+    "dropped": 0,
+    "remeasured": 0
+  },
+  "workarounds": [
+    {
+      "known_issue": {
+        "issue": 4882,
+        "id": "optional-literal-discriminator",
+        "effect": "import-error",
+        "message": "A discriminator property that is a single-value enum or const without a default and not required becomes an optional Literal, so pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags with a default: 0)."
+      },
+      "set": {
+        "enum_field_as_literal": "none"
+      },
+      "arguments": [
+        "--enum-field-as-literal",
+        "none"
+      ]
+    }
+  ],
+  "known_issues": [
+    {
+      "known_issue": {
+        "issue": 4882,
+        "id": "optional-literal-discriminator",
+        "effect": "import-error",
+        "message": "A discriminator property that is a single-value enum or const without a default and not required becomes an optional Literal, so pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags with a default: 0)."
+      },
+      "avoided_by": {},
+      "count": null,
+      "dropped": [
+        "enums.inline-value-sets-as-literal"
+      ]
+    },
+    {
+      "known_issue": {
+        "issue": 4835,
+        "id": "pattern-properties-drop-additional-properties",
+        "effect": "rejects-valid",
+        "message": "patternProperties beside a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so keys that additionalProperties allows are rejected (objects: 1)."
+      },
+      "avoided_by": {
+        "generate_schema_validators": true
+      },
+      "count": null,
+      "dropped": []
+    },
+    {
+      "known_issue": {
+        "issue": 4848,
+        "id": "int32-int64-range-not-enforced",
+        "effect": "not-enforced",
+        "message": "Integers with format int32 or int64 and no bounds become plain int, so values outside the format's range are accepted; no option adds the bounds (integers: 1)."
+      },
+      "avoided_by": {},
+      "count": null,
+      "dropped": []
+    },
+    {
+      "known_issue": {
+        "issue": 4824,
+        "id": "singular-name-compound-word",
+        "effect": "names",
+        "message": "Item models of plural compound property names are singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them (properties: 1)."
+      },
+      "avoided_by": {},
+      "count": null,
+      "dropped": []
+    },
+    {
+      "known_issue": {
+        "issue": 4826,
+        "id": "full-path-doubles-parent-name",
+        "effect": "names",
+        "message": "--naming-strategy full-path joins a parent name with a child name that the parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named after its key)."
+      },
+      "avoided_by": {},
+      "count": 2,
+      "dropped": []
+    }
+  ],
+  "notes": [],
+  "arguments": [
+    "--enum-field-as-literal",
+    "none",
+    "--input",
+    "issues.yaml",
+    "--naming-strategy",
+    "full-path",
+    "--preset",
+    "standard-py314-20261017",
+    "--target-python-version",
+    "3.14"
+  ],
+  "config": {
+    "tool": {
+      "datamodel-codegen": {
+        "enum-field-as-literal": "none",
+        "input": "issues.yaml",
+        "naming-strategy": "full-path",
+        "preset": "standard-py314-20261017",
+        "target-python-version": "3.14"
+      }
+    }
+  },
+  "config_complete": true,
+  "content": "Option recommendations (experimental; full mode; rules 2026-10-17)\n\nSchema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)\n  components                       6, 0 operations\n  inline objects / enums           3 / 6, nesting depth 1\n  shared property names            2 (type x2, status x2)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    0 objects, most repeated 0 (none)\n  unions                           2 oneOf/anyOf, 1 with a discriminator, 2 inline variants\n  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (6 of 6); 0 dotted in 0 namespaces\n\nStart from  --preset standard-py314-20261017\n\nAdd (1 option)\n  --naming-strategy full-path   [naming.qualify-shared-inline-names]\n      Inline schemas under different parents share property names (names: 2, e.g. type x2, status\n      x2; inline names equal to a component name: 0). Numbered names (Status, Status1) depend on\n      parse order and shift when the schema grows; full-path names each inline model after its\n      parent.\n      known issue #4826: --naming-strategy full-path joins a parent name with a child name that the\n      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of\n      a variant named after its key).\n      measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two\n      versions 17% -> 0.0%\n      measured: Petstore: Status and Status1 became OrderStatus and PetStatus\n      measured: Stripe API description: the expandable ID string of charge no longer displaces the\n      charge component (ChargeModel)\n      measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and\n      lost\n      trial: preset -> recommended: classes 15 -> 15, problem names 4 -> 2; 9 of 15 classes matched\n      by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.\n        StreamEvent1 -> StreamEventStreamEvent   at components/schemas/StreamEvent > oneOf 0\n        StreamEvent2 -> StreamEventStreamEvent1   at components/schemas/StreamEvent > oneOf 1\n        Status1 -> EpisodeStatus   at components/schemas/Episode > status\n\nWork around known issues (1 option)\n  --enum-field-as-literal none   [#4882 optional-literal-discriminator]\n      A discriminator property that is a single-value enum or const without a default and not\n      required becomes an optional Literal, so pydantic rejects the union at import; Enum classes\n      avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags\n      with a default: 0).\n\nTrial  3 candidates generated in memory without formatting; nothing written\n  candidate    classes   problems  numbered  long  doubled  displaced  median\n  current           15  4 (26.7%)         4     0        0          0       7\n  preset            15  4 (26.7%)         4     0        0          0       7\n  recommended       15  2 (13.3%)         1     0        2          0      10   selected\n  current: the configuration as set, without the preset; never selected\n  preset: with the workarounds of #4882\n  recommended: with the workarounds of #4882\n\nChanges from the current configuration (current -> recommended)\n  9 of 15 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.\n    StreamEvent1 -> StreamEventStreamEvent   at components/schemas/StreamEvent > oneOf 0\n    StreamEvent2 -> StreamEventStreamEvent1   at components/schemas/StreamEvent > oneOf 1\n    Status1 -> EpisodeStatus   at components/schemas/Episode > status\n\nKnown issues\n  #4882 optional-literal-discriminator (fails at import): left out --enum-field-as-literal all,\n      which keeps the workaround above from applying.\n  #4835 pattern-properties-drop-additional-properties (rejects valid data): patternProperties beside\n      a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so\n      keys that additionalProperties allows are rejected (objects: 1). --generate-schema-validators\n      avoids it.\n  #4848 int32-int64-range-not-enforced (does not check a constraint): Integers with format int32 or\n      int64 and no bounds become plain int, so values outside the format's range are accepted; no\n      option adds the bounds (integers: 1).\n  #4824 singular-name-compound-word (class names): Item models of plural compound property names are\n      singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them\n      (properties: 1).\n  #4826 full-path-doubles-parent-name (class names; the selected candidate has 2 doubled names):\n      --naming-strategy full-path joins a parent name with a child name that the parent name already\n      ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named\n      after its key).\n\nCommand\n  datamodel-codegen --enum-field-as-literal none --input issues.yaml --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14\n\npyproject.toml\n  [tool.datamodel-codegen]\n  enum-field-as-literal = \"none\"\n  input = \"issues.yaml\"\n  naming-strategy = \"full-path\"\n  preset = \"standard-py314-20261017\"\n  target-python-version = \"3.14\"\n"
+}

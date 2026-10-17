@@ -1,0 +1,28 @@
+#4819 integer-enum-null-member: reproduces
+#4821 collapse-root-models-stale-module-import: reproduces
+#4823 full-path-dotted-cycle-import: reproduces
+#4830 discriminator-literal-keeps-pattern: reproduces
+#4831 schema-validators-pattern-model-forward-ref: reproduces
+#4877 msgspec-allof-independent-bases: reproduces
+#4882 optional-literal-discriminator: reproduces
+#4827 unique-items-set-drops-item-constraints: reproduces
+#4832 decimal-multiple-of-ignored-with-annotated: reproduces
+#4833 allof-primitive-constraints-dropped: reproduces
+#4834 collapse-reuse-merges-set-and-list: reproduces
+#4835 pattern-properties-drop-additional-properties: reproduces
+#4848 int32-int64-range-not-enforced: reproduces
+#4849 prefix-items-positions-lost: reproduces
+#4850 schema-validators-not-const-enum: reproduces
+#4851 schema-validators-oneof-exclusivity: reproduces
+#4837 cli-negation-missing: reproduces
+#4824 singular-name-compound-word: reproduces
+#4825 primary-first-component-displaced: reproduces
+#4826 full-path-doubles-parent-name: reproduces
+#4836 title-as-name-displaces-components: reproduces
+#4839 union-variant-tag-behind-allof: reproduces
+#4840 parent-prefixed-equals-full-path: reproduces
+#4845 full-path-allof-property-unprefixed: reproduces
+#4846 annotated-constrained-primitive-root-models: reproduces
+#4847 allof-nested-union-members-numbered: reproduces
+
+Each known issue the recommender cites has a repro: its input under tests/data/recommend_options/known_issues, generated with the arguments in src/datamodel_code_generator/resources/recommender_known_issues.json. When a fix makes a repro stop reproducing, the fix retires the issue: delete its entry, its repro input, the rule caveats and option registry entries that name it, and its line here.

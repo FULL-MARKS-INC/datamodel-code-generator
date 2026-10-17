@@ -78,6 +78,8 @@ model-reuse.reuse-model.output: model-reuse.md
 model-reuse.reuse-scope-tree.output: model-reuse.md
 recommend-options.schema: recommend-options.md
 recommend-options.report: recommend-options.md
+recommend-options.known-issues.schema: recommend-options.md
+recommend-options.known-issues.report: recommend-options.md
 model-reuse.use-type-alias.schema: model-reuse.md
 model-reuse.use-type-alias.output: model-reuse.md
 cli-reference.base-options.input-model.example: base-options.md

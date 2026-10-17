@@ -333,6 +333,10 @@ field, when a rule sets a field whose entry does not list it or that has no CLI 
 lacks `follow_up` and `release` or outlives its release (`Rule data problems: ...`). Both failures show the entry
 format above.
 
+If the option avoids a [known issue](recommend-options.md#known-issues) that the recommender cites (a `workarounds`
+entry in `src/datamodel_code_generator/resources/recommender_known_issues.json` sets it), the entry also lists the
+issue ids under `known_issues`, such as `"known_issues": ["collapse-root-models-stale-module-import"]`.
+
 ### Step 5: Generate and verify documentation
 
 ```bash

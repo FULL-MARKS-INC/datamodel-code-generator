@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from collections.abc import Set as AbstractSet
 
+    from datamodel_code_generator._recommend._known_issues import AppliedWorkaround, IssueCheck, KnownIssue
     from datamodel_code_generator._recommend._metrics import NameChanges, NameMetrics
     from datamodel_code_generator._recommend._signals import SchemaKind, Signals
     from datamodel_code_generator._recommend._trial import CandidateOutcome, TrialCandidate, TrialInput
@@ -89,12 +90,31 @@ class OptionEffect:
 
 @dataclass(frozen=True, slots=True)
 class Option:
-    """One rule outcome with the CLI arguments that express it, and its trial measurement in full mode."""
+    """One rule outcome with the CLI arguments that express it.
+
+    ``effect`` is its trial measurement in full mode, and ``caveats`` are the known issues it can hit with the
+    recommended configuration.
+    """
 
     decision: Decision
     values: Mapping[str, OptionValue]
     arguments: list[str]
     effect: OptionEffect | None = None
+    caveats: tuple[KnownIssue, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Citation:
+    """A known issue the recommended configuration has, or that kept options out of it.
+
+    ``avoided_by`` are the config values that avoid it, when there are any; ``count`` is the selected candidate's
+    count of the class-name metric the issue shows in; ``dropped`` are the options left out because of it.
+    """
+
+    issue: KnownIssue
+    avoided_by: Mapping[str, OptionValue] = field(default_factory=dict)
+    count: int | None = None
+    dropped: tuple[Option, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +167,8 @@ class Recommendation:
     disagreements: list[Disagreement] = field(default_factory=list)
     left_out: list[Option] = field(default_factory=list)
     trial: Trial | None = None
+    workarounds: list[AppliedWorkaround] = field(default_factory=list)
+    known_issues: list[Citation] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     runnable: bool = True
     command_values: dict[str, Any] = field(default_factory=dict)
@@ -286,11 +308,17 @@ def _avoided(decision: Decision) -> Option:
     return Option(decision, dict(decision.values), [f"--{name.replace('_', '-')}" for name in decision.values])
 
 
-def _resolve_preset(preset: str, request: RecommendRequest) -> ResolvedPresetConfig:
-    """Resolve a preset for the fields the user left unset, the way ``--preset`` does."""
+def _resolve_preset(
+    preset: str, request: RecommendRequest, options: Mapping[str, OptionValue] | None = None
+) -> ResolvedPresetConfig:
+    """Resolve a preset for the fields the user left unset, the way ``--preset`` does.
+
+    Option values added on top count as set on the command line, as they are in the recommended command.
+    """
     from datamodel_code_generator.preset import PresetContext, resolve_preset_config_updates  # noqa: PLC0415
 
     config = request.config
+    options = options or {}
     return resolve_preset_config_updates(
         preset,
         context=PresetContext(
@@ -298,8 +326,8 @@ def _resolve_preset(preset: str, request: RecommendRequest) -> ResolvedPresetCon
             output_model_type=config.output_model_type,
             target_python_version=config.target_python_version,
         ),
-        use_annotated=config.use_annotated,
-        explicit_fields=set(request.explicit_fields),
+        use_annotated=options.get("use_annotated", config.use_annotated) is True,
+        explicit_fields={*request.explicit_fields, *options},
     )
 
 
@@ -356,6 +384,7 @@ def _start(decisions: Sequence[Decision], request: RecommendRequest, recommendat
     The families are tried in rule-data order (standard first), so another family is only chosen when a rule value
     has no option on the families before it; the notes say which value that is.
     """
+    from datamodel_code_generator._recommend._known_issues import cli_negation_issue  # noqa: PLC0415
     from datamodel_code_generator.preset import latest_preset_name  # noqa: PLC0415
 
     config = request.config
@@ -371,9 +400,10 @@ def _start(decisions: Sequence[Decision], request: RecommendRequest, recommendat
         for family in load_rules().data.families
     ]
     chosen = next((plan for plan in plans if not plan.blocked), plans[0])
+    citation = "" if (issue := cli_negation_issue()) is None else f" (#{issue.issue})"
     recommendation.notes.extend(
         f"Starting from {chosen.preset}: no option sets --{name.replace('_', '-')} to {json.dumps(value)} on "
-        f"{plan.preset} [{decision.rule.id}]."
+        f"{plan.preset}{citation} [{decision.rule.id}]."
         for plan in plans[: plans.index(chosen)]
         for decision, name, value in plan.blocked
     )
@@ -471,23 +501,31 @@ def _vocabulary_document(analysed: _Input, trial_input: TrialInput) -> Mapping[s
     return None
 
 
-def _applied(options: Sequence[Option]) -> dict[str, Any]:
-    """Return the config values of options, validated into the types generation takes."""
+def _option_values(options: Sequence[Option]) -> dict[str, OptionValue]:
+    return {name: value for option in options for name, value in option.values.items()}
+
+
+def _validated(values: Mapping[str, OptionValue]) -> dict[str, Any]:
+    """Return config values validated into the types generation takes."""
     from datamodel_code_generator.base_config import BaseGenerateConfig  # noqa: PLC0415
 
-    values = {name: value for option in options for name, value in option.values.items()}
     validated = BaseGenerateConfig.model_validate(values)
     return {name: getattr(validated, name) for name in values}
 
 
-def _preset_updates(preset: str, request: RecommendRequest) -> dict[str, Any]:
-    """Return the config updates ``--preset`` makes, including the target and forced field constraints."""
-    resolved = _resolve_preset(preset, request)
+def _preset_updates(preset: str, request: RecommendRequest, options: Mapping[str, OptionValue]) -> dict[str, Any]:
+    """Return the config updates ``--preset`` makes with options on top, including the target and field constraints.
+
+    The preset forces field constraints with its --use-annotated; otherwise they are as set, or off.
+    """
+    resolved = _resolve_preset(preset, request, options)
     updates: dict[str, Any] = {item.field_name: item.applied_value for item in resolved.items}
     if resolved.target_python_version is not None:
         updates["target_python_version"] = resolved.target_python_version
     if resolved.force_field_constraints:
         updates["field_constraints"] = True
+    elif "field_constraints" not in {*request.explicit_fields, *options}:
+        updates["field_constraints"] = False
     return updates
 
 
@@ -590,38 +628,115 @@ def _measured(
     return replace(option, effect=effect)
 
 
+def _configuration(
+    request: RecommendRequest,
+    recommendation: Recommendation,
+    values: Mapping[str, OptionValue],
+    input_file_type: InputFileType | None,
+    *,
+    on_preset: bool = True,
+) -> Any:
+    """Return the generation config of the configuration with option values on top.
+
+    Unless ``on_preset`` is false, the recommended or configured preset applies as the recommended command applies
+    it, with the options set on the command line.
+    """
+    from datamodel_code_generator import InputFileType  # noqa: PLC0415
+
+    common = (
+        {"input_file_type": input_file_type}
+        if request.config.input_file_type == InputFileType.Auto and input_file_type is not None
+        else {}
+    )
+    preset = _preset_updates(recommendation.preset, request, values) if on_preset else {}
+    return request.generation_config({**common, **preset, **_validated(values)})
+
+
+def _issue_signals(analysed: _Input) -> Signals:
+    """Return the signals the known issues test; an input the rules do not analyse counts nothing."""
+    from datamodel_code_generator._recommend._signals import SIGNAL_NAMES, Signals  # noqa: PLC0415
+
+    return analysed.signals or Signals(counts=dict.fromkeys(SIGNAL_NAMES, 0), facts={})
+
+
+def _check(
+    request: RecommendRequest,
+    recommendation: Recommendation,
+    analysed: _Input,
+    options: Sequence[Option],
+    *,
+    on_preset: bool = True,
+) -> IssueCheck:
+    """Check a configuration against the known issues; one that is not on the preset is checked as it is set."""
+    from datamodel_code_generator._recommend._known_issues import check_configuration, issue_values  # noqa: PLC0415
+
+    known = _known_type(analysed)
+    return check_configuration(
+        _issue_signals(analysed).counts,
+        lambda values: issue_values(_configuration(request, recommendation, values, known, on_preset=on_preset)),
+        _option_values(options),
+        request.explicit_fields,
+        avoid=on_preset,
+    )
+
+
+def _avoid_known_issues(
+    request: RecommendRequest, recommendation: Recommendation, analysed: _Input
+) -> tuple[IssueCheck, list[Citation]]:
+    """Check the recommended configuration against the known issues that break the output, and avoid them.
+
+    The configuration takes the workarounds; an option that causes an issue, or keeps its workaround out, is left
+    out. Return the check and a citation for each issue that left options out.
+    """
+    citations: list[Citation] = []
+    while (check := _check(request, recommendation, analysed, recommendation.recommendations)).blocking is not None:
+        options = recommendation.recommendations
+        dropped = [
+            option
+            for option in options
+            if _check(request, recommendation, analysed, [other for other in options if other is not option]).blocking
+            is not check.blocking
+        ] or list(options)
+        recommendation.recommendations = [option for option in options if option not in dropped]
+        citations.append(Citation(check.blocking, dropped=tuple(dropped)))
+    return check, citations
+
+
 def _trial_candidates(
     request: RecommendRequest,
     recommendation: Recommendation,
+    analysed: _Input,
     candidates: Sequence[_Candidate],
     input_file_type: InputFileType | None,
 ) -> list[TrialCandidate]:
-    """Return each candidate's generation config: the configuration, the preset, and its options."""
-    from datamodel_code_generator import InputFileType  # noqa: PLC0415
+    """Return each candidate's generation config: the configuration, the preset, its options, and its workarounds.
+
+    Each candidate is checked against the known issues first; one that a known issue blocks, or whose generation a
+    known issue stops, is not generated.
+    """
     from datamodel_code_generator._recommend._trial import TrialCandidate  # noqa: PLC0415
 
-    config = request.config
-    common = (
-        {"input_file_type": input_file_type}
-        if config.input_file_type == InputFileType.Auto and input_file_type is not None
-        else {}
-    )
-    configured = config.preset is not None
-    preset = {} if configured else _preset_updates(recommendation.preset, request)
-    return [
-        TrialCandidate(
-            candidate.label,
-            request.generation_config({
-                **common,
-                **(preset if candidate.on_preset else {}),
-                **_applied(candidate.options),
-            }),
-            recommendation.preset if candidate.on_preset or configured else None,
-            {name: value for option in candidate.options for name, value in option.values.items()},
-            selectable=candidate.selectable,
+    configured = request.config.preset is not None
+    trial_candidates: list[TrialCandidate] = []
+    for candidate in candidates:
+        check = _check(request, recommendation, analysed, candidate.options, on_preset=candidate.on_preset)
+        values = {
+            **_option_values(candidate.options),
+            **{name: value for workaround in check.workarounds for name, value in workaround.values.items()},
+        }
+        rejected_by = check.blocking or check.stops_generation
+        trial_candidates.append(
+            TrialCandidate(
+                candidate.label,
+                _configuration(request, recommendation, values, input_file_type, on_preset=candidate.on_preset),
+                recommendation.preset if candidate.on_preset or configured else None,
+                values,
+                selectable=candidate.selectable,
+                workarounds=tuple(workaround.issue.issue for workaround in check.workarounds),
+                rejection=None if rejected_by is None else f"known issue #{rejected_by.issue} {rejected_by.id}",
+            )
         )
-        for candidate in candidates
-    ]
+    return trial_candidates
 
 
 def _known_type(analysed: _Input) -> InputFileType | None:
@@ -654,11 +769,14 @@ def _runner(request: RecommendRequest, analysed: _Input) -> Callable[[Sequence[T
     )
 
 
-def _compare(request: RecommendRequest, recommendation: Recommendation, analysed: _Input) -> None:
+def _compare(
+    request: RecommendRequest, recommendation: Recommendation, analysed: _Input
+) -> tuple[IssueCheck, NameMetrics | None] | None:
     """Generate the candidates, rank their class names, and recommend the options of the best one.
 
     When the best candidate is not the rules' recommendation, the configurations next to it that the first candidates
-    did not cover are generated too, so each option is measured on the selected configuration.
+    did not cover are generated too, so each option is measured on the selected configuration. Return the known-issue
+    check and the class-name metrics of the selected candidate.
     """
     from datamodel_code_generator._recommend._trial import rank  # noqa: PLC0415
 
@@ -666,7 +784,7 @@ def _compare(request: RecommendRequest, recommendation: Recommendation, analysed
     delta = recommendation.recommendations
     candidates, dropped = _candidates(delta, recommendation.consider, configured=request.config.preset is not None)
     known = _known_type(analysed)
-    outcomes, detected = run(_trial_candidates(request, recommendation, candidates, known))
+    outcomes, detected = run(_trial_candidates(request, recommendation, analysed, candidates, known))
     by_key = {candidate.key: outcome for candidate, outcome in zip(candidates, outcomes, strict=True)}
     selected = next(
         (outcome for outcome in rank(outcomes) if outcome.error is None and outcome.candidate.selectable), None
@@ -676,7 +794,7 @@ def _compare(request: RecommendRequest, recommendation: Recommendation, analysed
     pairs = _pairs(chosen, [*delta, *recommendation.consider])
     extra = [] if center is None or center.key == _key(delta) else _remeasure(center, pairs, by_key.keys())
     if extra:
-        more, _ = run(_trial_candidates(request, recommendation, extra, detected))
+        more, _ = run(_trial_candidates(request, recommendation, analysed, extra, detected))
         by_key.update((candidate.key, outcome) for candidate, outcome in zip(extra, more, strict=True))
         outcomes = (*outcomes, *more)
     _select(
@@ -687,6 +805,9 @@ def _compare(request: RecommendRequest, recommendation: Recommendation, analysed
         _key(chosen)[1],
     )
     _trial_notes(request, recommendation, None if known is not None else detected)
+    if center is None or selected is None:
+        return None
+    return _check(request, recommendation, analysed, center.options, on_preset=center.on_preset), selected.metrics
 
 
 def _select(
@@ -737,11 +858,34 @@ def _trial_notes(request: RecommendRequest, recommendation: Recommendation, dete
         )
 
 
+def _cite(recommendation: Recommendation, analysed: _Input, check: IssueCheck, metrics: NameMetrics | None) -> None:
+    """Take the workarounds of the recommended configuration, cite its known issues, and the caveats of each option."""
+    from datamodel_code_generator._recommend._known_issues import load_known_issues, names_issues  # noqa: PLC0415
+
+    counts = _issue_signals(analysed).counts
+    recommendation.workarounds = list(check.workarounds)
+    recommendation.known_issues.extend(Citation(hit.issue, avoided_by=hit.avoided_by) for hit in check.hits)
+    recommendation.known_issues.extend(
+        Citation(issue, count=count) for issue, count in names_issues(counts, check.values, metrics)
+    )
+    issues = load_known_issues().by_id
+
+    def with_caveats(option: Option) -> Option:
+        values = {**check.values, **option.values}
+        caveats = (issues[caveat] for caveat in option.decision.rule.caveats)
+        return replace(option, caveats=tuple(issue for issue in caveats if issue.applies(counts, values)))
+
+    for name in ("covers", "recommendations", "left_out", "consider", "not_recommended"):
+        setattr(recommendation, name, [with_caveats(option) for option in getattr(recommendation, name)])
+
+
 def _set_command(request: RecommendRequest, recommendation: Recommendation, command_values: dict[str, Any]) -> None:
-    """Set the command and the pyproject.toml keys that carry the recommendation."""
+    """Set the command and the pyproject.toml keys that carry the recommendation and its workarounds."""
     additions: dict[str, Any] = {} if request.config.preset is not None else {"preset": recommendation.preset}
     for option in recommendation.recommendations:
         additions.update(option.values)
+    for workaround in recommendation.workarounds:
+        additions.update(workaround.values)
     if request.has_project_config and not request.preset_on_command_line:
         recommendation.command_values = command_values
         recommendation.config_values = additions
@@ -819,13 +963,24 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
         recommendation.notes.append(f"The rules were calibrated on the {rules.data.calibrated_presets} presets.")
     if mode_note is not None:
         recommendation.notes.append(mode_note)
-    if mode == "full":
-        _compare(request, recommendation, analysed)
+    _conclude(request, recommendation, analysed, command_values)
+    return recommendation
+
+
+def _conclude(
+    request: RecommendRequest, recommendation: Recommendation, analysed: _Input, command_values: dict[str, Any]
+) -> None:
+    """Avoid known issues, compare the candidates in full mode, and set the command, unless nothing can run."""
+    check, dropped = _avoid_known_issues(request, recommendation, analysed)
+    metrics: NameMetrics | None = None
+    if recommendation.mode == "full" and (selected := _compare(request, recommendation, analysed)) is not None:
+        check, metrics = selected
     if analysed.swagger:
         recommendation.runnable = False
-    else:
-        _set_command(request, recommendation, command_values)
-    return recommendation
+        return
+    recommendation.known_issues.extend(dropped)
+    _cite(recommendation, analysed, check, metrics)
+    _set_command(request, recommendation, command_values)
 
 
 def _unanalysed_note(analysed: _Input) -> str:

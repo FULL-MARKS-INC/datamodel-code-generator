@@ -13,8 +13,11 @@ signals that drive these choices, generates the candidate configurations in memo
 give your schema, and prints:
 
 - the latest dated preset to start from,
-- the options to add on top of it, each with the rule that chose it, the reason with counts from your schema, caveats,
-  the effect measured on public schemas, and the class names it changes in your schema (before -> after),
+- the options to add on top of it, each with the rule that chose it, the reason with counts from your schema, the
+  known issues it can hit, the effect measured on public schemas, and the class names it changes in your schema
+  (before -> after),
+- options that avoid known issues which would otherwise break the generated code, and the known issues your
+  configuration still has, each with its issue number,
 - options worth considering when the schema has signals for and against them,
 - the compared candidates and the class names that change from your current configuration,
 - where your existing configuration differs from the rules,
@@ -114,6 +117,9 @@ Add (1 option)
       Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
       x1, Bank Account x1). Titles name them after what they are, instead of their parent property
       and a number.
+      known issue #4836: --use-title-as-name names every titled schema after its title, so an inline
+      schema that copies a component's title can take the component's name; a scope for it is
+      requested.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
       trial: preset -> recommended - union-variant-names: classes 4 -> 4, problem names 1 -> 0; 2 of
@@ -126,10 +132,6 @@ Left out after the trial (the rules recommend these)
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
       parent and a number.
-      caveat: Tags that only a referenced schema declares through allOf are not used (branches: 0;
-      #4839).
-      caveat: With --naming-strategy full-path, a single-key branch whose value is an object repeats
-      the key (FieldValueFieldValue).
       measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names
       (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)
       measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805
@@ -175,11 +177,13 @@ The counts, presets and options come from your schema and the installed version.
 |---|---|
 | Schema | The signals the rules read: components, inline objects and enums, shared property names, repeated shapes, titles, unions and their tags, key style. |
 | Start from | The latest dated `standard` preset for your output model type and target Python version, and the rules it already satisfies. It is the `practical` preset only when you configured a practical preset, or when no option can set a value a rule needs on the standard preset (the notes then say which). |
-| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `caveat:` lines for known limits (with issue numbers), `measured:` lines with the effect seen on public schemas, and a `trial:` line with the candidates without and with it, their class and problem-name counts, and up to three class names it changes in your schema. |
+| Add | Options to add on top of the preset. Each names its rule in brackets, the reason, `known issue #N:` lines for [known issues](#known-issues) the option can hit with the recommended configuration, `measured:` lines with the effect seen on public schemas, and a `trial:` line with the candidates without and with it, their class and problem-name counts, and up to three class names it changes in your schema. |
 | Left out after the trial | Options the rules recommend that the selected candidate does without, because your schema's class names score better without them. |
 | Consider | Options the schema has signals for and against (`against:`). Decide from your schema; they are in the command only when the candidate with them scores best. |
 | Not recommended | Options a rule argues against for this schema. |
-| Trial | The compared candidates with their class counts, problem names, and median name length; `selected` marks the recommended one. |
+| Work around known issues | Options added because the configuration would otherwise generate code that fails at import or stop generation, each with its issue number in brackets. |
+| Trial | The compared candidates with their class counts, problem names, and median name length; `selected` marks the recommended one. Candidates that take known-issue workarounds are listed below the table, and a candidate a known issue rejects shows the issue number. |
+| Known issues | Known issues the recommended configuration still has, and options left out because of one, each with its issue number, what it does to the generated code, and the option that avoids it, if any. |
 | Changes from the current configuration | The class names the recommended configuration changes from the configuration you run now, matched by schema location. |
 | Your configuration | Options you set that differ from the rules, and a newer preset when you set an older one. Your values are kept. |
 | Notes | Assumptions, such as the target Python version used when you did not set one. |
@@ -214,10 +218,14 @@ datamodel-codegen --output-format-json-schema recommend-options
 
 The payload has `kind: "recommend-options"` and contains the `mode` that ran (`full` when candidates were compared),
 the `signals`, the starting preset under `baseline`, the `recommendations`, `left_out`, `consider`, `not_recommended`
-and `disagreements` entries (each with its `rule`, `set` config values, CLI `arguments`, and the `trial` candidates
-and class-name `changes` that measured it), the compared candidates under `trial` (each with its `metrics`, and
-`stability` with `--diff-against`, plus the `ranking`, the `selected` label, the `migration` from the current
-configuration, and the `dropped` and `remeasured` counts), `notes`, the full command as `arguments`, the `config` table, and the text report as `content`.
+and `disagreements` entries (each with its `rule`, `set` config values, CLI `arguments`, the `known_issues` it can
+hit, and the `trial` candidates and class-name `changes` that measured it), the compared candidates under `trial`
+(each with its `metrics`, the issue numbers of the `workarounds` it takes, and `stability` with `--diff-against`, plus
+the `ranking`, the `selected` label, the `migration` from the current configuration, and the `dropped` and
+`remeasured` counts), the known-issue `workarounds` the command adds, the `known_issues` the recommended
+configuration has (each with the `known_issue` number, id, effect, and message, the `avoided_by` config values, the
+trial `count` for a names issue, and the rules of the options it `dropped`), `notes`, the full command as
+`arguments`, the `config` table, and the text report as `content`.
 `rules_revision` identifies the rule data and `trial.metrics_version` the class-name metrics that produced it.
 
 ## What it measures
@@ -288,6 +296,195 @@ schema always gives the same report. Larger schemas, and inputs whose size canno
 schema rules, directories, `--input-model`), get the rules only; the notes give the command that compares the
 candidates anyway, for every input type.
 
+## Known issues
+
+Some combinations of options and schema shapes hit known bugs of datamodel-code-generator. The recommender knows them
+by issue number and checks the recommended configuration against them:
+
+- **Issues that break the generated code** (it fails at import, or generation stops): the recommendation adds the
+  options that avoid the issue, listed under "Work around known issues", unless you set those options yourself. An
+  option the rules recommend is left out when it causes such an issue or keeps its workaround from applying. In full
+  mode, every candidate is checked the same way, and a candidate is rejected without being generated when a known
+  issue would stop its generation or when its options cause an issue nothing avoids.
+- **Other issues** (a dropped constraint, a wrong type, valid data rejected, a constraint not checked): listed under
+  "Known issues" with the option that avoids each one, if any. The recommendation does not change your configuration
+  for them, because the options that avoid them change other output too.
+- **Class-name issues**: listed when the schema shows them, or, in full mode, when the selected candidate's class
+  names have the issue's symptom, such as doubled or numbered names. An option whose names can hit an issue shows it
+  as a `known issue #N:` line.
+
+For example, for this schema (`issues.yaml`):
+
+<!-- BEGIN AUTO-GENERATED DOC EXAMPLE: recommend-options.known-issues.schema -->
+<!-- fmt: off -->
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Media API
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Track:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [track]
+        status:
+          type: string
+          enum: [draft, live]
+        name:
+          type: string
+    Episode:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [episode]
+        status:
+          type: string
+          enum: [draft, live, removed]
+        show:
+          type: string
+    Queue:
+      type: object
+      properties:
+        current:
+          oneOf:
+            - $ref: '#/components/schemas/Track'
+            - $ref: '#/components/schemas/Episode'
+          discriminator:
+            propertyName: type
+        mode:
+          type: string
+          enum: [shuffle, repeat]
+        level:
+          type: string
+          enum: [low, high]
+    StreamEvent:
+      oneOf:
+        - type: object
+          properties:
+            delta:
+              type: string
+        - type: object
+          properties:
+            done:
+              type: boolean
+    Counter:
+      type: object
+      properties:
+        hits:
+          type: integer
+          format: int32
+        actions_caches:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+    Filters:
+      type: object
+      properties:
+        matrix:
+          type: object
+          patternProperties:
+            '^(include|exclude)$':
+              type: array
+              items:
+                type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+```
+
+<!-- fmt: on -->
+<!-- END AUTO-GENERATED DOC EXAMPLE: recommend-options.known-issues.schema -->
+
+`datamodel-codegen --input issues.yaml --target-python-version 3.14 --recommend-options quick` prints:
+
+<!-- BEGIN AUTO-GENERATED DOC EXAMPLE: recommend-options.known-issues.report -->
+<!-- fmt: off -->
+
+```text
+Option recommendations (experimental; quick mode; rules 2026-10-17)
+
+Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
+  components                       6, 0 operations
+  inline objects / enums           3 / 6, nesting depth 1
+  shared property names            2 (type x2, status x2)
+  inline names = component names   0
+  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets
+  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key
+  inline titles                    0 objects, most repeated 0 (none)
+  unions                           2 oneOf/anyOf, 1 with a discriminator, 2 inline variants
+  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
+  component keys                   PascalCase (6 of 6); 0 dotted in 0 namespaces
+
+Start from  --preset standard-py314-20261017
+
+Add (1 option)
+  --naming-strategy full-path   [naming.qualify-shared-inline-names]
+      Inline schemas under different parents share property names (names: 2, e.g. type x2, status
+      x2; inline names equal to a component name: 0). Numbered names (Status, Status1) depend on
+      parse order and shift when the schema grows; full-path names each inline model after its
+      parent.
+      known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
+      parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of
+      a variant named after its key).
+      measured: GitHub REST API description: numbered names 663 -> 53; locations renamed between two
+      versions 17% -> 0.0%
+      measured: Petstore: Status and Status1 became OrderStatus and PetStatus
+      measured: Stripe API description: the expandable ID string of charge no longer displaces the
+      charge component (ChargeModel)
+      measured: SchemaStore workflow and tsconfig schemas: full-path doubled or lengthened names and
+      lost
+
+Work around known issues (1 option)
+  --enum-field-as-literal none   [#4882 optional-literal-discriminator]
+      A discriminator property that is a single-value enum or const without a default and not
+      required becomes an optional Literal, so pydantic rejects the union at import; Enum classes
+      avoid it for enum tags while no enum tag has a default (enum tags: 1, const tags: 0, enum tags
+      with a default: 0).
+
+Known issues
+  #4882 optional-literal-discriminator (fails at import): left out --enum-field-as-literal all,
+      which keeps the workaround above from applying.
+  #4835 pattern-properties-drop-additional-properties (rejects valid data): patternProperties beside
+      a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so
+      keys that additionalProperties allows are rejected (objects: 1). --generate-schema-validators
+      avoids it.
+  #4848 int32-int64-range-not-enforced (does not check a constraint): Integers with format int32 or
+      int64 and no bounds become plain int, so values outside the format's range are accepted; no
+      option adds the bounds (integers: 1).
+  #4824 singular-name-compound-word (class names): Item models of plural compound property names are
+      singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them
+      (properties: 1).
+
+Command
+  datamodel-codegen --enum-field-as-literal none --input issues.yaml --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14
+
+pyproject.toml
+  [tool.datamodel-codegen]
+  enum-field-as-literal = "none"
+  input = "issues.yaml"
+  naming-strategy = "full-path"
+  preset = "standard-py314-20261017"
+  target-python-version = "3.14"
+```
+
+<!-- fmt: on -->
+<!-- END AUTO-GENERATED DOC EXAMPLE: recommend-options.known-issues.report -->
+
+The discriminator of `Queue.current` has an optional single-value tag, which would fail at import with the Literal
+enums the rules recommend, so the recommendation keeps Enum classes and says why. The other issues do not break the
+generated code and are cited.
+
 ### Stability between schema versions
 
 Pass the previous version of the schema with `--diff-against` (and `--output`, which selects the layout as for
@@ -304,6 +501,10 @@ Every candidate is then generated for both versions, and the Trial table gains a
 - **Rules are data.** The rules ship in the package as `recommender_rules.json`. Each rule maps schema signals to
   option values and carries its reason, caveats, and evidence. Rule values are validated through the same model as
   presets, so a rule cannot name an option that does not exist.
+- **Known issues are data.** The known issues ship as `recommender_known_issues.json`: each entry names its issue,
+  what it does to the generated code, the schema signals and option values that trigger it, the options that avoid
+  it, and a repro. A test generates every repro and fails once an issue no longer reproduces, so the pull request
+  that fixes a bug also removes it from the recommender.
 - **Every option is registered.** Each option has an entry in the rule data: either the rules that decide it or the
   reason the recommender leaves it to you (input/output paths, the target, runtime behaviour, formatting, and so on).
   A new option cannot be released without that decision.
@@ -322,7 +523,12 @@ It writes nothing. To compare candidates, it generates their models in memory an
 No. It prints a command and a configuration block; you decide what to apply.
 
 **Will it override options I set?**
-No. Explicit options are kept, and disagreements are reported under "Your configuration".
+No. Explicit options are kept, and disagreements are reported under "Your configuration". When an option you set
+keeps a known issue from being avoided, the issue is listed under "Known issues" with the option that avoids it.
+
+**Why does the command turn off an option the preset turns on?**
+That option hits a known issue with your schema, such as an import error. "Work around known issues" names the issue;
+once it is fixed, the recommendation stops adding the workaround.
 
 **Is the output stable?**
 The same input, options, and installed version give the same report. The report does not depend on the machine or

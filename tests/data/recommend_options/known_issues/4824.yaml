@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info: {title: singular, version: "1"}
+paths: {}
+components:
+  schemas:
+    ActionsCacheList:
+      type: object
+      properties:
+        actions_caches:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: integer}

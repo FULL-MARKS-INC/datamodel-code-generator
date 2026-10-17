@@ -38,7 +38,8 @@ class TrialCandidate:
     """A labelled generation config, with the options it adds on top of its preset as ``pyproject.toml`` spells them.
 
     ``preset`` is None for the configuration as set without a preset. A candidate that is not ``selectable`` is
-    measured and ranked but never chosen.
+    measured and ranked but never chosen. ``workarounds`` are the known issues whose workarounds its options include;
+    a candidate with a ``rejection`` is rejected with that message without being generated.
     """
 
     label: str
@@ -46,6 +47,8 @@ class TrialCandidate:
     preset: str | None
     options: Mapping[str, OptionValue]
     selectable: bool = True
+    workarounds: tuple[int, ...] = ()
+    rejection: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,14 +143,17 @@ def run_trial(
     earlier version of the input and records the classes it renames between them. An input type left to detection
     is detected once, by the first generation that succeeds. The runs print nothing and show no warnings; a candidate
     whose generation fails, with any exception, is rejected with a one-line reason, while a remote lock error
-    concerns the input, not a candidate, and propagates. The runs share parsed local documents, and runs that share
-    ``remote_text_cache`` fetch each remote document once.
+    concerns the input, not a candidate, and propagates. A candidate rejected in advance is not generated. The runs
+    share parsed local documents, and runs that share ``remote_text_cache`` fetch each remote document once.
     """
     outcomes: list[CandidateOutcome] = []
     detected: InputFileType | None = None
     restore = enable_parsed_source_cache()
     try:
         for candidate in candidates:
+            if candidate.rejection is not None:
+                outcomes.append(CandidateOutcome(candidate, (), None, None, candidate.rejection))
+                continue
             config = candidate.config
             outcome, input_file_type = _run_candidate(
                 input_,

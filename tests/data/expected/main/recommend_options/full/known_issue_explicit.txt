@@ -1,0 +1,42 @@
+Option recommendations (experimental; full mode; rules 2026-10-17)
+
+Schema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)
+  components                       3, 0 operations
+  inline objects / enums           0 / 0, nesting depth 0
+  shared property names            0 (none)
+  inline names = component names   0
+  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets
+  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key
+  inline titles                    0 objects, most repeated 0 (none)
+  unions                           1 oneOf/anyOf, 1 with a discriminator, 0 inline variants
+  union branch tags                0 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent
+  component keys                   PascalCase (3 of 3); 0 dotted in 0 namespaces
+
+Start from  --preset standard-py314-20261017
+
+Add  nothing on top of the preset
+
+Trial  2 candidates generated in memory without formatting; nothing written
+  candidate  classes  problems  numbered  long  doubled  displaced  median
+  current          3  0 (0.0%)         0     0        0          0       6
+  preset           3  0 (0.0%)         0     0        0          0       6   selected
+  current: the configuration as set, without the preset; never selected
+
+Changes from the current configuration (current -> preset)
+  0 of 3 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added
+
+Known issues
+  #4830 discriminator-literal-keeps-pattern (fails at import): A discriminator property with a
+      pattern keeps the pattern on its Literal tag with Annotated or Field constraints, so pydantic
+      rejects the union at import (tags: 2). No option avoids it.
+
+Command
+  datamodel-codegen --field-constraints --input 4830.yaml --preset standard-py314-20261017 --target-python-version 3.14 --no-use-annotated
+
+pyproject.toml
+  [tool.datamodel-codegen]
+  field-constraints = true
+  input = "4830.yaml"
+  preset = "standard-py314-20261017"
+  target-python-version = "3.14"
+  use-annotated = false

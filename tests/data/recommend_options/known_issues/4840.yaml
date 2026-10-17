@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info: {title: deep, version: "1"}
+paths: {}
+components:
+  schemas:
+    Company:
+      type: object
+      properties:
+        employee:
+          type: object
+          properties:
+            home_address:
+              type: object
+              properties:
+                street: {type: string}
+        address:
+          type: object
+          properties:
+            city: {type: string}

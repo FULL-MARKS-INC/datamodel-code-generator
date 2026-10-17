@@ -1,0 +1,37 @@
+openapi: 3.1.0
+info: {title: titles, version: "1"}
+paths: {}
+components:
+  schemas:
+    Pet:
+      type: object
+      properties:
+        owner:
+          title: User
+          type: object
+          properties:
+            login: {type: string}
+    user:
+      title: User
+      type: object
+      properties:
+        login: {type: string}
+        email: {type: string}
+    simple-user:
+      title: User
+      type: object
+      properties:
+        login: {type: string}
+    Payment:
+      type: object
+      properties:
+        source:
+          oneOf:
+            - title: Card
+              type: object
+              properties:
+                number: {type: string}
+            - title: Bank Account
+              type: object
+              properties:
+                iban: {type: string}

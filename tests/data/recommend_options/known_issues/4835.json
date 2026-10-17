@@ -1,0 +1,13 @@
+{
+  "title": "Strategy",
+  "type": "object",
+  "properties": {
+    "matrix": {
+      "type": "object",
+      "patternProperties": {
+        "^(include|exclude)$": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": {"type": "array", "items": {"type": "string"}}
+    }
+  }
+}

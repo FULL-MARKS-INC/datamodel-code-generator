@@ -1,0 +1,22 @@
+openapi: 3.0.0
+info: {title: full-path circular import, version: "1"}
+paths: {}
+components:
+  schemas:
+    treasury.received_debit:
+      type: object
+      properties:
+        id: {type: string}
+    treasury.transaction_entry:
+      type: object
+      properties:
+        flow_details:
+          $ref: '#/components/schemas/flow_details'
+        type:
+          type: string
+          enum: [received_credit, received_debit]
+    flow_details:
+      type: object
+      properties:
+        received_debit:
+          $ref: '#/components/schemas/treasury.received_debit'

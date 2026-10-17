@@ -1,0 +1,8 @@
+{
+  "title": "Price",
+  "type": "object",
+  "properties": {
+    "amount": {"type": "number", "multipleOf": 0.01, "minimum": 0}
+  },
+  "required": ["amount"]
+}

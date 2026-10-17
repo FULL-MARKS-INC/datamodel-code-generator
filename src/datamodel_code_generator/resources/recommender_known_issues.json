@@ -1,0 +1,1051 @@
+{
+  "format_version": 1,
+  "issues": [
+    {
+      "id": "integer-enum-null-member",
+      "issue": 4819,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "signal": "integer_enums_with_null",
+                    "op": ">=",
+                    "value": 1
+                  },
+                  {
+                    "any": [
+                      {
+                        "config": "use_specialized_enum",
+                        "op": "==",
+                        "value": true
+                      },
+                      {
+                        "config": "use_subclass_enum",
+                        "op": "==",
+                        "value": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "all": [
+                  {
+                    "signal": "number_enums_with_null",
+                    "op": ">=",
+                    "value": 1
+                  },
+                  {
+                    "config": "use_subclass_enum",
+                    "op": "==",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "config": "enum_field_as_literal",
+            "op": "!=",
+            "value": "all"
+          },
+          {
+            "not": {
+              "all": [
+                {
+                  "config": "output_model_type",
+                  "op": "==",
+                  "value": "msgspec.Struct"
+                },
+                {
+                  "config": "use_msgspec_nullable_enum_alias",
+                  "op": "==",
+                  "value": true
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "when": {
+            "config": "output_model_type",
+            "op": "==",
+            "value": "msgspec.Struct"
+          },
+          "set": {
+            "use_msgspec_nullable_enum_alias": true
+          }
+        },
+        {
+          "set": {
+            "enum_field_as_literal": "all"
+          }
+        }
+      ],
+      "message": "An integer or number enum that lists null becomes an IntEnum or a value-typed Enum with a None member, which fails at import (integer enums with null: {integer_enums_with_null}, number enums: {number_enums_with_null}).",
+      "repro": {
+        "input": "4819.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "integer_none = None"
+      }
+    },
+    {
+      "id": "collapse-root-models-stale-module-import",
+      "issue": 4821,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "config": "collapse_root_models",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "treat_dot_as_module",
+            "op": "!=",
+            "value": false
+          },
+          {
+            "signal": "module_imports_named_like_fields",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "collapse_root_models": false
+          }
+        }
+      ],
+      "message": "A module that imports a dotted-key module of root models only, and has a field with that module's name, keeps the import after --collapse-root-models writes the root models in place and drops the module, so the package fails to import (modules: {module_imports_named_like_fields}).",
+      "repro": {
+        "input": "4821.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "output": "models",
+        "file": "models/core/v1.py",
+        "shows": "import resource as resource_1"
+      }
+    },
+    {
+      "id": "full-path-dotted-cycle-import",
+      "issue": 4823,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "config": "naming_strategy",
+            "op": "in",
+            "value": [
+              "full-path",
+              "parent-prefixed"
+            ]
+          },
+          {
+            "config": "treat_dot_as_module",
+            "op": "!=",
+            "value": false
+          },
+          {
+            "signal": "inline_models_in_dotted_cycles",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "treat_dot_as_module": false
+          }
+        }
+      ],
+      "message": "With --naming-strategy full-path or parent-prefixed, inline models of dotted-key schemas whose modules reference each other in a cycle move to a module of their own, and the package fails to import (inline models: {inline_models_in_dotted_cycles}).",
+      "repro": {
+        "input": "4823.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--naming-strategy",
+          "full-path"
+        ],
+        "output": "models",
+        "file": "models/treasury/TransactionEntryTreasury.py",
+        "shows": "class Type("
+      }
+    },
+    {
+      "id": "discriminator-literal-keeps-pattern",
+      "issue": 4830,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "config": "output_model_type",
+            "op": "in",
+            "value": [
+              "pydantic_v2.BaseModel",
+              "pydantic_v2.dataclass"
+            ]
+          },
+          {
+            "any": [
+              {
+                "config": "use_annotated",
+                "op": "==",
+                "value": true
+              },
+              {
+                "config": "field_constraints",
+                "op": "==",
+                "value": true
+              }
+            ]
+          },
+          {
+            "signal": "discriminator_tags_with_pattern",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "use_annotated": false
+          }
+        }
+      ],
+      "message": "A discriminator property with a pattern keeps the pattern on its Literal tag with Annotated or Field constraints, so pydantic rejects the union at import (tags: {discriminator_tags_with_pattern}).",
+      "repro": {
+        "input": "4830.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "Literal['card'], Field(pattern="
+      }
+    },
+    {
+      "id": "schema-validators-pattern-model-forward-ref",
+      "issue": 4831,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "config": "generate_schema_validators",
+            "op": "==",
+            "value": true
+          },
+          {
+            "signal": "pattern_properties_model_values",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "message": "--generate-schema-validators writes a patternProperties rule that names a model; when that model is defined later in the module, the module fails with NameError (pattern values that reference a schema: {pattern_properties_model_values}).",
+      "repro": {
+        "input": "4831.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--generate-schema-validators"
+        ],
+        "regex": true,
+        "shows": "class Services\\(.*class Service\\("
+      }
+    },
+    {
+      "id": "msgspec-allof-independent-bases",
+      "issue": 4877,
+      "effect": "generation-error",
+      "when": {
+        "all": [
+          {
+            "config": "output_model_type",
+            "op": "==",
+            "value": "msgspec.Struct"
+          },
+          {
+            "signal": "allof_independent_bases",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "message": "msgspec.Struct output stops for the whole input when an allOf extends two schemas that both declare properties; Pydantic and dataclass outputs are not affected (allOf schemas: {allof_independent_bases}).",
+      "repro": {
+        "input": "4877.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "msgspec.Struct",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "file": "stderr",
+        "shows": "has incompatible layouts from generated bases"
+      }
+    },
+    {
+      "id": "optional-literal-discriminator",
+      "issue": 4882,
+      "effect": "import-error",
+      "when": {
+        "all": [
+          {
+            "config": "output_model_type",
+            "op": "in",
+            "value": [
+              "pydantic_v2.BaseModel",
+              "pydantic_v2.dataclass"
+            ]
+          },
+          {
+            "any": [
+              {
+                "signal": "optional_const_discriminator_tags",
+                "op": ">=",
+                "value": 1
+              },
+              {
+                "all": [
+                  {
+                    "signal": "optional_enum_discriminator_tags",
+                    "op": ">=",
+                    "value": 1
+                  },
+                  {
+                    "config": "enum_field_as_literal",
+                    "op": "in",
+                    "value": [
+                      "one",
+                      "all"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "when": {
+            "all": [
+              {
+                "signal": "optional_const_discriminator_tags",
+                "op": "==",
+                "value": 0
+              },
+              {
+                "signal": "defaulted_enum_discriminator_tags",
+                "op": "==",
+                "value": 0
+              }
+            ]
+          },
+          "set": {
+            "enum_field_as_literal": "none"
+          }
+        }
+      ],
+      "message": "A discriminator property that is a single-value enum or const without a default and not required becomes an optional Literal, so pydantic rejects the union at import; Enum classes avoid it for enum tags while no enum tag has a default (enum tags: {optional_enum_discriminator_tags}, const tags: {optional_const_discriminator_tags}, enum tags with a default: {defaulted_enum_discriminator_tags}).",
+      "repro": {
+        "input": "4882.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "type: Literal['track'] | None = None"
+      }
+    },
+    {
+      "id": "unique-items-set-drops-item-constraints",
+      "issue": 4827,
+      "effect": "lost-constraint",
+      "when": {
+        "all": [
+          {
+            "config": "use_unique_items_as_set",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "collapse_root_models",
+            "op": "==",
+            "value": true
+          },
+          {
+            "any": [
+              {
+                "config": "use_annotated",
+                "op": "==",
+                "value": true
+              },
+              {
+                "config": "field_constraints",
+                "op": "==",
+                "value": true
+              }
+            ]
+          },
+          {
+            "signal": "unique_items_with_constrained_items",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "collapse_root_models": false
+          }
+        }
+      ],
+      "message": "--use-unique-items-as-set drops the constraints of the items of uniqueItems arrays when --collapse-root-models and Annotated or Field constraints are on (arrays: {unique_items_with_constrained_items}).",
+      "repro": {
+        "input": "4827.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "practical-py314-20261017"
+        ],
+        "shows": "assignees: set[str] | None = None"
+      }
+    },
+    {
+      "id": "decimal-multiple-of-ignored-with-annotated",
+      "issue": 4832,
+      "effect": "lost-constraint",
+      "when": {
+        "all": [
+          {
+            "config": "use_decimal_for_multiple_of",
+            "op": "==",
+            "value": true
+          },
+          {
+            "any": [
+              {
+                "config": "use_annotated",
+                "op": "==",
+                "value": true
+              },
+              {
+                "config": "field_constraints",
+                "op": "==",
+                "value": true
+              }
+            ]
+          },
+          {
+            "signal": "number_multiple_of",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "use_annotated": false
+          }
+        }
+      ],
+      "message": "--use-decimal-for-multiple-of has no effect with Annotated or Field constraints, so multipleOf stays a float check (numbers with multipleOf: {number_multiple_of}).",
+      "repro": {
+        "input": "4832.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--use-decimal-for-multiple-of"
+        ],
+        "shows": "Annotated[float, Field(ge=0.0, multiple_of=0.01)]"
+      }
+    },
+    {
+      "id": "allof-primitive-constraints-dropped",
+      "issue": 4833,
+      "effect": "lost-constraint",
+      "when": {
+        "all": [
+          {
+            "any": [
+              {
+                "config": "use_annotated",
+                "op": "==",
+                "value": true
+              },
+              {
+                "config": "field_constraints",
+                "op": "==",
+                "value": true
+              }
+            ]
+          },
+          {
+            "signal": "allof_primitive_constraints",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "use_annotated": false
+          }
+        }
+      ],
+      "message": "Constraints inside an allOf of primitive schemas are dropped with Annotated or Field constraints (allOf schemas: {allof_primitive_constraints}).",
+      "repro": {
+        "input": "4833.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "level: int | None = None"
+      }
+    },
+    {
+      "id": "collapse-reuse-merges-set-and-list",
+      "issue": 4834,
+      "effect": "wrong-type",
+      "when": {
+        "all": [
+          {
+            "config": "reuse_model",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "collapse_reuse_models",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "use_unique_items_as_set",
+            "op": "==",
+            "value": true
+          },
+          {
+            "config": "generate_schema_validators",
+            "op": "!=",
+            "value": true
+          },
+          {
+            "signal": "objects_differing_in_unique_items",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "collapse_reuse_models": false
+          }
+        }
+      ],
+      "message": "--collapse-reuse-models merges objects that differ only in uniqueItems, so a field gets a set instead of a list or the reverse (groups of such objects: {objects_differing_in_unique_items}).",
+      "repro": {
+        "input": "4834.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "practical-py314-20261017"
+        ],
+        "shows": "history: Labels | None = None"
+      }
+    },
+    {
+      "id": "pattern-properties-drop-additional-properties",
+      "issue": 4835,
+      "effect": "rejects-valid",
+      "when": {
+        "all": [
+          {
+            "config": "generate_schema_validators",
+            "op": "!=",
+            "value": true
+          },
+          {
+            "signal": "pattern_properties_with_additional",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "workarounds": [
+        {
+          "set": {
+            "generate_schema_validators": true
+          }
+        }
+      ],
+      "message": "patternProperties beside a schema-valued additionalProperties becomes a dict whose keys must match the patterns, so keys that additionalProperties allows are rejected (objects: {pattern_properties_with_additional}).",
+      "repro": {
+        "input": "4835.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "StringConstraints(pattern=r'^(include|exclude)$')"
+      }
+    },
+    {
+      "id": "int32-int64-range-not-enforced",
+      "issue": 4848,
+      "effect": "not-enforced",
+      "when": {
+        "signal": "unbounded_int32_int64",
+        "op": ">=",
+        "value": 1
+      },
+      "message": "Integers with format int32 or int64 and no bounds become plain int, so values outside the format's range are accepted; no option adds the bounds (integers: {unbounded_int32_int64}).",
+      "repro": {
+        "input": "4848.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "hits: int | None = None"
+      }
+    },
+    {
+      "id": "prefix-items-positions-lost",
+      "issue": 4849,
+      "effect": "lost-constraint",
+      "when": {
+        "signal": "prefix_items_not_fixed",
+        "op": ">=",
+        "value": 1
+      },
+      "message": "prefixItems with items: false, or without as many items as it lists, becomes a list of the item types, so positions are not checked (arrays: {prefix_items_not_fixed}).",
+      "repro": {
+        "input": "4849.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "list[str | int]"
+      }
+    },
+    {
+      "id": "schema-validators-not-const-enum",
+      "issue": 4850,
+      "effect": "not-enforced",
+      "when": {
+        "all": [
+          {
+            "config": "generate_schema_validators",
+            "op": "==",
+            "value": true
+          },
+          {
+            "signal": "not_const_or_enum",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "message": "--generate-schema-validators does not check not with const or enum, so the excluded values are accepted (schemas: {not_const_or_enum}).",
+      "repro": {
+        "input": "4850.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--generate-schema-validators"
+        ],
+        "shows": "floor: int | None = None"
+      }
+    },
+    {
+      "id": "schema-validators-oneof-exclusivity",
+      "issue": 4851,
+      "effect": "not-enforced",
+      "when": {
+        "all": [
+          {
+            "config": "generate_schema_validators",
+            "op": "==",
+            "value": true
+          },
+          {
+            "signal": "oneof_overlapping_branches",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "message": "--generate-schema-validators checks that only one oneOf branch matches only for branches that list required properties alone, so a value matching several branches is accepted (oneOf schemas: {oneof_overlapping_branches}).",
+      "repro": {
+        "input": "4851.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--generate-schema-validators"
+        ],
+        "shows": "reach: Reach | Reach1 | None = None"
+      }
+    },
+    {
+      "id": "cli-negation-missing",
+      "issue": 4837,
+      "effect": "cli-inexpressible",
+      "message": "Options that presets turn on have no --no-* form, so a command with --preset cannot turn them off; pyproject.toml can.",
+      "repro": {
+        "input": "4837.json",
+        "args": [
+          "--input-file-type",
+          "jsonschema",
+          "--preset",
+          "practical-py314-20261017",
+          "--no-use-title-as-name"
+        ],
+        "file": "stderr",
+        "shows": "unrecognized arguments: --no-use-title-as-name"
+      }
+    },
+    {
+      "id": "singular-name-compound-word",
+      "issue": 4824,
+      "effect": "names",
+      "when": {
+        "signal": "singularized_compound_names",
+        "op": ">=",
+        "value": 1
+      },
+      "message": "Item models of plural compound property names are singularized as one word (actions_caches becomes ActionsCach); --model-name-map renames them (properties: {singularized_compound_names}).",
+      "repro": {
+        "input": "4824.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "class ActionsCach("
+      }
+    },
+    {
+      "id": "primary-first-component-displaced",
+      "issue": 4825,
+      "effect": "names",
+      "when": {
+        "config": "naming_strategy",
+        "op": "==",
+        "value": "primary-first"
+      },
+      "symptom": "displaced",
+      "message": "--naming-strategy primary-first lets an inline model generated before a component take the component's name.",
+      "repro": {
+        "input": "4825.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "practical-py314-20261017"
+        ],
+        "shows": "class Package1("
+      }
+    },
+    {
+      "id": "full-path-doubles-parent-name",
+      "issue": 4826,
+      "effect": "names",
+      "when": {
+        "config": "naming_strategy",
+        "op": "in",
+        "value": [
+          "full-path",
+          "parent-prefixed"
+        ]
+      },
+      "symptom": "doubled",
+      "message": "--naming-strategy full-path joins a parent name with a child name that the parent name already ends with (StreamEventStreamEvent; FieldValueFieldValue for the object of a variant named after its key).",
+      "repro": {
+        "input": "4826.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--naming-strategy",
+          "full-path"
+        ],
+        "shows": "class StreamEventStreamEvent("
+      }
+    },
+    {
+      "id": "title-as-name-displaces-components",
+      "issue": 4836,
+      "effect": "names",
+      "when": {
+        "config": "use_title_as_name",
+        "op": "==",
+        "value": true
+      },
+      "symptom": "displaced",
+      "message": "--use-title-as-name names every titled schema after its title, so an inline schema that copies a component's title can take the component's name; a scope for it is requested.",
+      "repro": {
+        "input": "4836.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--use-title-as-name"
+        ],
+        "shows": "class User2("
+      }
+    },
+    {
+      "id": "union-variant-tag-behind-allof",
+      "issue": 4839,
+      "effect": "names",
+      "when": {
+        "all": [
+          {
+            "any": [
+              {
+                "config": "use_tag_as_union_variant_name",
+                "op": "==",
+                "value": true
+              },
+              {
+                "config": "infer_union_variant_names",
+                "op": "==",
+                "value": true
+              }
+            ]
+          },
+          {
+            "signal": "tagged_behind_ref",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "symptom": "union_variants_numbered",
+      "message": "Tag-based variant names do not read a tag that a variant declares only through allOf or $ref, so those variants stay numbered (branches: {tagged_behind_ref}).",
+      "repro": {
+        "input": "4839.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--use-tag-as-union-variant-name"
+        ],
+        "shows": "class ServerEvent1("
+      }
+    },
+    {
+      "id": "parent-prefixed-equals-full-path",
+      "issue": 4840,
+      "effect": "names",
+      "when": {
+        "config": "naming_strategy",
+        "op": "==",
+        "value": "parent-prefixed"
+      },
+      "message": "--naming-strategy parent-prefixed gives the same class names as full-path, not the underscore-joined names its help describes.",
+      "repro": {
+        "input": "4840.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--naming-strategy",
+          "parent-prefixed"
+        ],
+        "shows": "class CompanyEmployeeHomeAddress("
+      }
+    },
+    {
+      "id": "full-path-allof-property-unprefixed",
+      "issue": 4845,
+      "effect": "names",
+      "when": {
+        "all": [
+          {
+            "config": "naming_strategy",
+            "op": "in",
+            "value": [
+              "full-path",
+              "parent-prefixed"
+            ]
+          },
+          {
+            "signal": "allof_properties",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "symptom": "numbered",
+      "message": "--naming-strategy full-path does not prefix the models it builds from a property's allOf, so they stay numbered (Issue1, Issue2; allOf properties: {allof_properties}).",
+      "repro": {
+        "input": "4845.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--naming-strategy",
+          "full-path"
+        ],
+        "shows": "class Issue1("
+      }
+    },
+    {
+      "id": "annotated-constrained-primitive-root-models",
+      "issue": 4846,
+      "effect": "names",
+      "when": {
+        "all": [
+          {
+            "config": "use_annotated",
+            "op": "==",
+            "value": true
+          },
+          {
+            "signal": "constrained_primitive_branches",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "symptom": "displaced",
+      "message": "With --use-annotated, a constrained primitive in a union or array becomes a named root model, which can take a component's name (Account becomes AccountModel; branches and items: {constrained_primitive_branches}).",
+      "repro": {
+        "input": "4846.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017"
+        ],
+        "shows": "class AccountModel("
+      }
+    },
+    {
+      "id": "allof-nested-union-members-numbered",
+      "issue": 4847,
+      "effect": "names",
+      "when": {
+        "signal": "allof_nested_unions",
+        "op": ">=",
+        "value": 1
+      },
+      "symptom": "numbered",
+      "message": "An allOf with a nested oneOf or anyOf numbers the union members (Event2, Event3), and tag-based variant names name the helper classes instead (allOf schemas: {allof_nested_unions}).",
+      "repro": {
+        "input": "4847.yaml",
+        "args": [
+          "--input-file-type",
+          "openapi",
+          "--output-model-type",
+          "pydantic_v2.BaseModel",
+          "--preset",
+          "standard-py314-20261017",
+          "--use-tag-as-union-variant-name"
+        ],
+        "shows": "class Event(RootModel[Event2 | Event3])"
+      }
+    }
+  ]
+}

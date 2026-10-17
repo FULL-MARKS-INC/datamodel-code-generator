@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import textwrap
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from datamodel_code_generator._recommend._rules import format_text, option_arguments
 from datamodel_code_generator._recommend._signals import Signals
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
-    from datamodel_code_generator._recommend import Disagreement, Option, Recommendation, Trial
+    from datamodel_code_generator._recommend import Citation, Disagreement, Option, Recommendation, Trial
+    from datamodel_code_generator._recommend._known_issues import AppliedWorkaround, KnownIssue
     from datamodel_code_generator._recommend._metrics import NameChanges, NameMetrics, NameStability
     from datamodel_code_generator._recommend._trial import CandidateOutcome
     from datamodel_code_generator._structured_output import (
         RecommendCandidatePayload,
+        RecommendCitationPayload,
         RecommendDisagreementPayload,
+        RecommendKnownIssuePayload,
         RecommendNameChangesPayload,
         RecommendOptionPayload,
         RecommendTrialPayload,
+        RecommendWorkaroundPayload,
     )
 
 _WIDTH = 100
@@ -74,6 +80,22 @@ _SIGNAL_LINES: tuple[tuple[str, str], ...] = (
 )
 _ROOT_LINE = ("root schema", "object model {root_is_object}, title words {root_title_words}")
 _NO_SIGNALS = Signals(counts={}, facts={})
+_EFFECTS: dict[str, str] = {
+    "import-error": "fails at import",
+    "generation-error": "stops generation",
+    "wrong-type": "wrong type",
+    "lost-constraint": "drops a constraint",
+    "rejects-valid": "rejects valid data",
+    "not-enforced": "does not check a constraint",
+    "names": "class names",
+    "cli-inexpressible": "command line",
+}
+_SYMPTOMS: dict[str, str] = {
+    "numbered": "numbered name",
+    "doubled": "doubled name",
+    "displaced": "displaced component",
+    "union_variants_numbered": "numbered union variant",
+}
 
 
 def _wrap(text: str, indent: str = _DETAIL_INDENT) -> list[str]:
@@ -111,12 +133,30 @@ def _effect_lines(option: Option) -> list[str]:
     return [*_wrap(text), *_example_lines(effect.changes)]
 
 
+def _issue_message(issue: KnownIssue, signals: Signals) -> str:
+    return format_text(issue.message, signals)
+
+
+def _setting_arguments(values: Mapping[str, Any]) -> str:
+    """Return the CLI arguments of config values, or their pyproject.toml keys when no option expresses one."""
+    arguments = list(itertools.starmap(option_arguments, values.items()))
+    if all(argument is not None for argument in arguments):
+        return " ".join(argument for parts in arguments for argument in parts or ())
+    return ", ".join(
+        f"{name.replace('_', '-')} = {_value_text(value)} in pyproject.toml" for name, value in values.items()
+    )
+
+
 def _option_lines(option: Option, signals: Signals, *, against: bool = False) -> list[str]:
     rule = option.decision.rule
     lines = [f"  {' '.join(option.arguments)}   [{rule.id}]", *_wrap(format_text(rule.reason, signals))]
     if against:
         lines.extend(_wrap(f"against: {format_text(rule.contested_reason, signals)}"))
-    lines.extend(line for caveat in rule.caveats for line in _wrap(f"caveat: {format_text(caveat, signals)}"))
+    lines.extend(
+        line
+        for issue in option.caveats
+        for line in _wrap(f"known issue #{issue.issue}: {_issue_message(issue, signals)}")
+    )
     lines.extend(line for evidence in rule.evidence for line in _wrap(f"measured: {evidence}"))
     lines.extend(_effect_lines(option))
     return lines
@@ -150,6 +190,12 @@ def _trial_footnotes(trial: Trial, *, stability: bool) -> list[str]:
         )
     if stability:
         notes.append("renamed: classes a candidate renames between --diff-against and the input")
+    notes.extend(
+        f"{outcome.candidate.label}: with the workarounds of "
+        f"{', '.join(f'#{issue}' for issue in outcome.candidate.workarounds)}"
+        for outcome in trial.outcomes
+        if outcome.candidate.workarounds
+    )
     return [line for note in notes for line in _wrap(note, "  ")]
 
 
@@ -202,6 +248,8 @@ def _flag(name: str) -> str:
 
 
 def _disagreement_text(disagreement: Disagreement, preset: str) -> str:
+    from datamodel_code_generator._recommend._known_issues import cli_negation_issue  # noqa: PLC0415
+
     flag = _flag(disagreement.field)
     text = (
         f"{flag} is set to {_value_text(disagreement.configured)}; the rules suggest "
@@ -211,9 +259,10 @@ def _disagreement_text(disagreement: Disagreement, preset: str) -> str:
         case "newer-preset":
             text = f"--preset {disagreement.configured}: a newer preset is available, {disagreement.recommended}"
         case "preset":
+            citation = "" if (issue := cli_negation_issue()) is None else f" (#{issue.issue})"
             text = (
                 f"{preset} sets {flag} to {_value_text(disagreement.configured)}; no option sets it to "
-                f"{_value_text(disagreement.recommended)}"
+                f"{_value_text(disagreement.recommended)}{citation}"
             )
     return text if disagreement.decision is None else f"{text}   [{disagreement.decision.rule.id}]"
 
@@ -231,6 +280,57 @@ def _start_lines(recommendation: Recommendation, signals: Signals) -> list[str]:
         "",
         f"Add ({added} option{'' if added == 1 else 's'})" if added else "Add  nothing on top of the preset",
         *(line for option in recommendation.recommendations for line in _option_lines(option, signals)),
+    ]
+
+
+def _workaround_lines(workarounds: Sequence[AppliedWorkaround], signals: Signals) -> list[str]:
+    if not workarounds:
+        return []
+    added = sum(len(workaround.values) for workaround in workarounds)
+    lines = ["", f"Work around known issues ({_count(added, 'option')})"]
+    for workaround in workarounds:
+        issue = workaround.issue
+        lines.append(f"  {' '.join(workaround.arguments)}   [#{issue.issue} {issue.id}]")
+        lines.extend(_wrap(_issue_message(issue, signals)))
+    return lines
+
+
+def _citation_text(citation: Citation, signals: Signals, worked_around: AbstractSet[str]) -> str:
+    """Return a citation: the issue, its effect, and the message, or the options left out for a worked-around one."""
+    issue = citation.issue
+    effect = _EFFECTS[issue.effect]
+    if citation.count is not None:
+        effect = f"{effect}; the selected candidate has {_count(citation.count, _SYMPTOMS[cast('str', issue.symptom)])}"
+    head = f"#{issue.issue} {issue.id} ({effect})"
+    if citation.dropped:
+        left_out = ", ".join(" ".join(option.arguments) for option in citation.dropped)
+        if issue.id in worked_around:
+            return f"{head}: left out {left_out}, which keeps the workaround above from applying."
+        return f"{head}: left out {left_out}. {_issue_message(issue, signals)}"
+    text = f"{head}: {_issue_message(issue, signals)}"
+    if citation.avoided_by:
+        return f"{text} {_setting_arguments(citation.avoided_by)} avoids it."
+    return f"{text} No option avoids it." if issue.breaks else text
+
+
+def _citation_lines(recommendation: Recommendation, signals: Signals) -> list[str]:
+    if not recommendation.known_issues:
+        return []
+    worked_around = {workaround.issue.id for workaround in recommendation.workarounds}
+    return [
+        "",
+        "Known issues",
+        *(
+            line
+            for citation in recommendation.known_issues
+            for line in textwrap.wrap(
+                _citation_text(citation, signals, worked_around),
+                width=_WIDTH,
+                initial_indent="  ",
+                subsequent_indent="      ",
+                break_on_hyphens=False,
+            )
+        ),
     ]
 
 
@@ -255,8 +355,10 @@ def render_text(recommendation: Recommendation, *, command: str | None, pyprojec
         if options:
             lines.extend(("", title))
             lines.extend(line for option in options for line in _option_lines(option, signals, against=against))
+    lines.extend(_workaround_lines(recommendation.workarounds, signals))
     if recommendation.trial is not None:
         lines.extend(_trial_lines(recommendation.trial))
+    lines.extend(_citation_lines(recommendation, signals))
     if recommendation.disagreements:
         lines.extend(("", "Your configuration"))
         lines.extend(f"  {_disagreement_text(item, recommendation.preset)}" for item in recommendation.disagreements)
@@ -300,6 +402,7 @@ def _candidate_payload(outcome: CandidateOutcome) -> RecommendCandidatePayload:
             argument for name, value in candidate.options.items() for argument in option_arguments(name, value) or ()
         ],
         selectable=candidate.selectable,
+        workarounds=list(candidate.workarounds),
         error=outcome.error,
         metrics=None
         if metrics is None
@@ -341,7 +444,7 @@ def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
         arguments=option.arguments,
         reason=format_text(rule.reason, signals),
         contested_reason=format_text(rule.contested_reason, signals) if option.decision.contested else None,
-        caveats=[format_text(caveat, signals) for caveat in rule.caveats],
+        known_issues=[_known_issue_payload(issue, signals) for issue in option.caveats],
         evidence=list(rule.evidence),
         trial=None
         if effect is None
@@ -350,6 +453,35 @@ def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
             after=effect.after,
             changes=_changes_payload(effect.changes),
         ),
+    )
+
+
+def _known_issue_payload(issue: KnownIssue, signals: Signals) -> RecommendKnownIssuePayload:
+    from datamodel_code_generator._structured_output import RecommendKnownIssuePayload  # noqa: PLC0415
+
+    return RecommendKnownIssuePayload(
+        issue=issue.issue, id=issue.id, effect=issue.effect, message=_issue_message(issue, signals)
+    )
+
+
+def _workaround_payload(workaround: AppliedWorkaround, signals: Signals) -> RecommendWorkaroundPayload:
+    from datamodel_code_generator._structured_output import RecommendWorkaroundPayload  # noqa: PLC0415
+
+    return RecommendWorkaroundPayload(
+        known_issue=_known_issue_payload(workaround.issue, signals),
+        set=dict(workaround.values),
+        arguments=workaround.arguments,
+    )
+
+
+def _citation_payload(citation: Citation, signals: Signals) -> RecommendCitationPayload:
+    from datamodel_code_generator._structured_output import RecommendCitationPayload  # noqa: PLC0415
+
+    return RecommendCitationPayload(
+        known_issue=_known_issue_payload(citation.issue, signals),
+        avoided_by=dict(citation.avoided_by),
+        count=citation.count,
+        dropped=[option.decision.rule.id for option in citation.dropped],
     )
 
 
@@ -414,6 +546,8 @@ def render_json(recommendation: Recommendation, *, content: str, arguments: list
         not_recommended=[_option_payload(option, signals) for option in recommendation.not_recommended],
         disagreements=[_disagreement_payload(item) for item in recommendation.disagreements],
         trial=_trial_payload(recommendation.trial),
+        workarounds=[_workaround_payload(workaround, signals) for workaround in recommendation.workarounds],
+        known_issues=[_citation_payload(citation, signals) for citation in recommendation.known_issues],
         notes=recommendation.notes,
         arguments=arguments,
         config=None

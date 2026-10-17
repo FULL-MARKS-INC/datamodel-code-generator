@@ -17,13 +17,21 @@
   },
   "signals": {
     "all_enums": 0,
+    "allof_independent_bases": 0,
+    "allof_nested_unions": 0,
+    "allof_primitive_constraints": 0,
+    "allof_properties": 0,
     "component_enums": 0,
     "component_title_duplicate_groups": 0,
     "component_titles_equal_other_key": 0,
     "component_titles_equal_own_key": 0,
     "component_titles_in_duplicate_groups": 0,
     "components": 2,
+    "constrained_primitive_branches": 0,
+    "defaulted_const_discriminator_tags": 0,
+    "defaulted_enum_discriminator_tags": 0,
     "discriminated_unions": 0,
+    "discriminator_tags_with_pattern": 0,
     "dotted_key_namespaces": 0,
     "dotted_keys": 0,
     "dotted_namespace_reference_cycles": 0,
@@ -33,6 +41,7 @@
     "duplicate_inline_shapes": 0,
     "estimated_models": 6,
     "inline_enums": 0,
+    "inline_models_in_dotted_cycles": 0,
     "inline_names_equal_component": 0,
     "inline_object_union_variants": 2,
     "inline_objects": 2,
@@ -42,9 +51,21 @@
     "inline_titled_objects": 2,
     "inline_titled_union_variants": 2,
     "inline_union_variants": 2,
+    "integer_enums_with_null": 0,
     "max_inline_depth": 1,
+    "module_imports_named_like_fields": 0,
+    "not_const_or_enum": 0,
+    "number_enums_with_null": 0,
+    "number_multiple_of": 0,
+    "objects_differing_in_unique_items": 0,
+    "oneof_overlapping_branches": 1,
     "operations": 0,
+    "optional_const_discriminator_tags": 0,
+    "optional_enum_discriminator_tags": 0,
     "parent_copy_union_branches": 0,
+    "pattern_properties_model_values": 0,
+    "pattern_properties_with_additional": 0,
+    "prefix_items_not_fixed": 0,
     "root_is_object": 0,
     "root_title_words": 0,
     "shared_inline_enum_names": 0,
@@ -54,9 +75,12 @@
     "single_key_union_branches": 0,
     "single_value_enum_union_branches": 0,
     "single_value_enums": 0,
+    "singularized_compound_names": 0,
     "tagged_behind_ref": 0,
     "titled_components": 0,
-    "unions": 1
+    "unbounded_int32_int64": 0,
+    "unions": 1,
+    "unique_items_with_constrained_items": 0
   },
   "facts": {
     "schema": "OpenAPI 3.1.0",
@@ -85,7 +109,14 @@
       ],
       "reason": "Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card x1, Bank Account x1). Titles name them after what they are, instead of their parent property and a number.",
       "contested_reason": null,
-      "caveats": [],
+      "known_issues": [
+        {
+          "issue": 4836,
+          "id": "title-as-name-displaces-components",
+          "effect": "names",
+          "message": "--use-title-as-name names every titled schema after its title, so an inline schema that copies a component's title can take the component's name; a scope for it is requested."
+        }
+      ],
       "evidence": [
         "Train Travel API: BookingPayment.source variants became Card and BankAccount instead of Source and Source1"
       ],
@@ -102,10 +133,7 @@
       ],
       "reason": "Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no sibling shares: 2; objects with one required key: 0); otherwise they are named after their parent and a number.",
       "contested_reason": null,
-      "caveats": [
-        "Tags that only a referenced schema declares through allOf are not used (branches: 0; #4839).",
-        "With --naming-strategy full-path, a single-key branch whose value is an object repeats the key (FieldValueFieldValue)."
-      ],
+      "known_issues": [],
       "evidence": [
         "OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)",
         "GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805 (Changes23 -> ChangesBody)",
@@ -120,6 +148,8 @@
   "not_recommended": [],
   "disagreements": [],
   "trial": null,
+  "workarounds": [],
+  "known_issues": [],
   "notes": [
     "Target Python is not set: the recommendation assumes 3.10, the default. Set --target-python-version to start from the preset of the Python version the project runs."
   ],
@@ -142,5 +172,5 @@
     }
   },
   "config_complete": true,
-  "content": "Option recommendations (experimental; quick mode; rules 2026-10-17)\n\nSchema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)\n  components                       2, 0 operations\n  inline objects / enums           2 / 0, nesting depth 1\n  shared property names            0 (none)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    2 objects, most repeated 1 (Card x1, Bank Account x1)\n  unions                           1 oneOf/anyOf, 0 with a discriminator, 2 inline variants\n  union branch tags                2 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces\n\nStart from  --preset standard-py310-20261017\n\nAdd (2 options)\n  --use-title-as-name   [titles.names-from-unique-titles]\n      Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card\n      x1, Bank Account x1). Titles name them after what they are, instead of their parent property\n      and a number.\n      measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead\n      of Source and Source1\n  --use-tag-as-union-variant-name   [unions.name-variants-after-tags]\n      Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no\n      sibling shares: 2; objects with one required key: 0); otherwise they are named after their\n      parent and a number.\n      caveat: Tags that only a referenced schema declares through allOf are not used (branches: 0;\n      #4839).\n      caveat: With --naming-strategy full-path, a single-key branch whose value is an object repeats\n      the key (FieldValueFieldValue).\n      measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names\n      (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)\n      measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805\n      (Changes23 -> ChangesBody)\n      measured: SchemaStore workflow schema (5 tagged): 49 -> 44 (WorkflowDispatchInput1 to 5 ->\n      WorkflowDispatchInputString, Boolean, ...)\n      measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;\n      schemas without tagged or key branches: no change\n\nNotes\n  - Target Python is not set: the recommendation assumes 3.10, the default. Set\n    --target-python-version to start from the preset of the Python version the project runs.\n\nCommand\n  datamodel-codegen --input 'schema'\"'\"'s.yaml' --preset standard-py310-20261017 --use-tag-as-union-variant-name --use-title-as-name\n\npyproject.toml\n  [tool.datamodel-codegen]\n  input = \"schema's.yaml\"\n  preset = \"standard-py310-20261017\"\n  use-tag-as-union-variant-name = true\n  use-title-as-name = true\n"
+  "content": "Option recommendations (experimental; quick mode; rules 2026-10-17)\n\nSchema  OpenAPI 3.1.0 (OpenAPI scopes: schemas)\n  components                       2, 0 operations\n  inline objects / enums           2 / 0, nesting depth 1\n  shared property names            0 (none)\n  inline names = component names   0\n  repeated inline objects / enums  0 of 0 shapes / 0 of 0 value sets\n  titled components                0: 0 shared titles (none), 0 equal another key, 0 equal their own key\n  inline titles                    2 objects, most repeated 1 (Card x1, Bank Account x1)\n  unions                           1 oneOf/anyOf, 0 with a discriminator, 2 inline variants\n  union branch tags                2 tagged, 0 single required key, 0 tagged only through allOf $ref, 0 copy their parent\n  component keys                   PascalCase (2 of 2); 0 dotted in 0 namespaces\n\nStart from  --preset standard-py310-20261017\n\nAdd (2 options)\n  --use-title-as-name   [titles.names-from-unique-titles]\n      Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card\n      x1, Bank Account x1). Titles name them after what they are, instead of their parent property\n      and a number.\n      known issue #4836: --use-title-as-name names every titled schema after its title, so an inline\n      schema that copies a component's title can take the component's name; a scope for it is\n      requested.\n      measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead\n      of Source and Source1\n  --use-tag-as-union-variant-name   [unions.name-variants-after-tags]\n      Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no\n      sibling shares: 2; objects with one required key: 0); otherwise they are named after their\n      parent and a number.\n      measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names\n      (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)\n      measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805\n      (Changes23 -> ChangesBody)\n      measured: SchemaStore workflow schema (5 tagged): 49 -> 44 (WorkflowDispatchInput1 to 5 ->\n      WorkflowDispatchInputString, Boolean, ...)\n      measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;\n      schemas without tagged or key branches: no change\n\nNotes\n  - Target Python is not set: the recommendation assumes 3.10, the default. Set\n    --target-python-version to start from the preset of the Python version the project runs.\n\nCommand\n  datamodel-codegen --input 'schema'\"'\"'s.yaml' --preset standard-py310-20261017 --use-tag-as-union-variant-name --use-title-as-name\n\npyproject.toml\n  [tool.datamodel-codegen]\n  input = \"schema's.yaml\"\n  preset = \"standard-py310-20261017\"\n  use-tag-as-union-variant-name = true\n  use-title-as-name = true\n"
 }

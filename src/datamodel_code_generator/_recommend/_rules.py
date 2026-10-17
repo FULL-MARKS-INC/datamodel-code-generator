@@ -18,7 +18,7 @@ from datamodel_code_generator._recommend._signals import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterator, Mapping
     from collections.abc import Set as AbstractSet
 
     from datamodel_code_generator._recommend._signals import Signals
@@ -43,6 +43,7 @@ OutputModelTypeName: TypeAlias = Literal[
     "pydantic_v2.BaseModel", "pydantic_v2.dataclass", "dataclasses.dataclass", "typing.TypedDict", "msgspec.Struct"
 ]
 RuleId: TypeAlias = Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]+\.[a-z0-9-]+$")]
+IssueId: TypeAlias = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")]
 
 _OPERATORS: dict[str, Callable[[float, float], bool]] = {
     ">=": operator.ge,
@@ -75,6 +76,17 @@ class RatioCondition(_Data):
     value: float
 
 
+class ConfigCondition(_Data):
+    """Compare the value of one config field, as pyproject.toml spells it, with a value or a list of values.
+
+    Only known issues test config values; rules decide from schema signals.
+    """
+
+    config: str
+    op: Literal["==", "!=", "in"]
+    value: Any
+
+
 class AllCondition(_Data):
     """Match when every nested condition matches."""
 
@@ -93,7 +105,7 @@ class NotCondition(_Data):
     not_: Condition = Field(alias="not")
 
 
-Condition: TypeAlias = SignalCondition | RatioCondition | AllCondition | AnyCondition | NotCondition
+Condition: TypeAlias = SignalCondition | RatioCondition | ConfigCondition | AllCondition | AnyCondition | NotCondition
 AllCondition.model_rebuild()
 AnyCondition.model_rebuild()
 NotCondition.model_rebuild()
@@ -118,23 +130,25 @@ class Rule(_Data):
     set: dict[str, Any] = Field(default_factory=dict)
     value_from: dict[str, Literal["pascal_case_input_stem"]] = Field(default_factory=dict)
     reason: str
-    caveats: tuple[str, ...] = ()
+    caveats: tuple[IssueId, ...] = ()
     evidence: tuple[str, ...]
 
 
 class RuleOption(_Data):
-    """A registered option that rules decide."""
+    """A registered option that rules decide, and the known issues whose workarounds also set it."""
 
     rules: tuple[RuleId, ...] = Field(min_length=1)
+    known_issues: tuple[IssueId, ...] = ()
 
 
 class NotRecommendedOption(_Data):
-    """A registered option the recommender never sets, with the reason."""
+    """A registered option no rule sets, with the reason, and the known issues whose workarounds set it."""
 
     not_recommended: Category
     reason: str
     follow_up: str | None = None
     release: str | None = None
+    known_issues: tuple[IssueId, ...] = ()
 
 
 class RulesData(_Data):
@@ -212,18 +226,35 @@ def load_rules() -> LoadedRules:
     return LoadedRules(data, values)
 
 
-def matches(condition: Condition, counts: Mapping[str, int]) -> bool:
-    """Evaluate a rule condition against signal counts."""
+def leaves(condition: Condition | None) -> Iterator[Condition]:
+    """Yield the signal, ratio, and config tests of a condition."""
+    match condition:
+        case AllCondition() | AnyCondition():
+            for item in condition.all if isinstance(condition, AllCondition) else condition.any:
+                yield from leaves(item)
+        case NotCondition():
+            yield from leaves(condition.not_)
+        case None:
+            pass
+        case _:
+            yield condition
+
+
+def matches(condition: Condition, counts: Mapping[str, int], config: Mapping[str, Any] | None = None) -> bool:
+    """Evaluate a condition against signal counts and, for config tests, config values keyed by field name."""
     if isinstance(condition, SignalCondition):
         return _OPERATORS[condition.op](counts[condition.signal], condition.value)
     if isinstance(condition, RatioCondition):
         numerator, denominator = (counts[name] for name in condition.ratio)
         return bool(denominator) and _OPERATORS[condition.op](numerator / denominator, condition.value)
+    if isinstance(condition, ConfigCondition):
+        value = (config or {})[condition.config]
+        return value in condition.value if condition.op == "in" else _OPERATORS[condition.op](value, condition.value)
     if isinstance(condition, AllCondition):
-        return all(matches(item, counts) for item in condition.all)
+        return all(matches(item, counts, config) for item in condition.all)
     if isinstance(condition, AnyCondition):
-        return any(matches(item, counts) for item in condition.any)
-    return not matches(condition.not_, counts)
+        return any(matches(item, counts, config) for item in condition.any)
+    return not matches(condition.not_, counts, config)
 
 
 def pascal_case_input_stem(stem: str | None, taken: AbstractSet[str]) -> str | None:

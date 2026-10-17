@@ -18,16 +18,17 @@ Add (2 options)
   --use-title-as-name   [titles.names-from-unique-titles]
       Inline union variants carry titles that no other schema uses (titled variants: 1, e.g. none).
       Titles name them after what they are, instead of their parent property and a number.
+      known issue #4836: --use-title-as-name names every titled schema after its title, so an inline
+      schema that copies a component's title can take the component's name; a scope for it is
+      requested.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 1); otherwise they are named after their
       parent and a number.
-      caveat: Tags that only a referenced schema declares through allOf are not used (branches: 1;
-      #4839).
-      caveat: With --naming-strategy full-path, a single-key branch whose value is an object repeats
-      the key (FieldValueFieldValue).
+      known issue #4839: Tag-based variant names do not read a tag that a variant declares only
+      through allOf or $ref, so those variants stay numbered (branches: 1).
       measured: OpenAI API description (59 tagged, 10 key branches): preset 797 -> 759 problem names
       (ThreadStreamEvent1 -> ThreadStreamEventThreadCreated)
       measured: GitHub REST API description (1 tagged, 4 key branches): preset 1808 -> 1805
