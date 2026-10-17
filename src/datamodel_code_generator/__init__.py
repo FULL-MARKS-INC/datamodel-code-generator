@@ -249,6 +249,18 @@ if TYPE_CHECKING:
         _PythonTypeExpressions | None,
     ]
     _ParsedGeneration: TypeAlias = tuple[_ParserResults, ModelMetadata | None, DataModelSet, bool]
+    _ParsedRun: TypeAlias = tuple[
+        _ParserResults,
+        ModelMetadata | None,
+        DataModelSet,
+        bool,
+        _GenerationInput,
+        GenerateConfig,
+        str | None,
+        Path,
+        RemoteReferenceLock | None,
+        bool,
+    ]
 
 
 GeneratedModules: TypeAlias = dict[tuple[str, ...], str]
@@ -2399,12 +2411,13 @@ def _prepare_generation_input(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915
     )
 
 
-def _parse_with_disposal(
+def _parse_with_disposal(  # noqa: PLR0913
     input_: _GenerationInput,
     parser: Any,
     config: GenerateConfig,
     *,
     parser_settings_path: Path | None,
+    collect_model_metadata: bool,
     capture: GenerationCaptureSession[object] | None = None,
 ) -> _ParserResults:
     """Parse with one parser and dispose it if parsing fails."""
@@ -2416,7 +2429,7 @@ def _parse_with_disposal(
                 all_exports_scope=config.all_exports_scope,
                 all_exports_collision_strategy=config.all_exports_collision_strategy,
                 module_split_mode=config.module_split_mode,
-                collect_model_metadata=config.emit_model_metadata is not None,
+                collect_model_metadata=collect_model_metadata,
             )
     except BaseException as exc:
         try:
@@ -2434,12 +2447,13 @@ def _parse_with_disposal(
     return results
 
 
-def _parse_collapse_root_models_retry(
+def _parse_collapse_root_models_retry(  # noqa: PLR0913
     input_: _GenerationInput,
     parser: Any,
     config: GenerateConfig,
     *,
     parser_settings_path: Path | None,
+    collect_model_metadata: bool,
     capture: GenerationCaptureSession[object] | None = None,
 ) -> _ParserResults:
     """Parse the compatibility retry without repeating user-visible warnings."""
@@ -2449,6 +2463,7 @@ def _parse_collapse_root_models_retry(
             parser,
             config,
             parser_settings_path=parser_settings_path,
+            collect_model_metadata=collect_model_metadata,
             capture=capture,
         )
     except _CollapseRootModelsRecursionError as retry_exc:
@@ -2478,6 +2493,7 @@ def _parse_again(  # noqa: PLR0913, PLR0917
     formatter_cwd: Path | None,
     preserve_circular_root_models: bool,
     parser_settings_path: Path | None,
+    collect_model_metadata: bool,
     capture: GenerationCaptureSession[object] | None,
     openapi_parser_factory: OpenAPIParserFactory | None,
     untyped_nullable_maps: bool = True,
@@ -2520,7 +2536,12 @@ def _parse_again(  # noqa: PLR0913, PLR0917
             openapi_parser_factory=openapi_parser_factory,
         )
         results = _parse_with_disposal(
-            input_, parser, config, parser_settings_path=parser_settings_path, capture=capture
+            input_,
+            parser,
+            config,
+            parser_settings_path=parser_settings_path,
+            collect_model_metadata=collect_model_metadata,
+            capture=capture,
         )
     return parser, results, data_model_types, defer_formatting, extra_template_data
 
@@ -2575,6 +2596,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
     parser_settings_path: Path | None,
     use_output_cwd: bool,
     output_context_path: Path,
+    collect_model_metadata: bool,
     capture: GenerationCaptureSession[object] | None = None,
     openapi_parser_factory: OpenAPIParserFactory | None = None,
 ) -> _ParsedGeneration:
@@ -2604,6 +2626,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                 parser,
                 config,
                 parser_settings_path=parser_settings_path,
+                collect_model_metadata=collect_model_metadata,
                 capture=capture,
             )
         except _CollapseRootModelsRecursionError:
@@ -2639,6 +2662,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                 parser,
                 config,
                 parser_settings_path=parser_settings_path,
+                collect_model_metadata=collect_model_metadata,
                 capture=capture,
             )
         if yielding_names := parser.yielding_names_to_assign:
@@ -2664,6 +2688,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                 formatter_cwd=None if use_output_cwd else output_context_path,
                 preserve_circular_root_models=preserve_circular_root_models,
                 parser_settings_path=parser_settings_path,
+                collect_model_metadata=collect_model_metadata,
                 capture=capture,
                 openapi_parser_factory=openapi_parser_factory,
                 untyped_nullable_maps=False,
@@ -2689,6 +2714,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                     formatter_cwd=None if use_output_cwd else output_context_path,
                     preserve_circular_root_models=parser.run_context.preserve_circular_root_models,
                     parser_settings_path=parser_settings_path,
+                    collect_model_metadata=collect_model_metadata,
                     capture=capture,
                     openapi_parser_factory=openapi_parser_factory,
                 )
@@ -2763,6 +2789,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                     retry_parser,
                     retry_config,
                     parser_settings_path=parser_settings_path,
+                    collect_model_metadata=collect_model_metadata,
                     capture=capture,
                 )
                 retry_completed = True
@@ -2856,7 +2883,7 @@ def _generate(
     return _run_generation(input_, config, caller_cwd, use_output_cwd=use_output_cwd)
 
 
-def _run_generation(  # noqa: PLR0914
+def _run_generation(
     input_: _GenerationInput,
     config: GenerateConfig,
     caller_cwd: Path,
@@ -2867,98 +2894,27 @@ def _run_generation(  # noqa: PLR0914
     """Generate models after capturing all process-relative state."""
     try:
         with _tuned_gc():
-            config, output_context_path, emit_settings_path = _prepare_generation_config(config, caller_cwd)
-            input_filename = config.input_filename
-            input_file_type = config.input_file_type
-            extra_template_data = _prepare_generation_extra_template_data(config)
-            dataclass_arguments = config.dataclass_arguments
-            skip_root_model = config.skip_root_model
-            remote_text_cache: DefaultPutDict[str, str] = DefaultPutDict()
             (
-                config,
+                results,
+                model_metadata,
+                data_model_types,
+                defer_formatting,
                 input_,
-                input_text,
-                input_file_type,
-                dataclass_arguments,
-                source_override,
-                diagnostic_source_path,
-                prefetched_source,
-                skip_root_model,
+                config,
+                input_filename,
+                emit_settings_path,
                 owned_remote_lock,
-            ) = _prepare_generation_input(
+                allow_empty_api,
+            ) = _parse_run(
                 input_,
                 config,
                 caller_cwd,
-                remote_text_cache,
-                input_file_type=input_file_type,
-                dataclass_arguments=dataclass_arguments,
-                skip_root_model=skip_root_model,
-            )
-            data_model_types, source, defer_formatting, additional_options, python_type_expressions = (
-                _prepare_parser_common_options(
-                    input_,
-                    input_text,
-                    input_file_type,
-                    source_override,
-                    config,
-                    extra_template_data,
-                    dataclass_arguments,
-                    skip_root_model=skip_root_model,
-                    remote_text_cache=remote_text_cache,
-                )
-            )
-            if additional_options["base_path"] is None and not isinstance(source, Path):
-                match input_:
-                    case [Path(), *_] as input_paths:
-                        additional_options["base_path"] = _path_list_base_path(
-                            cast("list[Path]", input_paths), caller_cwd
-                        )
-                    case _:
-                        additional_options["base_path"] = caller_cwd
-            schema_versions = _resolve_schema_versions(input_file_type, config.schema_version)
-            parser_settings_path = (
-                config.settings_path
-                if use_output_cwd
-                else _settings_path_from(output_context_path, config.settings_path)
-            )
-            allow_empty_api = input_file_type is InputFileType.OpenAPI and OpenAPIScope.Api in (
-                config.openapi_scopes or ()
-            )
-            parse_generation = _parse_generation
-            emit_generation = _emit_generation
-            if allow_empty_api:
-                from functools import partial  # noqa: PLC0415
-
-                if capture is not None:
-                    parser_factory = capture.parser_factory
-                    parse_generation = partial(_parse_generation, openapi_parser_factory=parser_factory)
-                    allow_empty_api = getattr(parser_factory, "_supports_api_scope", False) is True
-                if allow_empty_api:
-                    emit_generation = partial(_emit_generation, allow_empty_api=True)
-            results, model_metadata, data_model_types, defer_formatting = parse_generation(
-                input_,
-                input_text,
-                input_file_type,
-                source_override,
-                config,
-                source,
-                additional_options,
-                data_model_types,
-                defer_formatting,
-                extra_template_data,
-                dataclass_arguments,
-                python_type_expressions=python_type_expressions,
-                skip_root_model=skip_root_model,
-                schema_versions=schema_versions,
-                diagnostic_source_path=diagnostic_source_path,
-                prefetched_source=prefetched_source,
-                parser_settings_path=parser_settings_path,
                 use_output_cwd=use_output_cwd,
-                output_context_path=output_context_path,
+                remote_text_cache=DefaultPutDict(),
+                collect_model_metadata=config.emit_model_metadata is not None,
                 capture=capture,
             )
-            del additional_options, extra_template_data
-            return emit_generation(
+            return _emit_generation(
                 results,
                 input_,
                 config,
@@ -2969,12 +2925,160 @@ def _run_generation(  # noqa: PLR0914
                 defer_formatting=defer_formatting,
                 settings_path=emit_settings_path,
                 owned_remote_lock=owned_remote_lock,
+                allow_empty_api=allow_empty_api,
             )
     except BaseException:
         if capture is not None:
             with contextlib.suppress(BaseException):
                 capture.close()
         raise
+
+
+def _parse_run(  # noqa: PLR0913, PLR0914
+    input_: _GenerationInput,
+    config: GenerateConfig,
+    caller_cwd: Path,
+    *,
+    use_output_cwd: bool,
+    remote_text_cache: DefaultPutDict[str, str],
+    collect_model_metadata: bool,
+    capture: GenerationCaptureSession[object] | None = None,
+) -> _ParsedRun:
+    """Prepare one generation run and parse it up to its results and model metadata, writing nothing.
+
+    Returns what emitting needs: the parse results and metadata, the prepared input and config, and the emit
+    settings, remote lock and API-scope switch.
+    """
+    config, output_context_path, emit_settings_path = _prepare_generation_config(config, caller_cwd)
+    input_filename = config.input_filename
+    input_file_type = config.input_file_type
+    extra_template_data = _prepare_generation_extra_template_data(config)
+    dataclass_arguments = config.dataclass_arguments
+    skip_root_model = config.skip_root_model
+    (
+        config,
+        input_,
+        input_text,
+        input_file_type,
+        dataclass_arguments,
+        source_override,
+        diagnostic_source_path,
+        prefetched_source,
+        skip_root_model,
+        owned_remote_lock,
+    ) = _prepare_generation_input(
+        input_,
+        config,
+        caller_cwd,
+        remote_text_cache,
+        input_file_type=input_file_type,
+        dataclass_arguments=dataclass_arguments,
+        skip_root_model=skip_root_model,
+    )
+    data_model_types, source, defer_formatting, additional_options, python_type_expressions = (
+        _prepare_parser_common_options(
+            input_,
+            input_text,
+            input_file_type,
+            source_override,
+            config,
+            extra_template_data,
+            dataclass_arguments,
+            skip_root_model=skip_root_model,
+            remote_text_cache=remote_text_cache,
+        )
+    )
+    if additional_options["base_path"] is None and not isinstance(source, Path):
+        match input_:
+            case [Path(), *_] as input_paths:
+                additional_options["base_path"] = _path_list_base_path(cast("list[Path]", input_paths), caller_cwd)
+            case _:
+                additional_options["base_path"] = caller_cwd
+    schema_versions = _resolve_schema_versions(input_file_type, config.schema_version)
+    parser_settings_path = (
+        config.settings_path if use_output_cwd else _settings_path_from(output_context_path, config.settings_path)
+    )
+    allow_empty_api = input_file_type is InputFileType.OpenAPI and OpenAPIScope.Api in (config.openapi_scopes or ())
+    parse_generation = _parse_generation
+    if allow_empty_api and capture is not None:
+        from functools import partial  # noqa: PLC0415
+
+        parser_factory = capture.parser_factory
+        parse_generation = partial(_parse_generation, openapi_parser_factory=parser_factory)
+        allow_empty_api = getattr(parser_factory, "_supports_api_scope", False) is True
+    results, model_metadata, data_model_types, defer_formatting = parse_generation(
+        input_,
+        input_text,
+        input_file_type,
+        source_override,
+        config,
+        source,
+        additional_options,
+        data_model_types,
+        defer_formatting,
+        extra_template_data,
+        dataclass_arguments,
+        python_type_expressions=python_type_expressions,
+        skip_root_model=skip_root_model,
+        schema_versions=schema_versions,
+        diagnostic_source_path=diagnostic_source_path,
+        prefetched_source=prefetched_source,
+        parser_settings_path=parser_settings_path,
+        use_output_cwd=use_output_cwd,
+        output_context_path=output_context_path,
+        collect_model_metadata=collect_model_metadata,
+        capture=capture,
+    )
+    return (
+        results,
+        model_metadata,
+        data_model_types,
+        defer_formatting,
+        input_,
+        config,
+        input_filename,
+        emit_settings_path,
+        owned_remote_lock,
+        allow_empty_api,
+    )
+
+
+def _collect_model_metadata(
+    input_: _GenerationInput,
+    config: GenerateConfig,
+    *,
+    remote_text_cache: DefaultPutDict[str, str],
+) -> ModelMetadata | None:
+    """Return the metadata of the models generate() would write for a config, writing nothing.
+
+    The run takes generate()'s preparation, parse and compatibility retries, so the class names are the names
+    generation gives; formatting, every output, the remote lock update and a selected server or client are left out.
+    Runs that share ``remote_text_cache`` fetch each remote document once.
+    """
+    config = _prepare_generate_facade_config(
+        config.model_copy(
+            update={
+                "formatters": [],
+                "custom_formatters": None,
+                "emit_model_metadata": None,
+                "update_lock": False,
+                "generate_server": None,
+                "generate_client": None,
+            }
+        )
+    )
+    use_output_cwd = config.output is not None and _uses_legacy_process_state(config)
+    with _tuned_gc(), PROCESS_STATE_LOCK if use_output_cwd else contextlib.nullcontext():
+        with PROCESS_STATE_LOCK:
+            caller_cwd = Path.cwd()
+        return _parse_run(
+            input_,
+            config,
+            caller_cwd,
+            use_output_cwd=use_output_cwd,
+            remote_text_cache=remote_text_cache,
+            collect_model_metadata=True,
+        )[1]
 
 
 def infer_input_type(text: str) -> InputFileType:  # noqa: PLR0911, PLR0912
