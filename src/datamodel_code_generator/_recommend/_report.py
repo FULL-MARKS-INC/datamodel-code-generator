@@ -218,8 +218,24 @@ def _disagreement_text(disagreement: Disagreement, preset: str) -> str:
     return text if disagreement.decision is None else f"{text}   [{disagreement.decision.rule.id}]"
 
 
-def render_text(recommendation: Recommendation, *, command: str, pyproject: str | None) -> str:
-    """Render a recommendation as the text report."""
+def _start_lines(recommendation: Recommendation, signals: Signals) -> list[str]:
+    """Render the preset to start from and the options to add on top of it."""
+    added = sum(len(option.values) for option in recommendation.recommendations)
+    return [
+        "",
+        f"Start from  --preset {recommendation.preset}",
+        *(
+            f"  already sets {' '.join(option.arguments)}   [{option.decision.rule.id}]"
+            for option in recommendation.covers
+        ),
+        "",
+        f"Add ({added} option{'' if added == 1 else 's'})" if added else "Add  nothing on top of the preset",
+        *(line for option in recommendation.recommendations for line in _option_lines(option, signals)),
+    ]
+
+
+def render_text(recommendation: Recommendation, *, command: str | None, pyproject: str | None) -> str:
+    """Render a recommendation as the text report; with nothing to run, it shows the schema and the notes only."""
     signals = recommendation.signals or _NO_SIGNALS
     lines = [
         f"Option recommendations (experimental; {recommendation.mode} mode; rules {recommendation.rules_revision})",
@@ -229,17 +245,8 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
         lines.append(f"Schema  not analysed ({recommendation.input_file_type or recommendation.source} input)")
     else:
         lines.extend(_signal_lines(signals, recommendation.input_file_type))
-    lines.extend(("", f"Start from  --preset {recommendation.preset}"))
-    lines.extend(
-        f"  already sets {' '.join(option.arguments)}   [{option.decision.rule.id}]" for option in recommendation.covers
-    )
-    added = sum(len(option.values) for option in recommendation.recommendations)
-    lines.extend((
-        "",
-        f"Add ({added} option{'' if added == 1 else 's'})" if added else "Add  nothing on top of the preset",
-    ))
-    for option in recommendation.recommendations:
-        lines.extend(_option_lines(option, signals))
+    if recommendation.runnable:
+        lines.extend(_start_lines(recommendation, signals))
     for title, options, against in (
         ("Left out after the trial (the rules recommend these)", recommendation.left_out, False),
         ("Consider (the schema also has signals against these)", recommendation.consider, True),
@@ -261,7 +268,8 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
                     note, width=_WIDTH, initial_indent="  - ", subsequent_indent="    ", break_on_hyphens=False
                 )
             )
-    lines.extend(("", "Command", f"  {command}"))
+    if command is not None:
+        lines.extend(("", "Command", f"  {command}"))
     if pyproject is not None:
         complete = recommendation.config_complete
         title = "pyproject.toml" if complete else "pyproject.toml: keys to add or change"

@@ -140,6 +140,12 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
         pytest.param("events_v3.yaml", [], "asyncapi_v3.txt", id="asyncapi-v3"),
         pytest.param("swagger.yaml", ["--input-file-type", "openapi"], "swagger.txt", id="swagger"),
         pytest.param(
+            "swagger.yaml",
+            ["--input-file-type", "openapi", "--output-format", "json"],
+            "swagger_json.txt",
+            id="swagger-json",
+        ),
+        pytest.param(
             "swagger.yaml", ["--input-file-type", "jsonschema"], "swagger_jsonschema.txt", id="swagger-definitions"
         ),
         pytest.param(
@@ -671,23 +677,36 @@ def test_recommend_options_compares_candidates(
     _recommend(tmp_path, capsys, args, expected, inputs=_inputs(*inputs), mode=mode)
 
 
-@pytest.mark.parametrize(
-    ("source", "args", "expected"),
-    [
-        pytest.param("catalog.json", [], "full/directory.txt", id="detected-type"),
-        pytest.param(
-            "unicode_titles.json", ["--encoding", "ascii"], "full/directory_undecodable.txt", id="undecodable"
-        ),
-    ],
-)
 def test_recommend_options_compares_candidates_for_directories(
-    source: str, args: list[str], expected: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Compare the candidates of a directory input, which generation types itself; print nothing on stderr.
 
-    The type the trial read is a note. A file the candidates cannot decode rejects each of them with a one-line reason.
+    The type the trial read is a note.
     """
-    _recommend(tmp_path, capsys, ["--input", ".", *args], expected, inputs=_inputs(INPUT_PATH / source), mode=("full",))
+    _recommend(
+        tmp_path,
+        capsys,
+        ["--input", "."],
+        "full/directory.txt",
+        inputs=_inputs(INPUT_PATH / "catalog.json"),
+        mode=("full",),
+    )
+
+
+def test_recommend_options_rejects_candidates_that_fail(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Reject each candidate that cannot decode the directory's schema with a one-line reason, not a traceback.
+
+    The schema is written as exact bytes, so the reported byte position is the same on every platform.
+    """
+    (tmp_path / "schema.json").write_bytes(b'{"title": "Caf\xc3\xa9", "type": "object"}')
+    _recommend(
+        tmp_path,
+        capsys,
+        ["--input", ".", "--encoding", "ascii"],
+        "full/directory_undecodable.txt",
+        mode=("full",),
+    )
 
 
 @pytest.mark.parametrize(

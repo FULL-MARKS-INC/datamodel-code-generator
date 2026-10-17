@@ -782,7 +782,7 @@
       "type": "array"
     },
     "arguments": {
-      "description": "The recommended command's arguments, without the program name.",
+      "description": "The recommended command's arguments, without the program name; empty when there is no command to run, such as for a Swagger 2.0 document typed as OpenAPI.",
       "items": {
         "type": "string"
       },
@@ -799,7 +799,7 @@
           "type": "null"
         }
       ],
-      "description": "The pyproject.toml keys to write, nested under their table; null when they stay on the command line.",
+      "description": "The pyproject.toml keys to write, nested under their table; null when they stay on the command line or there is no command to run.",
       "title": "Config"
     },
     "config_complete": {

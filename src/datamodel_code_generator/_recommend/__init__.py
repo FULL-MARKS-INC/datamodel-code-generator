@@ -148,6 +148,7 @@ class Recommendation:
     left_out: list[Option] = field(default_factory=list)
     trial: Trial | None = None
     notes: list[str] = field(default_factory=list)
+    runnable: bool = True
     command_values: dict[str, Any] = field(default_factory=dict)
     command_selector: tuple[str, ...] = ()
     config_values: dict[str, Any] | None = None
@@ -820,7 +821,10 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
         recommendation.notes.append(mode_note)
     if mode == "full":
         _compare(request, recommendation, analysed)
-    _set_command(request, recommendation, command_values)
+    if analysed.swagger:
+        recommendation.runnable = False
+    else:
+        _set_command(request, recommendation, command_values)
     return recommendation
 
 
@@ -833,9 +837,9 @@ def _unanalysed_note(analysed: _Input) -> str:
             reason = "--input-model inputs are not analysed"
     if analysed.swagger:
         return (
-            "Only the preset is recommended: this is a Swagger 2.0 document, and with --input-file-type openapi "
-            "generation finds no models in it. Generation reads Swagger 2.0 definitions with --input-file-type "
-            "jsonschema; run the recommendation with it."
+            "Nothing is recommended: this is a Swagger 2.0 document, and with --input-file-type openapi generation "
+            "finds no models in it. Generation reads Swagger 2.0 definitions with --input-file-type jsonschema; run "
+            "the recommendation with it."
         )
     return f"Only the preset is recommended: {reason}; the rules cover OpenAPI, AsyncAPI, and JSON Schema documents."
 

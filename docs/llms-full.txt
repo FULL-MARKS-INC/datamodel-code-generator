@@ -4383,12 +4383,12 @@ configuration, and the `dropped` and `remeasured` counts), `notes`, the full com
 - It reads the input once and measures the schema signals without generating models.
 - For OpenAPI, it measures what your `--openapi-scopes` generate: component schemas with the `schemas` scope
   (otherwise only those the operations reference), and request, response, parameter, webhook, and request body
-  schemas with those scopes, filtered by `--openapi-include-paths`. Swagger 2.0 `definitions` are measured as well.
+  schemas with those scopes, filtered by `--openapi-include-paths`; parameter schemas follow every walked operation.
   For AsyncAPI, it measures component schemas and the payload and header schemas of messages in components and
   channels, including multi-format schema objects.
 - Generation reads the `definitions` of a Swagger 2.0 document with `--input-file-type jsonschema`, so that is how it
-  is analysed. With `--input-file-type openapi`, generation finds no models in it; the report says so and recommends
-  no options.
+  is analysed. With `--input-file-type openapi`, generation finds no models in it; the report says so and prints no
+  command or `pyproject.toml` block.
 - With `--generate-server` or `--generate-client`, it checks the target's options and applies the settings the target
   implies (such as the `api` scope and Python 3.11) as generation does, so the recommendation starts from a preset the
   target can use.

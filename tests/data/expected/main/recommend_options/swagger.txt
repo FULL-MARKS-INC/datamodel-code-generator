@@ -2,21 +2,7 @@ Option recommendations (experimental; quick mode; rules 2026-10-17)
 
 Schema  not analysed (openapi input)
 
-Start from  --preset standard-py314-20261017
-
-Add  nothing on top of the preset
-
 Notes
-  - Only the preset is recommended: this is a Swagger 2.0 document, and with --input-file-type
-    openapi generation finds no models in it. Generation reads Swagger 2.0 definitions with
+  - Nothing is recommended: this is a Swagger 2.0 document, and with --input-file-type openapi
+    generation finds no models in it. Generation reads Swagger 2.0 definitions with
     --input-file-type jsonschema; run the recommendation with it.
-
-Command
-  datamodel-codegen --input swagger.yaml --input-file-type openapi --preset standard-py314-20261017 --target-python-version 3.14
-
-pyproject.toml
-  [tool.datamodel-codegen]
-  input = "swagger.yaml"
-  input-file-type = "openapi"
-  preset = "standard-py314-20261017"
-  target-python-version = "3.14"

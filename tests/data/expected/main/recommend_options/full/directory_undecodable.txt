@@ -8,8 +8,8 @@ Add  nothing on top of the preset
 
 Trial  2 candidates generated in memory without formatting; nothing written
   candidate  classes  problems  numbered  long  doubled  displaced  median
-  current    rejected: UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 78: ordinal not in range(128)
-  preset     rejected: UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 78: ordinal not in range(128)
+  current    rejected: UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 14: ordinal not in range(128)
+  preset     rejected: UnicodeDecodeError: 'ascii' codec can't decode byte 0xc3 in position 14: ordinal not in range(128)
   current: the configuration as set, without the preset; never selected
 
 Notes

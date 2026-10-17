@@ -492,10 +492,16 @@ class RecommendOptionsPayload(BaseModel):
     disagreements: list[RecommendDisagreementPayload]
     trial: RecommendTrialPayload | None = Field(description="The candidates full mode compared; null in quick mode.")
     notes: list[str]
-    arguments: list[str] = Field(description="The recommended command's arguments, without the program name.")
+    arguments: list[str] = Field(
+        description=(
+            "The recommended command's arguments, without the program name; empty when there is no command to run, "
+            "such as for a Swagger 2.0 document typed as OpenAPI."
+        )
+    )
     config: dict[str, Any] | None = Field(
         description=(
-            "The pyproject.toml keys to write, nested under their table; null when they stay on the command line."
+            "The pyproject.toml keys to write, nested under their table; null when they stay on the command line or "
+            "there is no command to run."
         )
     )
     config_complete: bool = Field(

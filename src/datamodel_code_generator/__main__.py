@@ -1685,8 +1685,12 @@ def _run_recommend_options(  # noqa: PLR0913
     except (Error, RemoteLockError) as e:
         print(str(e), file=sys.stderr)  # noqa: T201
         return Exit.ERROR
-    arguments = [*recommendation.command_selector, *_cli_arguments(recommendation.command_values)]
-    command = shlex.join(["datamodel-codegen", *arguments])
+    arguments = (
+        [*recommendation.command_selector, *_cli_arguments(recommendation.command_values)]
+        if recommendation.runnable
+        else []
+    )
+    command = shlex.join(["datamodel-codegen", *arguments]) if recommendation.runnable else None
     pyproject = (
         None
         if recommendation.config_values is None
