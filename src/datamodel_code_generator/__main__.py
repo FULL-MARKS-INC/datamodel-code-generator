@@ -1595,8 +1595,8 @@ def _recommend_lock_observer(config: Config, pyproject_path: Path | None) -> Any
 def _recommend_generation_config(config: Config, namespace: Namespace) -> Callable[[Mapping[str, Any]], Config]:
     """Return a function giving the config a generation run takes for the command's config with updates applied.
 
-    The updates are applied like ``--preset`` applies its values; the rest is prepared as for a run to stdout or to
-    ``--output``, which stays a virtual path that selects the layout.
+    The updates are applied like ``--preset`` applies its values; the rest is prepared as the command's own run with
+    its output format prepares it, to stdout or to ``--output``, which stays a virtual path that selects the layout.
     """
     import copy  # noqa: PLC0415
 
@@ -1612,8 +1612,8 @@ def _recommend_generation_config(config: Config, namespace: Namespace) -> Callab
         run_config = base.model_copy()
         for name, value in updates.items():
             setattr(run_config, name, value)
-        run_config.repair_invalid_dotted_stdout = run_config.output is None and _repairs_invalid_dotted_stdout(
-            run_config, namespace
+        run_config.repair_invalid_dotted_stdout = _repairs_invalid_dotted_stdout(
+            run_config, namespace, run_config.output
         )
         return _generation_config(
             run_config,
@@ -1641,10 +1641,26 @@ def _run_recommend_options(  # noqa: PLR0913
     table: tuple[str, ...] = ("tool", "datamodel-codegen"),
     selector: tuple[str, ...] = (),
 ) -> Exit:
-    """Print option recommendations for the resolved configuration (experimental)."""
+    """Print option recommendations for the resolved configuration (experimental).
+
+    A server or client target is checked and its implied settings applied as for generation, so the recommendation
+    starts from the preset the target can use.
+    """
     from datamodel_code_generator._recommend import RecommendRequest, recommend_options  # noqa: PLC0415
     from datamodel_code_generator._recommend._report import render_json, render_text  # noqa: PLC0415
+    from datamodel_code_generator.base_config import (  # noqa: PLC0415
+        _flag,
+        _selected_target,
+        _target_options_error,
+        implied_target_settings,
+    )
     from datamodel_code_generator.remote_lock import RemoteLockError  # noqa: PLC0415
+
+    if (target := _selected_target(config)) is not None:
+        if (error := _target_options_error(config)) is not None:
+            print(f"Error: {error}", file=sys.stderr)  # noqa: T201
+            return Exit.ERROR
+        config = config.model_copy(update=implied_target_settings(config, config.model_fields_set))
 
     preset_on_command_line = "preset" in cli_config_args
     explicit = set(cli_config_args) if preset_on_command_line else {*pyproject_config, *cli_config_args}
@@ -1663,6 +1679,7 @@ def _run_recommend_options(  # noqa: PLR0913
                 selector=selector,
                 mode=args.recommend_options if isinstance(args.recommend_options, str) else None,
                 response_observer=_recommend_lock_observer(config, pyproject_path),
+                target=None if target is None else _flag(target[0]),
             )
         )
     except (Error, RemoteLockError) as e:
@@ -2617,10 +2634,12 @@ def _diff_against_validation_error(config: Config, namespace: Namespace) -> str 
     return next((message for is_incompatible, message in incompatible_options if is_incompatible), None)
 
 
-def _repairs_invalid_dotted_stdout(config: Config, namespace: Namespace) -> bool:
-    """Return whether a run printing to stdout repairs dotted module names it cannot print as modules."""
+def _repairs_invalid_dotted_stdout(config: Config, namespace: Namespace, output: Path | None) -> bool:
+    """Return whether a run printing text to stdout repairs dotted module names it cannot print as modules."""
     return (
-        namespace.fail_on_multi_module_stdout is not True
+        output is None
+        and namespace.output_format != "json"
+        and namespace.fail_on_multi_module_stdout is not True
         and config.treat_dot_as_module is None
         and not config.strict_dotted_module_names
         and config.module_split_mode is None
@@ -3132,11 +3151,7 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
         is_directory_output = False
         compare_output = None
 
-    config.repair_invalid_dotted_stdout = (
-        generate_output is None
-        and namespace.output_format != "json"
-        and _repairs_invalid_dotted_stdout(config, namespace)
-    )
+    config.repair_invalid_dotted_stdout = _repairs_invalid_dotted_stdout(config, namespace, generate_output)
 
     def cleanup_and_return(exit_code: Exit) -> Exit:
         if temp_context is not None:

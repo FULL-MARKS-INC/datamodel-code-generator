@@ -144,6 +144,9 @@ class RulesData(_Data):
     rules_revision: str
     calibrated_presets: str
     families: tuple[Literal["standard", "practical"], ...] = Field(min_length=1)
+    full_trial_max_models: int = Field(
+        gt=0, description="The estimated model count up to which the command without a mode compares candidates."
+    )
     rules: tuple[Rule, ...]
     options: dict[str, RuleOption | NotRecommendedOption]
 

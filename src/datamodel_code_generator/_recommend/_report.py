@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import textwrap
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from datamodel_code_generator._recommend._rules import format_text, option_arguments
 from datamodel_code_generator._recommend._signals import Signals
@@ -97,16 +97,15 @@ def _changes_text(changes: NameChanges) -> str:
 
 
 def _example_lines(changes: NameChanges, indent: str = _EXAMPLE_INDENT) -> list[str]:
-    return [f"{indent}{change.before} -> {change.after}   {change.location}" for change in changes.examples]
+    return [f"{indent}{change.before} -> {change.after}   at {change.location}" for change in changes.examples]
 
 
 def _effect_lines(option: Option) -> list[str]:
     if (effect := option.effect) is None:
         return []
-    before, after = effect.before, effect.after
-    without, with_ = cast("NameMetrics", before.metrics), cast("NameMetrics", after.metrics)
+    without, with_ = effect.before_metrics, effect.after_metrics
     text = (
-        f"trial: {before.candidate.label} -> {after.candidate.label}: classes {without.types} -> {with_.types}, "
+        f"trial: {effect.before} -> {effect.after}: classes {without.types} -> {with_.types}, "
         f"problem names {without.problems} -> {with_.problems}; {_changes_text(effect.changes)}"
     )
     return [*_wrap(text), *_example_lines(effect.changes)]
@@ -123,14 +122,12 @@ def _option_lines(option: Option, signals: Signals, *, against: bool = False) ->
     return lines
 
 
-def _metric_cells(outcome: CandidateOutcome, *, stability: bool) -> list[str]:
-    metrics = cast("NameMetrics", outcome.metrics)
+def _metric_cells(metrics: NameMetrics, stability: NameStability | None) -> list[str]:
     cells = [
         f"{metrics.problems} ({metrics.problems_percent}%)" if name == "problems" else str(getattr(metrics, name))
         for _, name in _TABLE_COLUMNS
     ]
-    renamed = (str(cast("NameStability", outcome.stability).locations.renamed),) if stability else ()
-    return [*cells, *renamed]
+    return [*cells, *(() if stability is None else (str(stability.locations.renamed),))]
 
 
 def _table_row(cells: Sequence[str], widths: Sequence[int]) -> str:
@@ -140,12 +137,31 @@ def _table_row(cells: Sequence[str], widths: Sequence[int]) -> str:
     )
 
 
+def _trial_footnotes(trial: Trial, *, stability: bool) -> list[str]:
+    notes: list[str] = []
+    if not trial.outcomes[0].candidate.selectable:
+        notes.append(
+            f"{trial.outcomes[0].candidate.label}: the configuration as set, without the preset; never selected"
+        )
+    if trial.remeasured:
+        notes.append(
+            f"the last {_count(trial.remeasured, 'row')}: the selected configuration without or with one option, "
+            "to measure each option on it; never selected"
+        )
+    if stability:
+        notes.append("renamed: classes a candidate renames between --diff-against and the input")
+    return [line for note in notes for line in _wrap(note, "  ")]
+
+
 def _trial_lines(trial: Trial) -> list[str]:
     """Render the candidates' table and the changes from the current configuration."""
     stability = any(outcome.stability is not None for outcome in trial.outcomes)
     headers = ["candidate", *(header for header, _ in _TABLE_COLUMNS), *(("renamed",) if stability else ())]
     rows = [
-        [outcome.candidate.label, *(() if outcome.error else _metric_cells(outcome, stability=stability))]
+        [
+            outcome.candidate.label,
+            *(() if outcome.metrics is None else _metric_cells(outcome.metrics, outcome.stability)),
+        ]
         for outcome in trial.outcomes
     ]
     widths = [max(len(row[index]) for row in (headers, *rows) if index < len(row)) for index in range(len(headers))]
@@ -156,24 +172,15 @@ def _trial_lines(trial: Trial) -> list[str]:
     ]
     for outcome, row in zip(trial.outcomes, rows, strict=True):
         if outcome.error is not None:
-            message = outcome.error.strip().partition("\n")[0]
-            lines.append(f"{_table_row(row, widths)}  rejected: {message}")
+            lines.append(f"{_table_row(row, widths)}  rejected: {outcome.error}")
         else:
             lines.append(_table_row(row, widths) + ("   selected" if outcome is trial.selected else ""))
-    if not trial.outcomes[0].candidate.selectable:
-        lines.extend(
-            _wrap(
-                f"{trial.outcomes[0].candidate.label}: the configuration as set, without the preset; never selected",
-                "  ",
-            )
-        )
-    if stability:
-        lines.extend(_wrap("renamed: classes a candidate renames between --diff-against and the input", "  "))
-    if trial.migration is not None:
-        selected = cast("CandidateOutcome", trial.selected)
+    lines.extend(_trial_footnotes(trial, stability=stability))
+    if trial.migration is not None and trial.selected is not None:
+        labels = f"{trial.current.candidate.label} -> {trial.selected.candidate.label}"
         lines.extend((
             "",
-            f"Changes from the current configuration ({trial.current.candidate.label} -> {selected.candidate.label})",
+            f"Changes from the current configuration ({labels})",
             *_wrap(_changes_text(trial.migration), "  "),
             *_example_lines(trial.migration, "    "),
         ))
@@ -306,7 +313,8 @@ def _trial_payload(trial: Trial | None) -> RecommendTrialPayload | None:
         selected=None if trial.selected is None else trial.selected.candidate.label,
         current=trial.current.candidate.label,
         migration=None if trial.migration is None else _changes_payload(trial.migration),
-        left_out=trial.dropped,
+        dropped=trial.dropped,
+        remeasured=trial.remeasured,
     )
 
 
@@ -330,8 +338,8 @@ def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
         trial=None
         if effect is None
         else RecommendOptionTrialPayload(
-            before=effect.before.candidate.label,
-            after=effect.after.candidate.label,
+            before=effect.before,
+            after=effect.after,
             changes=_changes_payload(effect.changes),
         ),
     )

@@ -1161,7 +1161,7 @@
       "description": "One class that two candidates name differently at the same schema location.",
       "properties": {
         "location": {
-          "description": "The schema location of the class, written like a JSON Pointer fragment; the properties and items steps of inline schemas are left out.",
+          "description": "Where the class comes from, for people: the document path, then each inline step after '>'. It is not a JSON Pointer and cannot be used as a --model-name-map key.",
           "title": "Location",
           "type": "string"
         },
@@ -1718,9 +1718,14 @@
           ],
           "description": "Class names the selected candidate changes from the current one."
         },
-        "left_out": {
+        "dropped": {
           "description": "Candidates beyond the limit of eight that were not generated.",
-          "title": "Left Out",
+          "title": "Dropped",
+          "type": "integer"
+        },
+        "remeasured": {
+          "description": "The last candidates: the selected configuration without or with one option, generated to measure each option on it when it is not the rules' recommendation; never selected.",
+          "title": "Remeasured",
           "type": "integer"
         }
       },
@@ -1731,7 +1736,8 @@
         "selected",
         "current",
         "migration",
-        "left_out"
+        "dropped",
+        "remeasured"
       ],
       "title": "RecommendTrialPayload",
       "type": "object"

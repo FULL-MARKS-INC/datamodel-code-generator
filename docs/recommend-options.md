@@ -116,10 +116,10 @@ Add (1 option)
       and a number.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
-      trial: recommended - title-source -> recommended: classes 4 -> 4, problem names 0 -> 0; 2 of 4
-      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        PaymentCard -> Card   #/components/schemas/Booking/payment/oneOf/0
-        PaymentBankAccount -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+      trial: preset -> recommended - union-variant-names: classes 4 -> 4, problem names 1 -> 0; 2 of
+      4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        Payment -> Card   at components/schemas/Booking > payment > oneOf 0
+        Payment1 -> BankAccount   at components/schemas/Booking > payment > oneOf 1
 
 Left out after the trial (the rules recommend these)
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
@@ -152,8 +152,8 @@ Trial  5 candidates generated in memory without formatting; nothing written
 
 Changes from the current configuration (current -> recommended - union-variant-names)
   2 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-    Payment -> Card   #/components/schemas/Booking/payment/oneOf/0
-    Payment1 -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+    Payment -> Card   at components/schemas/Booking > payment > oneOf 0
+    Payment1 -> BankAccount   at components/schemas/Booking > payment > oneOf 1
 
 Command
   datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-title-as-name
@@ -216,8 +216,8 @@ The payload has `kind: "recommend-options"` and contains the `mode` that ran (`f
 the `signals`, the starting preset under `baseline`, the `recommendations`, `left_out`, `consider`, `not_recommended`
 and `disagreements` entries (each with its `rule`, `set` config values, CLI `arguments`, and the `trial` candidates
 and class-name `changes` that measured it), the compared candidates under `trial` (each with its `metrics`, and
-`stability` with `--diff-against`, plus the `ranking`, the `selected` label, and the `migration` from the current
-configuration), `notes`, the full command as `arguments`, the `config` table, and the text report as `content`.
+`stability` with `--diff-against`, plus the `ranking`, the `selected` label, the `migration` from the current
+configuration, and the `dropped` and `remeasured` counts), `notes`, the full command as `arguments`, the `config` table, and the text report as `content`.
 `rules_revision` identifies the rule data and `trial.metrics_version` the class-name metrics that produced it.
 
 ## What it measures
@@ -228,6 +228,12 @@ configuration), `notes`, the full command as `arguments`, the `config` table, an
   schemas with those scopes, filtered by `--openapi-include-paths`. Swagger 2.0 `definitions` are measured as well.
   For AsyncAPI, it measures component schemas and the payload and header schemas of messages in components and
   channels, including multi-format schema objects.
+- Generation reads the `definitions` of a Swagger 2.0 document with `--input-file-type jsonschema`, so that is how it
+  is analysed. With `--input-file-type openapi`, generation finds no models in it; the report says so and recommends
+  no options.
+- With `--generate-server` or `--generate-client`, it checks the target's options and applies the settings the target
+  implies (such as the `api` scope and Python 3.11) as generation does, so the recommendation starts from a preset the
+  target can use.
 - It applies the rules to the signals and computes the options on top of the latest preset for your output model type
   and target Python version.
 - Schema rules cover OpenAPI, AsyncAPI, and JSON Schema documents. For other input types, a directory input, or
@@ -250,7 +256,7 @@ class names each one gives your schema:
 - **recommended - DECISION**: the recommendation without each option it adds.
 
 With a preset already configured, your configuration is the starting point and is labelled `current`. A
-configuration is generated once under its first label, and at most eight are generated; the last ones are left out
+configuration is generated once under its first label, and at most eight are compared; the last ones are left out
 first, and the notes say so.
 
 Each candidate's class names are measured like the naming benchmark the rules come from. A name is a problem when it
@@ -261,12 +267,20 @@ inline model like an unrelated component. Candidates are ranked by, in order: fe
 added options. The best candidate other than `current` is selected, and the command and `pyproject.toml` block carry
 its options.
 
-The `trial:` line of each option compares the candidates without and with it, so it shows what that one option changes
-on top of the rules' recommendation. Classes are matched by schema location; locations of inline schemas leave out
-`properties` and `items` steps.
+The `trial:` line of each option compares the candidates without and with it on the selected configuration, so it
+shows what that one option changes in the recommended command. When the selected candidate is not the rules'
+recommendation, the trial also generates the selected configuration without or with each option it needs for those
+lines; these rows are listed last and never selected.
 
-A candidate whose generation fails is listed as rejected with the error and never selected. If every candidate fails,
-the options are the rules' recommendation alone.
+Classes are matched by schema location. The locations in the examples describe where a class comes from: the document
+path, then each inline step after `>` (a union branch reads `oneOf 0`, an array item `item`). They are not JSON
+Pointers and cannot be used as `--model-name-map` keys; `--emit-model-metadata` lists the class names and their
+source paths.
+
+A candidate whose generation fails is listed as rejected with a one-line reason and never selected. If every
+candidate fails, the options are the rules' recommendation alone. The candidates share the parsed input and fetch each
+remote document once; they print nothing, and the notes say which input type the trial read when it was not given.
+With `--generate-server` or `--generate-client`, the trial compares the models only.
 
 Candidates are compared when the schema is estimated at up to 3000 models: its components, inline objects and enums,
 and inline union variants, plus those of `--diff-against`. The limit is a model count, never a time, so the same

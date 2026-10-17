@@ -31,9 +31,9 @@ Add (2 options)
       lost
       trial: recommended - naming-strategy -> recommended: classes 6 -> 6, problem names 1 -> 0; 3
       of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        Dimensions -> ProductDimensions   #/$defs/Product/dimensions
-        Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
-        Price -> CatalogPrice   #/price/oneOf/0
+        Dimensions -> ProductDimensions   at $defs/Product > dimensions
+        Dimensions1 -> VariantDimensions   at $defs/Variant > dimensions
+        Price -> CatalogPrice   at (root) > price > oneOf 0
   --class-name Catalog   [root.class-name-for-root-object]
       The root schema is an object model. Without --class-name its class is Model (with
       --use-title-as-name, its title: none), and full-path prefixes that name onto root-level
@@ -45,8 +45,8 @@ Add (2 options)
       Workflow, Compose and PackageJson
       trial: recommended - root-name -> recommended: classes 6 -> 6, problem names 1 -> 0; 2 of 6
       classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        Model -> Catalog   #
-        ModelPrice -> CatalogPrice   #/price/oneOf/0
+        Model -> Catalog   at (root)
+        ModelPrice -> CatalogPrice   at (root) > price > oneOf 0
 
 Trial  5 candidates generated in memory without formatting; nothing written
   candidate                      classes   problems  numbered  long  doubled  displaced  median
@@ -59,9 +59,9 @@ Trial  5 candidates generated in memory without formatting; nothing written
 
 Changes from the current configuration (current -> recommended)
   4 of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-    Dimensions -> ProductDimensions   #/$defs/Product/dimensions
-    Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
-    Model -> Catalog   #
+    Dimensions -> ProductDimensions   at $defs/Product > dimensions
+    Dimensions1 -> VariantDimensions   at $defs/Variant > dimensions
+    Model -> Catalog   at (root)
 
 Notes
   - --url is repeated without its user information, query, and fragment; add them again.

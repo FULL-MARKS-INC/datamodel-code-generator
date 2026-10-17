@@ -26,10 +26,12 @@ from datamodel_code_generator._recommend._rules import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
-    from datamodel_code_generator._recommend._metrics import NameChanges
+    from datamodel_code_generator._recommend._metrics import NameChanges, NameMetrics
     from datamodel_code_generator._recommend._signals import SchemaKind, Signals
     from datamodel_code_generator._recommend._trial import CandidateOutcome, TrialCandidate, TrialInput
+    from datamodel_code_generator.enums import InputFileType
     from datamodel_code_generator.preset import ResolvedPresetConfig
 
 RecommendMode: TypeAlias = Literal["quick", "full"]
@@ -43,6 +45,9 @@ _DOCUMENT_NAMES: dict[SchemaKind, str] = {
 _DEFAULT_TABLE = ("tool", "datamodel-codegen")
 _SENSITIVE_FIELDS = frozenset({"http_headers", "http_query_parameters"})
 _MAX_CANDIDATES = 8
+_CandidateKey: TypeAlias = tuple[bool, frozenset[str]]
+_Pair: TypeAlias = "tuple[Option, tuple[Option, ...], tuple[Option, ...]]"
+_TrialRun: TypeAlias = "tuple[tuple[CandidateOutcome, ...], InputFileType | None]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +58,8 @@ class RecommendRequest:
     fields when the preset is on the command line, otherwise the pyproject.toml and command-line fields.
     ``cli_values`` are the command-line options as config values, keyed by field name. ``mode`` is None when the
     command names no mode. ``generation_config`` returns the config a generation of this configuration runs with
-    after config updates, applied the way ``--preset`` applies its values.
+    after config updates, applied the way ``--preset`` applies its values. ``target`` is the option that selects a
+    server or client target, such as ``--generate-server``.
     """
 
     config: Any
@@ -67,14 +73,17 @@ class RecommendRequest:
     selector: tuple[str, ...] = ()
     mode: RecommendMode | None = None
     response_observer: Callable[[str, Any, Any, bytes], None] | None = None
+    target: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class OptionEffect:
     """What the trial measured for one option: the candidates without and with it, and the classes that change."""
 
-    before: CandidateOutcome
-    after: CandidateOutcome
+    before: str
+    after: str
+    before_metrics: NameMetrics
+    after_metrics: NameMetrics
     changes: NameChanges
 
 
@@ -90,7 +99,11 @@ class Option:
 
 @dataclass(frozen=True, slots=True)
 class Trial:
-    """The compared candidates, their ranking, the selected one, and its changes from the current configuration."""
+    """The compared candidates, their ranking, the selected one, and its changes from the current configuration.
+
+    ``dropped`` counts candidates the limit left out; the last ``remeasured`` outcomes measure options on the selected
+    configuration when it is not the rules' recommendation.
+    """
 
     outcomes: tuple[CandidateOutcome, ...]
     ranking: tuple[CandidateOutcome, ...]
@@ -98,6 +111,7 @@ class Trial:
     current: CandidateOutcome
     migration: NameChanges | None
     dropped: int
+    remeasured: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,11 +169,11 @@ class _Plan:
     blocked: list[tuple[Decision, str, OptionValue]] = field(default_factory=list)
 
 
-def _read_file(path: Path, encoding: str) -> str:
+def _read_file(path: Path, encoding: str, what: str) -> str:
     try:
         return path.read_text(encoding=encoding)
     except (OSError, UnicodeError) as e:
-        msg = f"Unable to read the input {path.name}: {getattr(e, 'strerror', None) or e}"
+        msg = f"Unable to read {what}: {getattr(e, 'strerror', None) or e}"
         raise Error(msg) from e
 
 
@@ -187,7 +201,7 @@ def _read_input(request: RecommendRequest) -> tuple[str | None, InputSource, str
         path = Path(config.input)
         if path.is_dir():
             return None, "directory", None
-        return _read_file(path, config.encoding), "file", path.stem
+        return _read_file(path, config.encoding, f"the input {path.name}"), "file", path.stem
     return request.read_stdin(), "stdin", None
 
 
@@ -215,16 +229,19 @@ def _load_errors() -> tuple[type[Exception], ...]:
     return TypeError, ValueError, *get_yaml_parse_errors()
 
 
-def _measure(text: str, kind: SchemaKind, config: Any) -> tuple[dict[str, Any], Signals]:
-    """Return the loaded schema document and its signals, for the scopes the configuration generates."""
+def _document(text: str, kind: SchemaKind, what: str) -> dict[str, Any]:
+    try:
+        return _load(text)
+    except _load_errors() as e:
+        msg = f"Unable to read {what} as {_DOCUMENT_NAMES[kind]} document: {e}"
+        raise Error(msg) from e
+
+
+def _measure(document: dict[str, Any], kind: SchemaKind, config: Any) -> Signals:
+    """Return the signals of a schema document, for the scopes the configuration generates."""
     from datamodel_code_generator._recommend._signals import measure_signals  # noqa: PLC0415
 
-    try:
-        document = _load(text)
-    except _load_errors() as e:
-        msg = f"Unable to read the input as {_DOCUMENT_NAMES[kind]} document: {e}"
-        raise Error(msg) from e
-    return document, measure_signals(
+    return measure_signals(
         document,
         kind,
         openapi_scopes=frozenset(scope.value for scope in config.openapi_scopes or ()) or frozenset({"schemas"}),
@@ -243,14 +260,19 @@ class _Input:
     kind: SchemaKind | None
     document: dict[str, Any] | None
     signals: Signals | None
+    swagger: bool = False
 
 
 def _analyse(request: RecommendRequest) -> _Input:
+    """Read and analyse the input; a Swagger 2.0 document typed as OpenAPI generates nothing, so it is not analysed."""
     text, source, stem = _read_input(request)
     file_type = _input_file_type(request.config, text)
-    kind = _ANALYSED_TYPES.get(file_type or "") if text is not None else None
-    document, signals = _measure(cast("str", text), kind, request.config) if kind is not None else (None, None)
-    return _Input(text, source, stem, file_type, kind, document, signals)
+    if text is None or (kind := _ANALYSED_TYPES.get(file_type or "")) is None:
+        return _Input(text, source, stem, file_type, None, None, None)
+    document = _document(text, kind, "the input")
+    if kind == "openapi" and "swagger" in document:
+        return _Input(text, source, stem, file_type, None, document, None, swagger=True)
+    return _Input(text, source, stem, file_type, kind, document, _measure(document, kind, request.config))
 
 
 def _option(decision: Decision, values: Mapping[str, OptionValue]) -> Option:
@@ -385,33 +407,26 @@ def _command_values(request: RecommendRequest) -> tuple[dict[str, Any], list[str
     return values, notes
 
 
-def _mode(
-    request: RecommendRequest, signals: Signals | None, kind: SchemaKind | None
-) -> tuple[RecommendMode, str | None]:
-    """Return the mode to run and, when the default leaves candidates uncompared, the note that says why."""
+def _mode(request: RecommendRequest, analysed: _Input, previous: str | None) -> tuple[RecommendMode, str | None]:
+    """Return the mode to run and, when the default leaves candidates uncompared, the note that says why.
+
+    Without a mode, candidates are compared while the input, with ``previous`` (the text of --diff-against), is
+    estimated at no more models than the rule data's ``full_trial_max_models``: each candidate generates every input.
+    """
     if request.mode is not None:
         return request.mode, None
-    from datamodel_code_generator._recommend._trial import (  # noqa: PLC0415
-        FULL_TRIAL_MAX_MODELS,
-        full_trial_by_default,
-    )
-
-    if signals is None or kind is None:
+    limit = load_rules().data.full_trial_max_models
+    if analysed.signals is None or analysed.kind is None:
         reason = "the size of this input cannot be estimated"
     else:
-        estimates = [signals.counts["estimated_models"]]
-        if (previous := request.config.diff_against) is not None:
-            estimates.append(
-                _measure(_read_file(Path(previous), request.config.encoding), kind, request.config)[1].counts[
-                    "estimated_models"
-                ]
-            )
-        if full_trial_by_default(*estimates):
+        estimates = [analysed.signals.counts["estimated_models"]]
+        if previous is not None:
+            document = _document(previous, analysed.kind, f"--diff-against {Path(request.config.diff_against).name}")
+            estimates.append(_measure(document, analysed.kind, request.config).counts["estimated_models"])
+        if sum(estimates) <= limit:
             return "full", None
         inputs = "the input and --diff-against are" if len(estimates) > 1 else "the schema is"
-        reason = (
-            f"{inputs} estimated at {sum(estimates)} models, more than the {FULL_TRIAL_MAX_MODELS} compared by default"
-        )
+        reason = f"{inputs} estimated at {sum(estimates)} models, more than the {limit} compared by default"
     return "quick", (
         f"Candidates were not compared: {reason}. Run --recommend-options full to generate each candidate "
         "configuration in memory and compare their class names."
@@ -489,9 +504,6 @@ class _Candidate:
         return _key(self.options, on_preset=self.on_preset)
 
 
-_CandidateKey: TypeAlias = tuple[bool, frozenset[str]]
-
-
 def _key(options: Sequence[Option], *, on_preset: bool = True) -> _CandidateKey:
     return on_preset, frozenset(option.decision.rule.id for option in options)
 
@@ -530,6 +542,31 @@ def _candidates(
     return list(unique.values())[:_MAX_CANDIDATES], max(len(unique) - _MAX_CANDIDATES, 0)
 
 
+def _pairs(chosen: Sequence[Option], options: Sequence[Option]) -> list[_Pair]:
+    """Return each option with the configurations without and with it around the chosen options."""
+    chosen_rules = _key(chosen)[1]
+    return [
+        (
+            option,
+            tuple(other for other in chosen if other.decision.rule.id != option.decision.rule.id),
+            (*chosen, *(() if option.decision.rule.id in chosen_rules else (option,))),
+        )
+        for option in options
+    ]
+
+
+def _remeasure(selected: _Candidate, pairs: Sequence[_Pair], known: AbstractSet[_CandidateKey]) -> list[_Candidate]:
+    """Return the configurations next to the selected one that no candidate covered: without or with one option."""
+    chosen_rules = _key(selected.options)[1]
+    missing: dict[_CandidateKey, _Candidate] = {}
+    for option, before, after in pairs:
+        kept = option.decision.rule.id in chosen_rules
+        label = f"{selected.label} {'-' if kept else '+'} {option.decision.rule.decision}"
+        if (key := _key(options := before if kept else after)) not in known:
+            missing.setdefault(key, _Candidate(label, on_preset=True, options=options, selectable=False))
+    return list(missing.values())
+
+
 def _measured(
     option: Option,
     outcomes: Mapping[_CandidateKey, CandidateOutcome],
@@ -540,23 +577,32 @@ def _measured(
     from datamodel_code_generator._recommend._metrics import location_changes  # noqa: PLC0415
 
     without, with_ = outcomes.get(_key(before)), outcomes.get(_key(after))
-    if without is None or with_ is None or without.error is not None or with_.error is not None:
+    if without is None or with_ is None or without.metrics is None or with_.metrics is None:
         return option
-    return replace(option, effect=OptionEffect(without, with_, location_changes(without.records, with_.records)))
+    effect = OptionEffect(
+        without.candidate.label,
+        with_.candidate.label,
+        without.metrics,
+        with_.metrics,
+        location_changes(without.records, with_.records),
+    )
+    return replace(option, effect=effect)
 
 
 def _trial_candidates(
-    request: RecommendRequest, recommendation: Recommendation, analysed: _Input, candidates: Sequence[_Candidate]
+    request: RecommendRequest,
+    recommendation: Recommendation,
+    candidates: Sequence[_Candidate],
+    input_file_type: InputFileType | None,
 ) -> list[TrialCandidate]:
     """Return each candidate's generation config: the configuration, the preset, and its options."""
     from datamodel_code_generator import InputFileType  # noqa: PLC0415
     from datamodel_code_generator._recommend._trial import TrialCandidate  # noqa: PLC0415
 
     config = request.config
-    detected = analysed.file_type or ("jsonschema" if analysed.source == "input-model" else None)
     common = (
-        {"input_file_type": InputFileType(detected)}
-        if config.input_file_type == InputFileType.Auto and detected is not None
+        {"input_file_type": input_file_type}
+        if config.input_file_type == InputFileType.Auto and input_file_type is not None
         else {}
     )
     configured = config.preset is not None
@@ -577,67 +623,116 @@ def _trial_candidates(
     ]
 
 
-def _compare(request: RecommendRequest, recommendation: Recommendation, analysed: _Input) -> None:
-    """Generate the candidates, rank their class names, and recommend the options of the best one."""
+def _known_type(analysed: _Input) -> InputFileType | None:
+    """Return the input type the analysis knows: the configured or detected one, JSON Schema for --input-model."""
+    from datamodel_code_generator import InputFileType  # noqa: PLC0415
+
+    known = analysed.file_type or ("jsonschema" if analysed.source == "input-model" else None)
+    return None if known is None else InputFileType(known)
+
+
+def _runner(request: RecommendRequest, analysed: _Input) -> Callable[[Sequence[TrialCandidate]], _TrialRun]:
+    """Return the function that generates candidates: one input, its vocabulary, the previous input, one cache."""
+    from functools import partial  # noqa: PLC0415
+
     from datamodel_code_generator._recommend._metrics import schema_vocabulary  # noqa: PLC0415
     from datamodel_code_generator._recommend._trial import run_trial  # noqa: PLC0415
     from datamodel_code_generator._shared_types import DefaultPutDict  # noqa: PLC0415
 
     config = request.config
     trial_input = _trial_input(request, analysed)
-    delta, consider = recommendation.recommendations, recommendation.consider
-    candidates, dropped = _candidates(delta, consider, configured=config.preset is not None)
     remote_text_cache: DefaultPutDict[str, str] = DefaultPutDict()
     if analysed.source == "url":
         remote_text_cache[config.url.geturl()] = cast("str", analysed.text)
-    document = _vocabulary_document(analysed, trial_input)
-    outcomes = run_trial(
+    return partial(
+        run_trial,
         trial_input,
-        _trial_candidates(request, recommendation, analysed, candidates),
-        vocabulary=schema_vocabulary(document),
+        vocabulary=schema_vocabulary(_vocabulary_document(analysed, trial_input)),
         previous_input=None if config.diff_against is None else Path(config.diff_against),
         remote_text_cache=remote_text_cache,
     )
-    if dropped:
-        recommendation.notes.append(
-            f"The trial compares at most {_MAX_CANDIDATES} candidates, so {dropped} "
-            f"{'was' if dropped == 1 else 'were'} left out; the options they would measure show no trial result."
-        )
-    _select(recommendation, candidates, outcomes, dropped)
+
+
+def _compare(request: RecommendRequest, recommendation: Recommendation, analysed: _Input) -> None:
+    """Generate the candidates, rank their class names, and recommend the options of the best one.
+
+    When the best candidate is not the rules' recommendation, the configurations next to it that the first candidates
+    did not cover are generated too, so each option is measured on the selected configuration.
+    """
+    from datamodel_code_generator._recommend._trial import rank  # noqa: PLC0415
+
+    run = _runner(request, analysed)
+    delta = recommendation.recommendations
+    candidates, dropped = _candidates(delta, recommendation.consider, configured=request.config.preset is not None)
+    known = _known_type(analysed)
+    outcomes, detected = run(_trial_candidates(request, recommendation, candidates, known))
+    by_key = {candidate.key: outcome for candidate, outcome in zip(candidates, outcomes, strict=True)}
+    selected = next(
+        (outcome for outcome in rank(outcomes) if outcome.error is None and outcome.candidate.selectable), None
+    )
+    center = next((candidate for candidate in candidates if by_key[candidate.key] is selected), None)
+    chosen = delta if center is None else center.options
+    pairs = _pairs(chosen, [*delta, *recommendation.consider])
+    extra = [] if center is None or center.key == _key(delta) else _remeasure(center, pairs, by_key.keys())
+    if extra:
+        more, _ = run(_trial_candidates(request, recommendation, extra, detected))
+        by_key.update((candidate.key, outcome) for candidate, outcome in zip(extra, more, strict=True))
+        outcomes = (*outcomes, *more)
+    _select(
+        recommendation,
+        pairs,
+        by_key,
+        Trial(outcomes, (), selected, outcomes[0], None, dropped, len(extra)),
+        _key(chosen)[1],
+    )
+    _trial_notes(request, recommendation, None if known is not None else detected)
 
 
 def _select(
     recommendation: Recommendation,
-    candidates: Sequence[_Candidate],
-    outcomes: tuple[CandidateOutcome, ...],
-    dropped: int,
+    pairs: Sequence[_Pair],
+    by_key: Mapping[_CandidateKey, CandidateOutcome],
+    trial: Trial,
+    chosen: frozenset[str],
 ) -> None:
-    """Rank the candidates and recommend the options of the best selectable one, each with its measurement."""
+    """Recommend the chosen options, each with its measurement around them, and rank the trial's candidates."""
     from datamodel_code_generator._recommend._metrics import location_changes  # noqa: PLC0415
+    from datamodel_code_generator._recommend._trial import rank  # noqa: PLC0415
 
-    delta, consider = recommendation.recommendations, recommendation.consider
-    pairs = list(zip(candidates, outcomes, strict=True))
-    by_key = {candidate.key: outcome for candidate, outcome in pairs}
-    ranking = tuple(sorted(outcomes, key=lambda outcome: outcome.score))
-    selected = next((outcome for outcome in ranking if outcome.error is None and outcome.candidate.selectable), None)
-    chosen = _key(
-        delta if selected is None else next(candidate.options for candidate, outcome in pairs if outcome is selected)
-    )[1]
-    added = [_measured(option, by_key, [other for other in delta if other is not option], delta) for option in delta]
-    adopted = [_measured(option, by_key, delta, [*delta, option]) for option in consider]
-    recommendation.recommendations = [option for option in (*added, *adopted) if option.decision.rule.id in chosen]
-    recommendation.left_out = [option for option in added if option.decision.rule.id not in chosen]
-    recommendation.consider = [option for option in adopted if option.decision.rule.id not in chosen]
-    current = next(outcome for outcome in outcomes if outcome.candidate.label == "current")
+    delta_rules = _key(recommendation.recommendations)[1]
+    measured = [_measured(option, by_key, before, after) for option, before, after in pairs]
+    recommendation.recommendations = [option for option in measured if option.decision.rule.id in chosen]
+    recommendation.left_out = [option for option in measured if option.decision.rule.id in delta_rules - chosen]
+    recommendation.consider = [option for option in measured if option.decision.rule.id not in delta_rules | chosen]
+    current = next(outcome for outcome in trial.outcomes if outcome.candidate.label == "current")
+    selected = trial.selected
     migration = (
         location_changes(current.records, selected.records)
         if selected is not None and selected is not current and current.error is None
         else None
     )
-    recommendation.trial = Trial(outcomes, ranking, selected, current, migration, dropped)
-    if selected is None:
+    recommendation.trial = replace(trial, ranking=rank(trial.outcomes), current=current, migration=migration)
+
+
+def _trial_notes(request: RecommendRequest, recommendation: Recommendation, detected: InputFileType | None) -> None:
+    """Note the candidates the limit left out, a trial where every candidate failed, the type read, and a target."""
+    trial = cast("Trial", recommendation.trial)
+    if trial.dropped:
+        recommendation.notes.append(
+            f"The trial compares at most {_MAX_CANDIDATES} candidates, so {trial.dropped} "
+            f"{'was' if trial.dropped == 1 else 'were'} left out; the options they would measure show no trial result."
+        )
+    if trial.selected is None:
         recommendation.notes.append(
             "Every candidate on the preset failed to generate, so the options are the rules' recommendation alone."
+        )
+    if detected is not None:
+        recommendation.notes.append(
+            f"The trial read the input as {detected.value}; set --input-file-type to choose the input file type."
+        )
+    if request.target is not None:
+        recommendation.notes.append(
+            f"The trial compares the models only; the package {request.target} generates is not generated here."
         )
 
 
@@ -676,7 +771,12 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
         if signals is not None
         else []
     )
-    mode, mode_note = _mode(request, signals, analysed.kind)
+    previous = (
+        None
+        if config.diff_against is None
+        else _read_file(Path(config.diff_against), config.encoding, f"--diff-against {Path(config.diff_against).name}")
+    )
+    mode, mode_note = _mode(request, analysed, previous)
     recommendation = Recommendation(
         rules_revision=rules.data.rules_revision,
         calibrated_presets=rules.data.calibrated_presets,
@@ -707,12 +807,13 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
     command_values, notes = _command_values(request)
     recommendation.notes.extend(notes)
     if "target_python_version" not in request.explicit_fields and config.preset is None:
+        assumed = "the default" if request.target is None else f"the lowest {request.target} supports"
         recommendation.notes.append(
-            f"Target Python is not set: the recommendation assumes {recommendation.target_python_version}, the "
-            "default. Set --target-python-version to start from the preset of the Python version the project runs."
+            f"Target Python is not set: the recommendation assumes {recommendation.target_python_version}, {assumed}. "
+            "Set --target-python-version to start from the preset of the Python version the project runs."
         )
     if signals is None:
-        recommendation.notes.append(_unanalysed_note(analysed.source, analysed.file_type))
+        recommendation.notes.append(_unanalysed_note(analysed))
     elif rules.data.calibrated_presets not in plan.preset:
         recommendation.notes.append(f"The rules were calibrated on the {rules.data.calibrated_presets} presets.")
     if mode_note is not None:
@@ -723,13 +824,19 @@ def recommend_options(request: RecommendRequest) -> Recommendation:
     return recommendation
 
 
-def _unanalysed_note(source: InputSource, input_file_type: str | None) -> str:
-    reason = f"schema rules are not available for {input_file_type} input"
-    match source:
+def _unanalysed_note(analysed: _Input) -> str:
+    reason = f"schema rules are not available for {analysed.file_type} input"
+    match analysed.source:
         case "directory":
             reason = "a directory input is not analysed"
         case "input-model":
             reason = "--input-model inputs are not analysed"
+    if analysed.swagger:
+        return (
+            "Only the preset is recommended: this is a Swagger 2.0 document, and with --input-file-type openapi "
+            "generation finds no models in it. Generation reads Swagger 2.0 definitions with --input-file-type "
+            "jsonschema; run the recommendation with it."
+        )
     return f"Only the preset is recommended: {reason}; the rules cover OpenAPI, AsyncAPI, and JSON Schema documents."
 
 

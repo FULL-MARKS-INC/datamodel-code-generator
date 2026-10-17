@@ -20,6 +20,7 @@ Notes
     --target-python-version to start from the preset of the Python version the project runs.
   - Only the preset is recommended: a directory input is not analysed; the rules cover OpenAPI,
     AsyncAPI, and JSON Schema documents.
+  - The trial read the input as jsonschema; set --input-file-type to choose the input file type.
 
 Command
   datamodel-codegen --input . --preset standard-py310-20261017

@@ -306,8 +306,8 @@ class RecommendNameChangePayload(BaseModel):
 
     location: str = Field(
         description=(
-            "The schema location of the class, written like a JSON Pointer fragment; the properties and items steps "
-            "of inline schemas are left out."
+            "Where the class comes from, for people: the document path, then each inline step after '>'. It is not a "
+            "JSON Pointer and cannot be used as a --model-name-map key."
         )
     )
     before: str
@@ -395,7 +395,13 @@ class RecommendTrialPayload(BaseModel):
     migration: RecommendNameChangesPayload | None = Field(
         description="Class names the selected candidate changes from the current one."
     )
-    left_out: int = Field(description="Candidates beyond the limit of eight that were not generated.")
+    dropped: int = Field(description="Candidates beyond the limit of eight that were not generated.")
+    remeasured: int = Field(
+        description=(
+            "The last candidates: the selected configuration without or with one option, generated to measure each "
+            "option on it when it is not the rules' recommendation; never selected."
+        )
+    )
 
 
 class RecommendOptionTrialPayload(BaseModel):

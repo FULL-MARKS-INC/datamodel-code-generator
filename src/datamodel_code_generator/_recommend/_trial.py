@@ -1,19 +1,22 @@
 """Trial naming: generate candidate configurations up to their model metadata and compare the class names.
 
 A candidate is a complete generation config. It runs generate()'s own pipeline without formatting or output, so its
-class names are the names a user gets. Candidates are ranked like the tuned naming benchmark: rejected candidates
+class names are the names a user gets. ``rank`` orders candidates like the tuned naming benchmark: rejected candidates
 last, then fewer problem names, fewer renamed locations against a previous version of the input, a shorter median
-name, fewer added options, and the option spelling.
+name, fewer added options, and the option spelling; ``_score`` holds that key.
 """
 
 from __future__ import annotations
 
+import io
 import warnings
+from contextlib import redirect_stderr
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
-from datamodel_code_generator import Error, _collect_model_metadata
+from datamodel_code_generator import Error, _collect_model_metadata, enable_parsed_source_cache
 from datamodel_code_generator._recommend._metrics import name_metrics, name_records, name_stability
+from datamodel_code_generator.remote_lock import RemoteLockError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -27,18 +30,7 @@ if TYPE_CHECKING:
 
     TrialInput = Path | str | ParseResult | Mapping[str, Any]
 
-__all__ = ["FULL_TRIAL_MAX_MODELS", "CandidateOutcome", "TrialCandidate", "full_trial_by_default", "run_trial"]
-
-FULL_TRIAL_MAX_MODELS: Final = 3000
-
-
-def full_trial_by_default(*estimated_models: int) -> bool:
-    """Return whether a recommendation without a mode compares candidates, from the inputs' estimated model counts.
-
-    Each candidate is a full generation of every input, so the estimate of a previous input counts too. The limit is
-    a model count, never a time, so the decision does not depend on the machine.
-    """
-    return sum(estimated_models) <= FULL_TRIAL_MAX_MODELS
+__all__ = ["CandidateOutcome", "TrialCandidate", "rank", "run_trial"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,20 +58,33 @@ class CandidateOutcome:
     stability: NameStability | None
     error: str | None
 
-    @property
-    def score(self) -> tuple[int, int, int, int, int, str]:
-        """Return the ranking key; lower is better."""
-        if self.metrics is None:
-            return 1, 0, 0, 0, 0, ""
-        options = self.candidate.options
-        return (
-            0,
-            self.metrics.problems,
-            0 if self.stability is None else self.stability.locations.renamed,
-            self.metrics.median_length,
-            len(options),
-            " ".join(f"{name}={value}" for name, value in sorted(options.items())),
-        )
+
+def _score(outcome: CandidateOutcome) -> tuple[int, int, int, int, int, str]:
+    """Return the ranking key of a candidate; lower is better."""
+    if outcome.metrics is None:
+        return 1, 0, 0, 0, 0, ""
+    options = outcome.candidate.options
+    return (
+        0,
+        outcome.metrics.problems,
+        0 if outcome.stability is None else outcome.stability.locations.renamed,
+        outcome.metrics.median_length,
+        len(options),
+        " ".join(f"{name}={value}" for name, value in sorted(options.items())),
+    )
+
+
+def rank(outcomes: Sequence[CandidateOutcome]) -> tuple[CandidateOutcome, ...]:
+    """Return the candidates best first; equal keys keep the given order."""
+    return tuple(sorted(outcomes, key=_score))
+
+
+def _rejection(error: Exception) -> str:
+    """Return the one-line reason a candidate's generation failed, naming the exception unless it is dcg's own."""
+    message, name = str(error).strip().partition("\n")[0], type(error).__name__
+    if isinstance(error, Error):
+        return message or name
+    return f"{name}: {message}" if message else name
 
 
 def _run_candidate(  # noqa: PLR0913
@@ -92,7 +97,7 @@ def _run_candidate(  # noqa: PLR0913
     remote_text_cache: DefaultPutDict[str, str],
 ) -> tuple[CandidateOutcome, InputFileType | None]:
     try:
-        with warnings.catch_warnings():
+        with warnings.catch_warnings(), redirect_stderr(io.StringIO()):
             warnings.simplefilter("ignore")
             metadata, input_file_type = _collect_model_metadata(input_, config, remote_text_cache=remote_text_cache)
             records = name_records(metadata)
@@ -107,8 +112,10 @@ def _run_candidate(  # noqa: PLR0913
                     )[0]
                 )
             )
-    except Error as error:
-        return CandidateOutcome(candidate, (), None, None, str(error)), None
+    except RemoteLockError:
+        raise
+    except Exception as error:  # noqa: BLE001
+        return CandidateOutcome(candidate, (), None, None, _rejection(error)), None
     outcome = CandidateOutcome(
         candidate,
         records,
@@ -126,30 +133,32 @@ def run_trial(
     vocabulary: SchemaVocabulary,
     previous_input: Path | None,
     remote_text_cache: DefaultPutDict[str, str],
-) -> tuple[CandidateOutcome, ...]:
-    """Generate every candidate's class names for the input, in the given order.
+) -> tuple[tuple[CandidateOutcome, ...], InputFileType | None]:
+    """Generate every candidate's class names for the input, in the given order, and return the input type parsed.
 
     ``vocabulary`` comes from the input's loaded document. With ``previous_input``, every candidate also runs on that
     earlier version of the input and records the classes it renames between them. An input type left to detection
-    is detected once, by the first generation that succeeds, like one generation run. Warnings of the candidate runs
-    are not shown, and a candidate whose generation raises an error is rejected with its message; a remote lock error
-    concerns the input, not a candidate, and propagates. Runs that share ``remote_text_cache`` fetch each remote
-    document once.
+    is detected once, by the first generation that succeeds. The runs print nothing and show no warnings; a candidate
+    whose generation fails, with any exception, is rejected with a one-line reason, while a remote lock error
+    concerns the input, not a candidate, and propagates. The runs share parsed local documents, and runs that share
+    ``remote_text_cache`` fetch each remote document once.
     """
     outcomes: list[CandidateOutcome] = []
     detected: InputFileType | None = None
-    for candidate in candidates:
-        config = (
-            candidate.config if detected is None else candidate.config.model_copy(update={"input_file_type": detected})
-        )
-        outcome, input_file_type = _run_candidate(
-            input_,
-            candidate,
-            config,
-            vocabulary=vocabulary,
-            previous_input=previous_input,
-            remote_text_cache=remote_text_cache,
-        )
-        outcomes.append(outcome)
-        detected = detected or input_file_type
-    return tuple(outcomes)
+    restore = enable_parsed_source_cache()
+    try:
+        for candidate in candidates:
+            config = candidate.config
+            outcome, input_file_type = _run_candidate(
+                input_,
+                candidate,
+                config if detected is None else config.model_copy(update={"input_file_type": detected}),
+                vocabulary=vocabulary,
+                previous_input=previous_input,
+                remote_text_cache=remote_text_cache,
+            )
+            outcomes.append(outcome)
+            detected = detected or input_file_type
+    finally:
+        restore()
+    return tuple(outcomes), detected

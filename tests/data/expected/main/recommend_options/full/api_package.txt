@@ -22,8 +22,9 @@ Add (5 options)
       measured: GitHub REST API description: 1872 -> 1538 types, names over 40 characters 370 -> 227
       measured: Stripe API description: problem names 348 -> 158
       measured: SchemaStore workflow schema: Type1 to Type19 disappear
-      trial: recommended - enum-shape -> recommended: classes 15 -> 9, problem names 2 -> 2; 0 of 9
-      classes matched by schema location renamed (0 only renumbered), 6 removed, 0 added
+      trial: recommended - naming-strategy - enum-shape -> recommended - naming-strategy: classes 15
+      -> 9, problem names 3 -> 0; 0 of 9 classes matched by schema location renamed (0 only
+      renumbered), 6 removed, 0 added
   --reuse-model --collapse-reuse-models   [reuse.identical-inline-shapes]
       The schema repeats shapes (inline objects repeating a shape: 10, in 2 shapes; inline enums
       repeating a value set: 0, in 0 sets; union branches that only constrain their parent's
@@ -33,8 +34,9 @@ Add (5 options)
       measured: Stripe API description: 2512 -> 2022 types
       measured: SchemaStore workflow schema: the step branches' copies With1 to With11 became one
       With1
-      trial: recommended - reuse -> recommended: classes 17 -> 9, problem names 2 -> 2; 0 of 9
-      classes matched by schema location renamed (0 only renumbered), 8 removed, 0 added
+      trial: recommended - naming-strategy - reuse -> recommended - naming-strategy: classes 14 ->
+      9, problem names 0 -> 0; 0 of 9 classes matched by schema location renamed (0 only
+      renumbered), 5 removed, 0 added
   --no-treat-dot-as-module   [dotted-keys.flat-when-namespaces-cycle]
       Dotted keys (2, in 2 namespaces) reference each other in cycles (namespace groups: 1). As
       modules, cycle members move to _internal.py, where same-named classes of different namespaces
@@ -42,10 +44,11 @@ Add (5 options)
       measured: Stripe API description: Card_1 and Customer_1 disappear, problem names 158 -> 153
       measured: Kubernetes apps/v1: no cycles, so modules stay (median name length 16 as modules, 32
       flat)
-      trial: recommended - dotted-keys -> recommended: classes 14 -> 9, problem names 2 -> 2; 2 of 9
-      classes matched by schema location renamed (0 only renumbered), 5 removed, 0 added, e.g.
-        Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
-        Shipment -> ShippingShipment   #/components/schemas/shipping.Shipment
+      trial: recommended - naming-strategy - dotted-keys -> recommended - naming-strategy: classes
+      12 -> 9, problem names 0 -> 0; 2 of 9 classes matched by schema location renamed (0 only
+      renumbered), 3 removed, 0 added, e.g.
+        Invoice -> BillingInvoice   at components/schemas/billing.Invoice
+        Shipment -> ShippingShipment   at components/schemas/shipping.Shipment
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
       Inline oneOf/anyOf branches can be named after a tag or key (branches with a tag value no
       sibling shares: 2; objects with one required key: 0); otherwise they are named after their
@@ -62,11 +65,11 @@ Add (5 options)
       WorkflowDispatchInputString, Boolean, ...)
       measured: with full-path on the GitHub and OpenAI descriptions: no change in problem names;
       schemas without tagged or key branches: no change
-      trial: recommended - union-variant-names -> recommended: classes 9 -> 9, problem names 2 -> 2;
-      2 of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added,
-      e.g.
-        PaymentPayment -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
-        PaymentPayment1 -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
+      trial: recommended - naming-strategy - union-variant-names -> recommended - naming-strategy:
+      classes 9 -> 9, problem names 2 -> 0; 2 of 9 classes matched by schema location renamed (0
+      only renumbered), 0 removed, 0 added, e.g.
+        Payment1 -> PaymentCard   at components/schemas/Payment > oneOf 0
+        Payment2 -> PaymentBank   at components/schemas/Payment > oneOf 1
 
 Left out after the trial (the rules recommend these)
   --naming-strategy full-path   [naming.qualify-shared-inline-names]
@@ -85,9 +88,9 @@ Left out after the trial (the rules recommend these)
       lost
       trial: recommended - naming-strategy -> recommended: classes 9 -> 9, problem names 0 -> 2; 4
       of 9 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        Total -> OrderTotal   #/components/schemas/Order/total
-        PaymentCard -> PaymentPaymentCard   #/components/schemas/Payment/oneOf/0
-        PaymentBank -> PaymentPaymentBank   #/components/schemas/Payment/oneOf/1
+        Total -> OrderTotal   at components/schemas/Order > total
+        PaymentCard -> PaymentPaymentCard   at components/schemas/Payment > oneOf 0
+        PaymentBank -> PaymentPaymentBank   at components/schemas/Payment > oneOf 1
 
 Not recommended
   --use-title-as-name   [titles.keys-when-titles-collide]
@@ -101,23 +104,29 @@ Not recommended
       measured: Stripe API description: 17% of component titles changed in four months; class names
       from keys renamed 0.0% of locations
 
-Trial  8 candidates generated in memory without formatting; nothing written
-  candidate                          classes   problems  numbered  long  doubled  displaced  median
-  current                                 22  5 (22.7%)         5     0        0          0       6
-  preset                                  22  5 (22.7%)         5     0        0          0       6
-  recommended                              9  2 (22.2%)         0     0        2          0      10
-  recommended - naming-strategy            9   0 (0.0%)         0     0        0          0       5   selected
-  recommended - enum-shape                15  2 (13.3%)         0     0        2          0      11
-  recommended - reuse                     17  2 (11.8%)         0     0        2          0      14
-  recommended - dotted-keys               14  2 (14.3%)         0     0        2          0       7
-  recommended - union-variant-names        9  2 (22.2%)         1     0        2          0      10
+Trial  12 candidates generated in memory without formatting; nothing written
+  candidate                                            classes   problems  numbered  long  doubled  displaced  median
+  current                                                   22  5 (22.7%)         5     0        0          0       6
+  preset                                                    22  5 (22.7%)         5     0        0          0       6
+  recommended                                                9  2 (22.2%)         0     0        2          0      10
+  recommended - naming-strategy                              9   0 (0.0%)         0     0        0          0       5   selected
+  recommended - enum-shape                                  15  2 (13.3%)         0     0        2          0      11
+  recommended - reuse                                       17  2 (11.8%)         0     0        2          0      14
+  recommended - dotted-keys                                 14  2 (14.3%)         0     0        2          0       7
+  recommended - union-variant-names                          9  2 (22.2%)         1     0        2          0      10
+  recommended - naming-strategy - enum-shape                15  3 (20.0%)         3     0        0          0       6
+  recommended - naming-strategy - reuse                     14   0 (0.0%)         0     0        0          0       5
+  recommended - naming-strategy - dotted-keys               12   0 (0.0%)         0     0        0          0       5
+  recommended - naming-strategy - union-variant-names        9  2 (22.2%)         2     0        0          0       5
   current: the configuration as set, without the preset; never selected
+  the last 4 rows: the selected configuration without or with one option, to measure each option on
+  it; never selected
 
 Changes from the current configuration (current -> recommended - naming-strategy)
   4 of 9 classes matched by schema location renamed (0 only renumbered), 13 removed, 0 added, e.g.
-    Payment1 -> PaymentCard   #/components/schemas/Payment/oneOf/0
-    Payment2 -> PaymentBank   #/components/schemas/Payment/oneOf/1
-    Invoice -> BillingInvoice   #/components/schemas/billing.Invoice
+    Payment1 -> PaymentCard   at components/schemas/Payment > oneOf 0
+    Payment2 -> PaymentBank   at components/schemas/Payment > oneOf 1
+    Invoice -> BillingInvoice   at components/schemas/billing.Invoice
 
 Command
   datamodel-codegen --collapse-reuse-models --enum-field-as-literal all --input api.yaml --output models --preset standard-py314-20261017 --reuse-model --target-python-version 3.14 --no-treat-dot-as-module --use-tag-as-union-variant-name

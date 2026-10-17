@@ -6,6 +6,7 @@
     "standard",
     "practical"
   ],
+  "full_trial_max_models": 3000,
   "rules": [
     {
       "id": "titles.keys-when-titles-collide",

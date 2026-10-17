@@ -31,6 +31,7 @@ __all__ = [
     "name_metrics",
     "name_records",
     "name_stability",
+    "readable_location",
     "schema_vocabulary",
 ]
 
@@ -58,6 +59,8 @@ _STATUS_CODE: Final = re.compile(r"(?<![0-9])[1-5][0-9][0-9](?![0-9])")
 _SPECIAL: Final = re.compile(r"#-datamodel-code-generator-#-(\w+?)-#-special-#")
 _MARKER: Final = re.compile(r"#-datamodel-code-generator-#-(.+?)-#-special-#")
 _UNNAMED_KINDS: Final = frozenset({"object", "enum"})
+_BRANCH_KINDS: Final = ("oneOf", "anyOf", "allOf")
+_ITEM_KINDS: Final = frozenset({"array", "items"})
 _UNION_VARIANT: Final = re.compile(r"(?:^|/)(oneOf|anyOf)/(\d+)(/allOf)?$")
 _ROOT_REF: Final = re.compile(r"^(?:.*?\.(?:json|ya?ml))?#?/?")
 _TRAILING_DIGITS: Final = re.compile(r"\d+$")
@@ -152,10 +155,8 @@ def schema_vocabulary(document: Mapping[str, Any] | None) -> SchemaVocabulary:
 class NameRecord:
     """One generated class and the schema location it came from.
 
-    ``path`` is the benchmark's location key, which matches classes across generations. ``location`` shows the same
-    steps as a JSON Pointer fragment: a step that carries dcg's internal marker keeps its base name and, unless the
-    marker stands for an object or an enum, its kind (the input's ``properties`` and ``items`` steps are not
-    recorded, #4843).
+    ``path`` is the benchmark's location key, which matches classes across generations. ``location`` describes the
+    same place for people (see ``readable_location``); it is not a JSON Pointer.
     """
 
     name: str
@@ -164,8 +165,36 @@ class NameRecord:
     members: tuple[str, ...]
 
 
-def _pointer_step(step: str) -> str:
-    return "/" + step.replace("~", "~0").replace("/", "~1")
+def readable_location(raw: Sequence[str]) -> str:
+    """Describe a class's schema location: the named schema or operation, then each inline step after ``>``.
+
+    The named schema is ``components/<section>/<key>``, ``definitions/<key>`` or ``$defs/<key>``, an operation its
+    path steps; anything else hangs off the ``(root)`` schema. dcg's internal path markers are left out; a union
+    branch reads ``oneOf 0`` and an array item ``item``. The ``properties`` and ``items`` steps of the schema are not
+    recorded in model metadata (#4843), so the result is a description, never a JSON Pointer.
+    """
+    steps = [(_MARKER.sub("", part), _MARKER.findall(part)) for part in raw]
+    split = 0
+    match [name for name, _ in steps[:1]]:
+        case ["components"]:
+            split = 3
+        case ["definitions" | "$defs"]:
+            split = 2
+        case ["paths" | "webhooks"]:
+            split = next((index for index, (_, kinds) in enumerate(steps) if kinds), len(steps))
+    split = min(split, len(steps))
+    inline: list[str] = []
+    previous = steps[split - 1][1] if split else []
+    for name, kinds in steps[split:]:
+        branch = next((kind for kind in _BRANCH_KINDS if kind in previous), None)
+        if name.isdigit() and branch is not None:
+            inline.append(f"{branch} {name}")
+        elif name.isdigit() and _ITEM_KINDS.intersection(previous):
+            inline.append("item")
+        elif name:
+            inline.append(name)
+        previous = kinds
+    return " > ".join(("/".join(name for name, _ in steps[:split]) or "(root)", *inline))
 
 
 def name_records(metadata: ModelMetadata | None) -> tuple[NameRecord, ...]:
@@ -176,18 +205,15 @@ def name_records(metadata: ModelMetadata | None) -> tuple[NameRecord, ...]:
         if not raw and (reference := model["source_ref"]):
             raw = [part for part in _ROOT_REF.sub("", reference).split("/") if part]
         steps: list[str] = []
-        location: list[str] = []
         for part in raw:
             special = _SPECIAL.search(part)
             kind = () if special is None or special.group(1) in _UNNAMED_KINDS else (special.group(1),)
             steps.extend(step for step in (_SPECIAL.sub("", part), *kind) if step)
-            kinds = (marked for marked in _MARKER.findall(part) if marked not in _UNNAMED_KINDS)
-            location.extend(_pointer_step(step) for step in (_MARKER.sub("", part), *kinds) if step)
         records.append(
             NameRecord(
                 name=model["class_name"],
                 path="/".join(steps),
-                location="#" + "".join(location),
+                location=readable_location(raw),
                 members=tuple(field["original_name"] or field["name"] for field in model["fields"]),
             )
         )

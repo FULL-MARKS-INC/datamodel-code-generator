@@ -21,10 +21,10 @@ Add (1 option)
       and a number.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
-      trial: recommended - title-source -> recommended: classes 4 -> 4, problem names 0 -> 0; 2 of 4
-      classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        PaymentCard -> Card   #/components/schemas/Booking/payment/oneOf/0
-        PaymentBankAccount -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+      trial: preset -> recommended - union-variant-names: classes 4 -> 4, problem names 1 -> 0; 2 of
+      4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
+        Payment -> Card   at components/schemas/Booking > payment > oneOf 0
+        Payment1 -> BankAccount   at components/schemas/Booking > payment > oneOf 1
 
 Left out after the trial (the rules recommend these)
   --use-tag-as-union-variant-name   [unions.name-variants-after-tags]
@@ -57,8 +57,8 @@ Trial  5 candidates generated in memory without formatting; nothing written
 
 Changes from the current configuration (current -> recommended - union-variant-names)
   2 of 4 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-    Payment -> Card   #/components/schemas/Booking/payment/oneOf/0
-    Payment1 -> BankAccount   #/components/schemas/Booking/payment/oneOf/1
+    Payment -> Card   at components/schemas/Booking > payment > oneOf 0
+    Payment1 -> BankAccount   at components/schemas/Booking > payment > oneOf 1
 
 Command
   datamodel-codegen --input titled_variants.yaml --preset standard-py314-20261017 --target-python-version 3.14 --use-title-as-name

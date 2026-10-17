@@ -31,9 +31,9 @@ Add (1 option)
       lost
       trial: preset -> recommended: classes 6 -> 6, problem names 2 -> 1; 3 of 6 classes matched by
       schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-        Dimensions -> ProductDimensions   #/$defs/Product/dimensions
-        Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
-        Price -> ModelPrice   #/price/oneOf/0
+        Dimensions -> ProductDimensions   at $defs/Product > dimensions
+        Dimensions1 -> VariantDimensions   at $defs/Variant > dimensions
+        Price -> ModelPrice   at (root) > price > oneOf 0
 
 Trial  3 candidates generated in memory without formatting; nothing written
   candidate    classes   problems  numbered  long  doubled  displaced  median
@@ -44,9 +44,9 @@ Trial  3 candidates generated in memory without formatting; nothing written
 
 Changes from the current configuration (current -> recommended)
   3 of 6 classes matched by schema location renamed (0 only renumbered), 0 removed, 0 added, e.g.
-    Dimensions -> ProductDimensions   #/$defs/Product/dimensions
-    Dimensions1 -> VariantDimensions   #/$defs/Variant/dimensions
-    Price -> ModelPrice   #/price/oneOf/0
+    Dimensions -> ProductDimensions   at $defs/Product > dimensions
+    Dimensions1 -> VariantDimensions   at $defs/Variant > dimensions
+    Price -> ModelPrice   at (root) > price > oneOf 0
 
 Command
   datamodel-codegen --formatters builtin --input-file-type jsonschema --naming-strategy full-path --preset standard-py314-20261017 --target-python-version 3.14

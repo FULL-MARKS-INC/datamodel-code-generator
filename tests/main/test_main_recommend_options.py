@@ -17,6 +17,7 @@ from datamodel_code_generator import chdir
 from datamodel_code_generator.__main__ import Config, Exit
 from datamodel_code_generator.arguments import arg_parser
 from datamodel_code_generator.config import GenerateConfig
+from datamodel_code_generator.experimental import EXPERIMENTAL_FEATURES
 from tests.conftest import MockHttpxResponse, assert_httpx_get_kwargs, assert_output
 from tests.main.conftest import (
     DATA_PATH,
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 EXPECTED_PATH = EXPECTED_MAIN_PATH / "recommend_options"
 INPUT_PATH = DATA_PATH / "recommend_options"
 CHANGELOG = Path(__file__).parents[2] / "CHANGELOG.md"
+RECOMMEND_DOCS = Path(__file__).parents[2] / "docs" / "recommend-options.md"
 GRAPHQL_INPUT = DATA_PATH / "graphql" / "simple-star-wars.graphql"
 RULES_FILE = "src/datamodel_code_generator/resources/recommender_rules.json"
 REGISTRY_GUIDE = (
@@ -137,6 +139,12 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
         pytest.param("events.yaml", [], "asyncapi.txt", id="asyncapi"),
         pytest.param("events_v3.yaml", [], "asyncapi_v3.txt", id="asyncapi-v3"),
         pytest.param("swagger.yaml", ["--input-file-type", "openapi"], "swagger.txt", id="swagger"),
+        pytest.param(
+            "swagger.yaml", ["--input-file-type", "jsonschema"], "swagger_jsonschema.txt", id="swagger-definitions"
+        ),
+        pytest.param(
+            "operations.yaml", ["--openapi-scopes", "schemas", "paths"], "operations_paths.txt", id="paths-scope"
+        ),
         pytest.param(
             "operations.yaml",
             [
@@ -488,6 +496,23 @@ def _rule_problems(data: dict[str, Any], placeholders: set[str], newest_release:
     ]
 
 
+def _mirror_problems(limit: int) -> list[str]:
+    """Return the texts that state the full-trial limit without the rule data's value."""
+    help_text = next(action.help for action in arg_parser._actions if "--recommend-options" in action.option_strings)
+    texts = {
+        "the --recommend-options help in arguments.py": str(help_text),
+        "the cli-option.recommend-options note in experimental.py": EXPERIMENTAL_FEATURES[
+            "cli-option.recommend-options"
+        ].note,
+        "docs/recommend-options.md": RECOMMEND_DOCS.read_text(encoding="utf-8"),
+    }
+    return [
+        f"{place} does not state full_trial_max_models ({limit}); update it"
+        for place, text in texts.items()
+        if str(limit) not in text
+    ]
+
+
 def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Rules only set registered options, registry entries name the rules that set them, and texts use real signals."""
     shutil.copy(INPUT_PATH / "api.yaml", tmp_path / "api.yaml")
@@ -497,7 +522,11 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
             use_builtin_default_formatter=False,
         )
     payload = json.loads(capsys.readouterr().out)
-    problems = _rule_problems(_rules_data(), {*payload["signals"], *payload["facts"]}, _newest_release())
+    data = _rules_data()
+    problems = [
+        *_rule_problems(data, {*payload["signals"], *payload["facts"]}, _newest_release()),
+        *_mirror_problems(data["full_trial_max_models"]),
+    ]
     assert_output(
         "\n".join([
             "Rule data problems:",
@@ -540,11 +569,33 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
             id="diff-against",
         ),
         pytest.param(
-            [INPUT_PATH / "catalog.json"],
-            ["--input", "catalog.json", "--output-format", "json", "--target-python-version", "3.14"],
+            [INPUT_PATH / "api.yaml"],
+            ["--input", "api.yaml", "--output-format", "json", "--target-python-version", "3.14"],
             ("full",),
-            "full/catalog_json.txt",
+            "full/api_json.txt",
             id="json",
+        ),
+        pytest.param(
+            [INPUT_PATH / "store.yaml"],
+            [
+                "--input",
+                "store.yaml",
+                "--input-file-type",
+                "openapi",
+                "--generate-server",
+                "fastapi",
+                "--output",
+                "app/models.py",
+                "--server-output",
+                "app/server",
+                "--server-package",
+                "app.server",
+                "--server-model-package",
+                "app.models",
+            ],
+            ("full",),
+            "full/server_target.txt",
+            id="server-target",
         ),
         pytest.param(
             [INPUT_PATH / "api.yaml"],
@@ -620,22 +671,23 @@ def test_recommend_options_compares_candidates(
     _recommend(tmp_path, capsys, args, expected, inputs=_inputs(*inputs), mode=mode)
 
 
-def test_recommend_options_compares_candidates_for_directories(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Detect the input type of a directory once, as one generation does, and compare the candidates."""
-    _recommend(
-        tmp_path,
-        capsys,
-        ["--input", "."],
-        "full/directory.txt",
-        inputs=_inputs(INPUT_PATH / "catalog.json"),
-        mode=("full",),
-        expected_stderr=(
-            "The input file type was determined to be: jsonschema\n"
-            "This can be specified explicitly with the `--input-file-type` option.\n"
+@pytest.mark.parametrize(
+    ("source", "args", "expected"),
+    [
+        pytest.param("catalog.json", [], "full/directory.txt", id="detected-type"),
+        pytest.param(
+            "unicode_titles.json", ["--encoding", "ascii"], "full/directory_undecodable.txt", id="undecodable"
         ),
-    )
+    ],
+)
+def test_recommend_options_compares_candidates_for_directories(
+    source: str, args: list[str], expected: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Compare the candidates of a directory input, which generation types itself; print nothing on stderr.
+
+    The type the trial read is a note. A file the candidates cannot decode rejects each of them with a one-line reason.
+    """
+    _recommend(tmp_path, capsys, ["--input", ".", *args], expected, inputs=_inputs(INPUT_PATH / source), mode=("full",))
 
 
 @pytest.mark.parametrize(
@@ -713,6 +765,28 @@ def test_recommend_options_compares_candidates_from_url(
     assert_httpx_get_kwargs(mock_get, call_count=1, expected_url=url)
 
 
+def test_recommend_options_compares_candidates_while_updating_the_lock(
+    mock_httpx_get: HttpxGetMockFactory, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Accept remote references the lock does not record yet under --update-lock, and never write the lock."""
+    url = "https://api.example.com/specs/catalog.json"
+    mock_get = mock_httpx_get(
+        MockHttpxResponse(url, INPUT_PATH / "remote_catalog.json"),
+        MockHttpxResponse("https://api.example.com/specs/common.json", INPUT_PATH / "remote_common.json"),
+    )
+    lock = tmp_path / "datamodel-codegen.lock"
+    lock.write_text('{"version": 1, "resources": []}\n', encoding="utf-8")
+    _recommend(
+        tmp_path,
+        capsys,
+        ["--url", url, "--update-lock", "--target-python-version", "3.14"],
+        "full/url_update_lock.txt",
+        mode=("full",),
+    )
+    assert_httpx_get_kwargs(mock_get, call_count=2, expected_urls=[url, "https://api.example.com/specs/common.json"])
+    assert_output(lock.read_text(encoding="utf-8"), EXPECTED_PATH / "full" / "url_update_lock_file.txt")
+
+
 def test_recommend_options_compares_candidates_for_projects(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Compare the candidates with the project's configuration and list the class names adopting them changes."""
     _recommend(
@@ -739,6 +813,16 @@ def test_recommend_options_compares_candidates_for_projects(tmp_path: Path, caps
             id="locked",
         ),
         pytest.param(["--input-model", "missing_models:Pet"], "Cannot find module 'missing_models'", id="input-model"),
+        pytest.param(
+            ["--input", "catalog.json", "--diff-against", "missing.json", "--output", "models.py"],
+            "Unable to read --diff-against missing.json: No such file or directory\n",
+            id="diff-against-missing",
+        ),
+        pytest.param(
+            ["--input", "catalog.json", "--input-file-type", "openapi", "--generate-server", "fastapi"],
+            "Error: --generate-server requires --server-output, --server-package and --server-model-package\n",
+            id="server-target-options",
+        ),
     ],
 )
 def test_recommend_options_full_reports_generation_errors(

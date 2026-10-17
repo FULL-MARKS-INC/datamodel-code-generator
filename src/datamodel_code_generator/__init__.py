@@ -3055,9 +3055,9 @@ def _collect_model_metadata(
     """Return the metadata of the models generate() would write for a config, writing nothing, and the input type.
 
     The run takes generate()'s preparation, parse and compatibility retries, so the class names are the names
-    generation gives; formatting, every output, the remote lock update and a selected server or client are left out.
-    The input type is the one the run parsed, detected when the config's is auto. Runs that share
-    ``remote_text_cache`` fetch each remote document once.
+    generation gives; formatting, every output, and a selected server or client are left out. The remote lock is
+    checked, and with ``update_lock`` updated, in memory only: nothing commits it. The input type is the one the run
+    parsed, detected when the config's is auto. Runs that share ``remote_text_cache`` fetch each remote document once.
     """
     config = _prepare_generate_facade_config(
         config.model_copy(
@@ -3065,7 +3065,6 @@ def _collect_model_metadata(
                 "formatters": [],
                 "custom_formatters": None,
                 "emit_model_metadata": None,
-                "update_lock": False,
                 "generate_server": None,
                 "generate_client": None,
             }
