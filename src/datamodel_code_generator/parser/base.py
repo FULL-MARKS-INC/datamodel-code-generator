@@ -2323,12 +2323,17 @@ def _has_related_instance_field(
 
 
 def _tag_discriminator_unions(
-    unions: list[_DiscriminatorUnion], derived_models: dict[str, list[DataModel]], *, can_retain_cache: bool
-) -> None:
+    unions: list[_DiscriminatorUnion],
+    derived_models: dict[str, list[DataModel]],
+    *,
+    can_retain_cache: bool,
+    defers_related: bool,
+) -> list[_DiscriminatorUnion]:
     """Tag the unions whose variants all carry their tag, whatever the order the unions are declared in.
 
     msgspec refuses a tag field that a base or derived struct keeps as an instance field, so unions are left out
-    until the remaining ones agree. A struct that two tag fields claim keeps the first one.
+    until the remaining ones agree. A struct that two tag fields claim keeps the first one. While other modules
+    remain, the unions left out for such a struct are returned instead, as a union of a later module may tag it.
     """
     related: dict[int, list[str]] = {}
     while True:
@@ -2367,9 +2372,13 @@ def _tag_discriminator_unions(
         ):
             break
         related.update(found)
+    deferred: list[_DiscriminatorUnion] = []
     for index, (owner, tags, tag_field, _) in enumerate(unions):
         if names := untaggable.get(index):
             reason = f"{', '.join(names)} cannot take exactly one tag for it"
+        elif defers_related and index in related:
+            deferred.append(unions[index])
+            continue
         elif names := related.get(index):
             reason = f"a base or derived struct of {', '.join(names)} keeps {tag_field!r} as a field"
         else:
@@ -2380,6 +2389,7 @@ def _tag_discriminator_unions(
             f"{reason}; its variants are left untagged.",
             stacklevel=2,
         )
+    return deferred
 
 
 def _apply_discriminator_tags(tags: list[_DiscriminatorTag], tag_field: str, *, can_retain_cache: bool) -> None:
@@ -3127,6 +3137,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._hidden_named_types: dict[tuple[str, str | None], bool] = {}
         self._hiding_field_names: dict[tuple[str, str | None], str] = {}
         self._variant_discriminator_tags: dict[tuple[int, str], _VariantDiscriminatorTags] = {}
+        self._deferred_tagged_unions: list[_DiscriminatorUnion] = []
+        self._defers_tagged_unions = False
         self._removed_reuse_users: dict[int, tuple[DataType, list[str]]] = {}
         self._renamed_types: dict[str, str] = {}
         self._collapsed_reuse_models: dict[int, list[DataModel]] = {}
@@ -4534,12 +4546,17 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             has_imported_literal = any(import_ == IMPORT_LITERAL for import_ in imports)
             if has_imported_literal:  # pragma: no cover
                 imports.append(IMPORT_LITERAL)
-        if unions:
+        if (deferred := self._deferred_tagged_unions) or unions:
             derived_models: defaultdict[str, list[DataModel]] = defaultdict(list)
             for derived_model in {id(model): model for model in chain(self.results, models)}.values():
                 for base_model in _find_base_classes(derived_model):
                     derived_models[base_model.path].append(derived_model)
-            _tag_discriminator_unions(unions, derived_models, can_retain_cache=can_retain_cache)
+            self._deferred_tagged_unions = _tag_discriminator_unions(
+                [*deferred, *unions],
+                derived_models,
+                can_retain_cache=can_retain_cache or bool(deferred),
+                defers_related=self._defers_tagged_unions,
+            )
 
     @classmethod
     def _create_set_from_list(cls, data_type: DataType) -> DataType | None:
@@ -8776,6 +8793,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._hidden_named_types.clear()
         self._hiding_field_names.clear()
         self._variant_discriminator_tags.clear()
+        self._deferred_tagged_unions.clear()
         self._removed_reuse_users.clear()
         self._renamed_types.clear()
 
@@ -8792,7 +8810,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 require_dict_key_edge=not self.run_context.preserve_circular_root_models,
             )
 
-        for module_, models in module_models:
+        for position, (module_, models) in enumerate(module_models, 1):
+            self._defers_tagged_unions = position < len(module_models)
             ctx = self._process_single_module(
                 module_,
                 models,

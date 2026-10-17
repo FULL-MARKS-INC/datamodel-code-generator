@@ -1126,13 +1126,14 @@ def test_main_openapi_msgspec_tagged_unions_declaration_order(order: str, output
     )
 
 
-def test_main_openapi_msgspec_tagged_unions_modules(output_dir: Path) -> None:
-    """Tag variants whose base struct a union of an already generated module tagged."""
+@pytest.mark.parametrize("name", ["msgspec_tagged_unions_modules", "msgspec_tagged_unions_modules_variants_first"])
+def test_main_openapi_msgspec_tagged_unions_modules(name: str, output_dir: Path) -> None:
+    """Tag variants and their base struct that a union of another module tags, whichever module is generated first."""
     run_main_and_assert(
-        input_path=OPEN_API_DATA_PATH / "discriminator_msgspec_tagged_unions_modules.yaml",
+        input_path=OPEN_API_DATA_PATH / f"discriminator_{name}.yaml",
         output_path=output_dir,
         input_file_type="openapi",
-        expected_directory=EXPECTED_OPENAPI_PATH / "discriminator" / "msgspec_tagged_unions_modules",
+        expected_directory=EXPECTED_OPENAPI_PATH / "discriminator" / name,
         extra_args=[
             "--output-model-type",
             "msgspec.Struct",
