@@ -930,6 +930,8 @@ class ModelResolver:  # noqa: PLR0904
         self.final_yielding_names: dict[str, tuple[str, str | None]] = {}
         self.yielding_name_changes: set[str] = set()
         self._new_references_yield = False
+        self._paths_named_past_parent: set[tuple[str, ...]] = set()
+        self._model_name_map_paths: set[str] = set()
 
         # Default value overrides from external JSON file
         self.default_value_overrides: Mapping[str, Any] = (
@@ -994,6 +996,8 @@ class ModelResolver:  # noqa: PLR0904
         self.__dict__.setdefault("final_yielding_names", {})
         self.__dict__.setdefault("yielding_name_changes", set())
         self.__dict__.setdefault("_new_references_yield", False)
+        self.__dict__.setdefault("_paths_named_past_parent", set())
+        self.__dict__.setdefault("_model_name_map_paths", set())
         for name, value in slot_state.items():
             setattr(self, name, value)
 
@@ -1087,6 +1091,8 @@ class ModelResolver:  # noqa: PLR0904
             return class_name
 
         self._ensure_model_name_map_value(path, class_name.name, mapped_name, reserved_name)
+        if mapped_name != class_name.name:
+            self._model_name_map_paths.add(path)
         return ClassName(name=mapped_name, duplicate_name=None)
 
     def _reset_for_reuse(self, exclude_names: set[str]) -> None:
@@ -1498,15 +1504,31 @@ class ModelResolver:  # noqa: PLR0904
         self._update_reference_name(None, reference.name, unique=use_unique)
         return reference
 
+    def named_after(self, path: str, original_name: str) -> bool:
+        """Return whether the reference at ``path`` is named from ``original_name`` and not by ``--model-name-map``."""
+        return (
+            (reference := self.references.get(path)) is not None
+            and reference.original_name == original_name
+            and path not in self._model_name_map_paths
+        )
+
+    def name_past_parent(self, path: Sequence[str]) -> None:
+        """Prefix the models under ``path`` as if the model that holds ``path`` were not in their path."""
+        self._paths_named_past_parent.add(tuple(path))
+
     def _find_parent_reference(self, path: Sequence[str]) -> Reference | None:
         """Find the closest parent reference for a given path.
 
-        Traverses up the path hierarchy to find the first existing parent reference.
+        Traverses up the path hierarchy to find the first existing parent reference, passing over one whose child
+        on the way is named past it.
         Returns None if no parent reference is found.
         """
         parent_path = list(path[:-1])
         while parent_path:
-            if parent_reference := self.references.get(self.join_path(tuple(parent_path))):
+            if (parent_reference := self.references.get(self.join_path(tuple(parent_path)))) and (
+                not self._paths_named_past_parent
+                or tuple(path[: len(parent_path) + 1]) not in self._paths_named_past_parent
+            ):
                 return parent_reference
             parent_path = parent_path[:-1]
         return None

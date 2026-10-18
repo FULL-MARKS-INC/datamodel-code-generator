@@ -9465,6 +9465,70 @@ def test_duplicate_models(output_file: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        pytest.param(["--use-tag-as-union-variant-name", "--naming-strategy", "full-path"], id="full-path"),
+        pytest.param(["--use-tag-as-union-variant-name", "--naming-strategy", "parent-prefixed"], id="parent-prefixed"),
+        pytest.param(["--use-tag-as-union-variant-name", "--parent-scoped-naming"], id="parent-scoped-naming"),
+        pytest.param(
+            ["--use-tag-as-union-variant-name", "--naming-strategy", "full-path", "--use-title-as-name"],
+            id="use-title-as-name",
+        ),
+        pytest.param(
+            [
+                "--use-tag-as-union-variant-name",
+                "--naming-strategy",
+                "full-path",
+                "--model-name-map",
+                '{"ItemEditedChangesFieldValue": "FieldValueChange"}',
+            ],
+            id="model-name-map",
+        ),
+        pytest.param(
+            [
+                "--use-tag-as-union-variant-name",
+                "--naming-strategy",
+                "full-path",
+                "--model-name-map",
+                '{"ItemEditedChangesFieldValue": "ItemEditedChangesFieldValue"}',
+            ],
+            id="model-name-map-identity",
+        ),
+        pytest.param(["--use-tag-as-union-variant-name"], id="numbered"),
+        pytest.param(["--naming-strategy", "full-path"], id="without-tags"),
+    ],
+)
+def test_main_openapi_use_tag_as_union_variant_name_parent_prefix(output_file: Path, extra_args: list[str]) -> None:
+    """Name the value of a branch named after its key as if the branch were not in its path under prefixed naming.
+
+    The branch keeps its key name; a branch its title names or `--model-name-map` renames, and the branches the option
+    leaves numbered, keep prefixing the models in them with their own names.
+    """
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "use_tag_as_union_variant_name_parent_prefix.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        assert_func=assert_file_content,
+        extra_args=[
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--formatters",
+            "builtin",
+            "--disable-timestamp",
+            *extra_args,
+        ],
+    )
+    assert_generated_model_json_validation(
+        output_file,
+        module_name="use_tag_as_union_variant_name_parent_prefix",
+        model_name="ItemEdited",
+        valid_json='{"field_value": {"own": "o"}, "changes": {"field_value": {"from": "x", "nested": {"a": "y"}}}}',
+        invalid_json='{"changes": {"field_value": {"nested": {"a": 1}}}}',
+        expected_error_type="string_type",
+    )
+
+
 def test_main_openapi_shadowed_imports(output_file: Path) -> None:
     """Test OpenAPI generation with shadowed imports."""
     run_main_and_assert(
