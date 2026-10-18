@@ -18,9 +18,9 @@ process. For every subject the script takes its recommendation, then scores each
 decision grid on top of the latest standard preset: the configuration is passed with `--preset` and measured as the
 trial's `current` candidate. A grid value is a table of config fields; an empty table leaves the decision to the
 preset, and a value that no option can express is rejected. Configurations are ranked like the trial ranks its
-candidates (numbered and doubled class names, other problem names, renamed locations, median length; then fewer
-options); regret counts problem names. Rule conditions are evaluated with the recommender's own evaluator on the
-shipped rules data. The script writes to --out (which must be empty):
+candidates (numbered and doubled class names, other problem names, renamed locations, median length, fields generated
+without their constraints; then fewer options); regret counts problem names. Rule conditions are evaluated with the
+recommender's own evaluator on the shipped rules data. The script writes to --out (which must be empty):
 - report.md: regret per schema, rules whose decision disagrees with the grid, threshold proposals, preset
   proposals, import checks, upstream heads (with --check-upstream), failures and changes since the last calibration;
 - scores.json: every number behind the report;
@@ -80,6 +80,7 @@ RULES_PACKAGE = "datamodel_code_generator.resources"
 RULES_FILE = "recommender_rules.json"
 RULES_SOURCE = f"src/{RULES_PACKAGE.replace('.', '/')}/{RULES_FILE}"
 PRESET_FAMILY = "standard"
+OPTIONAL_RULE = "optional, not calibrated"
 MANIFEST_FORMAT = 1
 CALIBRATION_FORMAT = 1
 KINDS = ("asyncapi", "jsonschema", "openapi")
@@ -555,13 +556,17 @@ def _candidate(trial: Mapping[str, Any], label: str) -> dict[str, Any]:
 
 
 def _measurement(candidate: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a trial candidate's class-name metrics and renamed locations, or the error that rejected it."""
+    """Return a trial candidate's class-name metrics, renamed locations and fields without their constraints.
+
+    A rejected candidate gives the error that rejected it.
+    """
     if candidate["error"] is not None:
         return {"error": candidate["error"]}
     stability = candidate["stability"]
     return {
         "metrics": candidate["metrics"],
         "renamed": None if stability is None else stability["locations"]["renamed"],
+        "dropped_constraints": candidate["dropped_constraint_warnings"],
     }
 
 
@@ -770,14 +775,18 @@ def _ok(result: Mapping[str, Any]) -> bool:
     return "metrics" in result
 
 
-def _rank(result: Mapping[str, Any]) -> tuple[int, int, int, int]:
-    """Return the trial's ranking key: numbered and doubled names, other problem names, renamed locations, median."""
+def _rank(result: Mapping[str, Any]) -> tuple[int, int, int, int, int]:
+    """Return the trial's ranking key: numbered and doubled names, other problem names, renamed locations, median.
+
+    Fields generated without their constraints come last, after the class names.
+    """
     metrics = result["metrics"]
     return (
         metrics["numbered"] + metrics["doubled"],
         metrics["other_problems"],
         result.get("renamed") or 0,
         metrics["median_length"],
+        result.get("dropped_constraints") or 0,
     )
 
 
@@ -989,7 +998,10 @@ def _rule_rows(
     grid: Mapping[str, tuple[dict[str, Any], ...]],
     settings: Settings,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Judge every rule against the grid and search one threshold change per disagreeing rule."""
+    """Judge every rule against the grid and search one threshold change per disagreeing rule.
+
+    Optional rules list options for the user to decide and never enter the command, so they are labelled, not judged.
+    """
     points = _grid_points(grid)
     rows: list[dict[str, Any]] = []
     proposals: list[dict[str, Any]] = []
@@ -997,6 +1009,9 @@ def _rule_rows(
         decision = rule.get("decision", "")
         row: dict[str, Any] = {"rule": rule.get("id"), "decision": decision}
         rows.append(row)
+        if rule.get("optional"):
+            row["covered"] = OPTIONAL_RULE
+            continue
         if decision not in grid:
             row["covered"] = f"decision {decision} has no grid axis"
             continue
@@ -1383,7 +1398,16 @@ def _rules_section(rules: list[dict[str, Any]]) -> list[str]:
         ),
         "",
     ]
-    lines.extend(f"- Not covered: {row['rule']} ({row['covered']})" for row in rules if row["covered"] != "yes")
+    lines.extend(
+        f"- Not covered: {row['rule']} ({row['covered']})"
+        for row in rules
+        if row["covered"] not in {"yes", OPTIONAL_RULE}
+    )
+    lines.extend(
+        f"- Optional, not calibrated: {row['rule']} (listed for the user to decide, never in the command)"
+        for row in rules
+        if row["covered"] == OPTIONAL_RULE
+    )
     if lost := [row for row in covered if sum(map(len, row["disagrees"].values())) >= DISAGREEMENT_LIMIT]:
         lines += ["", f"Rules that disagree on {DISAGREEMENT_LIMIT} or more schemas:", ""]
         lines.extend(

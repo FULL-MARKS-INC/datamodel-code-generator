@@ -92,15 +92,16 @@ def _recommend(
     option_description="""Recommend options for the input schema on top of the latest dated preset (experimental).
 
 `--recommend-options` reads the input schema, measures how it is written (shared property names, inline
-enums and objects, repeated shapes, titles, tagged unions, dotted keys), and applies the recommender's rule
-data. For a schema of up to 3000 estimated models, it then generates the candidate configurations in memory
-(the preset, the recommendation, and the recommendation without or with each option), compares their class
-names, and recommends the best candidate, with class names before and after each option. It prints the
-latest dated preset to start from, the options to add with the reason for each, options it advises against,
-the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
-on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
-`--output-format json` for a structured payload, or `--generate-prompt` to include the recommendation in an LLM
-prompt instead.""",
+enums and objects, repeated shapes, titles, tagged unions, dotted keys, constraint keywords and formats), and
+applies the recommender's rule data. For a schema of up to 3000 estimated models, it then generates the
+candidate configurations in memory (the preset, the recommendation, and the recommendation without or with
+each option), compares their class names and the fields generated without their constraints, and recommends
+the best candidate, with class names before and after each option. It prints the latest dated preset to
+start from, the options to add with the reason for each, optional validation and policy options that stay out
+of the command, options it advises against, the compared candidates, and the resulting command and
+pyproject.toml block. Nothing is written. Options set on the command line or in pyproject.toml are kept and
+reported when the rules suggest another value. Add `--output-format json` for a structured payload, or
+`--generate-prompt` to include the recommendation in an LLM prompt instead.""",
     input_schema="recommend_options/api.yaml",
     cli_args=["--input", "api.yaml", "--input-file-type", "openapi", "--recommend-options"],
     expected_stdout="main/recommend_options/api.txt",
@@ -116,15 +117,16 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     """Recommend options for the input schema on top of the latest dated preset (experimental).
 
     `--recommend-options` reads the input schema, measures how it is written (shared property names, inline
-    enums and objects, repeated shapes, titles, tagged unions, dotted keys), and applies the recommender's rule
-    data. For a schema of up to 3000 estimated models, it then generates the candidate configurations in memory
-    (the preset, the recommendation, and the recommendation without or with each option), compares their class
-    names, and recommends the best candidate, with class names before and after each option. It prints the
-    latest dated preset to start from, the options to add with the reason for each, options it advises against,
-    the compared candidates, and the resulting command and pyproject.toml block. Nothing is written. Options set
-    on the command line or in pyproject.toml are kept and reported when the rules suggest another value. Add
-    `--output-format json` for a structured payload, or `--generate-prompt` to include the recommendation in an LLM
-    prompt instead.
+    enums and objects, repeated shapes, titles, tagged unions, dotted keys, constraint keywords and formats), and
+    applies the recommender's rule data. For a schema of up to 3000 estimated models, it then generates the
+    candidate configurations in memory (the preset, the recommendation, and the recommendation without or with
+    each option), compares their class names and the fields generated without their constraints, and recommends
+    the best candidate, with class names before and after each option. It prints the latest dated preset to
+    start from, the options to add with the reason for each, optional validation and policy options that stay out
+    of the command, options it advises against, the compared candidates, and the resulting command and
+    pyproject.toml block. Nothing is written. Options set on the command line or in pyproject.toml are kept and
+    reported when the rules suggest another value. Add `--output-format json` for a structured payload, or
+    `--generate-prompt` to include the recommendation in an LLM prompt instead.
     """
     _recommend(
         tmp_path,
@@ -187,12 +189,29 @@ def test_recommend_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
         pytest.param("api.yaml", ["--preset", "practical-py314-20261017"], "api_practical.txt", id="preset-value"),
         pytest.param("api.yaml", ["--preset", "standard-py314-20261015"], "api_older_preset.txt", id="older-preset"),
         pytest.param("api.yaml", ["--output-model-type", "typing.TypedDict"], "api_typed_dict.txt", id="typed-dict"),
+        pytest.param("validation.yaml", [], "validation.txt", id="validation-keywords"),
+        pytest.param(
+            "validation.yaml", ["--output-format", "json"], "validation_json.txt", id="validation-keywords-json"
+        ),
+        pytest.param(
+            "validation.yaml",
+            ["--strict-types", "int", "--generate-schema-validators"],
+            "validation_options_set.txt",
+            id="validation-options-set",
+        ),
+        pytest.param("deployment.json", [], "deployment.txt", id="pattern-properties"),
+        pytest.param("settings.json", [], "settings.txt", id="draft-07-pattern-map"),
     ],
 )
 def test_recommend_options_for_schemas(
     source: str, args: list[str], expected: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Recommend options for each supported schema format, keeping the options the command sets."""
+    """Recommend options for each supported schema format, keeping the options the command sets.
+
+    Optional validation and policy options are listed apart from the command, unless the command sets them.
+    Keywords beside a ``$ref`` count where the document's version applies them (not in draft-07), and a
+    patternProperties map with one pattern and no other keys needs no validators.
+    """
     extra = [] if "--preset" in args else ["--target-python-version", "3.14"]
     _recommend(tmp_path, capsys, ["--input", source, *extra, *args], expected, inputs=_inputs(INPUT_PATH / source))
 
@@ -717,6 +736,27 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
             "full/json_data.txt",
             id="json-data",
         ),
+        pytest.param(
+            [INPUT_PATH / "validation.yaml"],
+            ["--input", "validation.yaml", "--target-python-version", "3.14"],
+            ("full",),
+            "full/validation.txt",
+            id="unconstrained-fields",
+        ),
+        pytest.param(
+            [INPUT_PATH / "schedules.yaml"],
+            ["--input", "schedules.yaml", "--output", "models", "--target-python-version", "3.14"],
+            ("full",),
+            "full/schedules_package.txt",
+            id="unconstrained-fields-per-module",
+        ),
+        pytest.param(
+            [INPUT_PATH / "schedules.yaml"],
+            ["--input", "schedules.yaml", "--target-python-version", "3.14"],
+            ("full",),
+            "full/schedules.txt",
+            id="unconstrained-fields-of-the-kept-parse",
+        ),
     ],
 )
 def test_recommend_options_compares_candidates(
@@ -730,7 +770,10 @@ def test_recommend_options_compares_candidates(
     """Generate the candidate configurations in memory and recommend the one whose class names score best.
 
     Without a mode, a schema of up to 3000 estimated models is compared. Each option shows the candidates without and
-    with it and the class names it changes; the report ends with the changes from the current configuration.
+    with it and the class names it changes; the report ends with the changes from the current configuration. Each
+    candidate also counts the fields dcg warns it generates without some of their constraints: per module, so
+    same-named classes of different modules count apart, and only in the parse whose models the generation keeps,
+    such as the repaired single module of dotted keys written to stdout.
     """
     _recommend(tmp_path, capsys, args, expected, inputs=_inputs(*inputs), mode=mode)
 

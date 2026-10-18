@@ -2736,6 +2736,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                 discarded_parser = parser
                 parser, results, data_model_types, defer_formatting, extra_template_data = untyped_parse
         model_metadata = parser.model_metadata
+        parser.record_dropped_constraints()
         class_names = parser.generated_class_names
         if repair_modules := parser.invalid_dotted_stdout_repair_modules:
             legacy_inventory = parser.generated_model_inventory
@@ -2816,6 +2817,7 @@ def _parse_generation(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, PLR0917
                         retry_accepted = True
                         results = retry_results
                         model_metadata = retry_parser.model_metadata
+                        retry_parser.record_dropped_constraints()
                         class_names = retry_parser.generated_class_names
                         data_model_types = retry_data_model_types
                         defer_formatting = retry_defer_formatting

@@ -55,6 +55,16 @@ SignalName: TypeAlias = Literal[
     "root_is_object",
     "root_title_words",
     "estimated_models",
+    "unique_items",
+    "pattern_properties",
+    "unmodeled_pattern_properties",
+    "multiple_of",
+    "nullable_keywords",
+    "boolean_exclusive_bounds",
+    "coercible_scalars",
+    "formats",
+    "integer_range_formats",
+    "decimal_formats",
 ]
 FactName: TypeAlias = Literal[
     "schema",
@@ -64,6 +74,7 @@ FactName: TypeAlias = Literal[
     "key_style",
     "root_title",
     "scopes",
+    "format_examples",
 ]
 SchemaKind: TypeAlias = Literal["openapi", "jsonschema", "asyncapi"]
 SIGNAL_NAMES: frozenset[str] = frozenset(get_args(SignalName))
@@ -89,6 +100,8 @@ _SUBSCHEMA_KEYWORDS = (
 )
 _SHAPE_IGNORED_KEYWORDS = frozenset({"description", "title", "example", "examples", "$comment"})
 _CONSTRAINT_ONLY_KEYWORDS = frozenset({"type", "properties", "required", "description", "title", "$comment"})
+_COERCIBLE_TYPES = frozenset({"integer", "number", "boolean"})
+_INTEGER_RANGE_FORMATS = ("int32", "int64")
 _NORMALIZE = re.compile(r"[^a-z0-9]")
 _EXAMPLE_LIMIT = 4
 _TAG_REFERENCE_DEPTH = 5
@@ -133,6 +146,30 @@ def _single_literal(node: object) -> tuple[str, object] | None:
     if isinstance(values := node.get("enum"), list) and len(values) == 1:
         return "enum", values[0]
     return None
+
+
+def _unmodeled_pattern_properties(node: Mapping[str, Any]) -> bool:
+    """Return whether a typed map cannot express a schema's patternProperties exactly, while schema validators can.
+
+    A map of pattern-checked keys is exact for one pattern on an object that declares no properties and allows no other
+    keys. Next to declared properties, with several patterns, or with other keys allowed, it rejects valid objects or
+    leaves values unchecked; next to an additionalProperties schema, schema validators were measured no better.
+    """
+    if not isinstance(patterns := node.get("patternProperties"), dict) or not patterns:
+        return False
+    if isinstance(properties := node.get("properties"), dict) and properties:
+        return True
+    if isinstance(additional := node.get("additionalProperties"), dict) and additional:
+        return False
+    return len(patterns) > 1 or additional is not False
+
+
+def _types(node: Mapping[str, Any]) -> frozenset[str]:
+    """Return the JSON types a schema declares, from a type name or a list of them."""
+    declared = node.get("type")
+    return frozenset(
+        name for name in (declared if isinstance(declared, list) else (declared,)) if isinstance(name, str)
+    )
 
 
 def _subschemas(node: Mapping[str, Any]) -> Iterator[object]:
@@ -300,13 +337,52 @@ def _schema_label(document: Mapping[str, Any], kind: SchemaKind) -> str:
     return f"{'OpenAPI' if kind == 'openapi' else 'AsyncAPI'} {document.get(kind)}"
 
 
+@dataclass(frozen=True, slots=True)
+class _Dialect:
+    """How generation reads the schemas of one document: the formats it maps, and the version-dependent keywords.
+
+    ``ref_siblings`` is whether keywords beside ``$ref`` apply, ``nullable_keyword`` whether ``nullable`` is the
+    document's keyword for null (OpenAPI 3.0 and AsyncAPI 2).
+    """
+
+    data_formats: Mapping[str, Mapping[str, Any]]
+    ref_siblings: bool
+    nullable_keyword: bool
+
+
+def _dialect(document: Mapping[str, Any], kind: SchemaKind) -> _Dialect:
+    """Return how generation reads a document, from its declared or detected version, as the parsers decide it."""
+    from datamodel_code_generator.enums import JsonSchemaVersion  # noqa: PLC0415
+    from datamodel_code_generator.parser.schema_version import (  # noqa: PLC0415
+        OpenAPISchemaFeatures,
+        detect_asyncapi_version,
+        detect_jsonschema_version,
+        detect_openapi_version,
+        get_data_formats,
+    )
+
+    data_formats = get_data_formats(is_openapi=True)
+    if kind == "jsonschema":
+        version = detect_jsonschema_version(dict(document))
+        ref_siblings = version not in {JsonSchemaVersion.Draft4, JsonSchemaVersion.Draft6, JsonSchemaVersion.Draft7}
+        return _Dialect(data_formats, ref_siblings=ref_siblings, nullable_keyword=False)
+    features = (
+        OpenAPISchemaFeatures.from_openapi_version(detect_openapi_version(dict(document)))
+        if kind == "openapi"
+        else OpenAPISchemaFeatures.from_asyncapi_version(detect_asyncapi_version(dict(document)))
+    )
+    return _Dialect(data_formats, features.ref_sibling_keywords, features.nullable_keyword)
+
+
 class _Walker:
     """Collect the counts of one document in a single pass over its named schemas."""
 
-    def __init__(self, document: Mapping[str, Any], refs: Mapping[str, str]) -> None:
+    def __init__(self, document: Mapping[str, Any], refs: Mapping[str, str], dialect: _Dialect) -> None:
         self.document = document
         self.refs = refs
+        self.dialect = dialect
         self.counts: Counter[str] = Counter()
+        self.formats: Counter[str] = Counter()
         self.name_parents: defaultdict[str, set[str]] = defaultdict(set)
         self.object_name_parents: defaultdict[str, set[str]] = defaultdict(set)
         self.enum_name_parents: defaultdict[str, set[str]] = defaultdict(set)
@@ -330,10 +406,42 @@ class _Walker:
             key = ("l", *(self.shape(value) for value in node))
         return self.shape_ids.setdefault(key, len(self.shape_ids))
 
-    def count_single_value_enum(self, node: Mapping[str, Any]) -> None:
-        """Count a schema whose enum has exactly one value and that declares no const."""
+    def count_validation_keywords(self, node: Mapping[str, Any]) -> None:
+        """Count the uniqueItems, patternProperties and multipleOf keywords of a schema."""
+        counts = self.counts
+        counts["unique_items"] += node.get("uniqueItems") is True
+        counts["pattern_properties"] += isinstance(patterns := node.get("patternProperties"), dict) and bool(patterns)
+        counts["unmodeled_pattern_properties"] += _unmodeled_pattern_properties(node)
+        divisor = node.get("multipleOf")
+        counts["multiple_of"] += isinstance(divisor, int | float) and not isinstance(divisor, bool)
+
+    def count_keywords(self, node: Mapping[str, Any]) -> None:
+        """Count a one-value enum without const, the validation keywords of a schema, and a format generation maps.
+
+        A format counts when generation maps it to a type for one of the types the schema declares.
+        """
+        counts = self.counts
         values = node.get("enum")
-        self.counts["single_value_enums"] += isinstance(values, list) and len(values) == 1 and "const" not in node
+        counts["single_value_enums"] += isinstance(values, list) and len(values) == 1 and "const" not in node
+        self.count_validation_keywords(node)
+        counts["nullable_keywords"] += self.dialect.nullable_keyword and node.get("nullable") is True
+        counts["boolean_exclusive_bounds"] += (
+            node.get("exclusiveMinimum") is True or node.get("exclusiveMaximum") is True
+        )
+        types = _types(node)
+        counts["coercible_scalars"] += not types.isdisjoint(_COERCIBLE_TYPES)
+        if isinstance(format_ := node.get("format"), str) and any(
+            format_ in self.dialect.data_formats.get(name, ()) for name in types
+        ):
+            self.formats[format_] += 1
+
+    def count_reference(self, node: Mapping[str, Any], component: str) -> bool:
+        """Record a reference and count the validation keywords beside it where they apply; return whether it is one."""
+        if not self.record_reference(node, component):
+            return False
+        if self.dialect.ref_siblings:
+            self.count_validation_keywords(node)
+        return True
 
     def record_reference(self, node: Mapping[str, Any], component: str) -> bool:
         """Record a reference to a named schema; return whether the node is a reference."""
@@ -349,8 +457,8 @@ class _Walker:
         Subschemas reached without a property (array items, union branches, allOf parts) are named after the
         schema itself, so they get an empty name and do not count as names shared with other parents.
         """
-        if isinstance(node, dict) and not self.record_reference(node, key):
-            self.count_single_value_enum(node)
+        if isinstance(node, dict) and not self.count_reference(node, key):
+            self.count_keywords(node)
             self.walk_children(node, parent=key, name="", depth=0, component=key)
 
     def record_name(self, name: str, parent: str, parents: defaultdict[str, set[str]]) -> None:
@@ -361,9 +469,9 @@ class _Walker:
 
     def walk(self, node: object, *, parent: str, name: str, depth: int, component: str) -> None:
         """Walk one inline schema reached under a parent model through a property or keyword."""
-        if not isinstance(node, dict) or _is_null(node) or self.record_reference(node, component):
+        if not isinstance(node, dict) or _is_null(node) or self.count_reference(node, component):
             return
-        self.count_single_value_enum(node)
+        self.count_keywords(node)
         if _is_enum(node):
             self.counts["inline_enums"] += 1
             self.record_name(name, parent, self.enum_name_parents)
@@ -568,7 +676,7 @@ def measure_signals(
     path scopes.
     """
     all_components = _components(document, kind)
-    walker = _Walker(document, _component_refs(kind, all_components))
+    walker = _Walker(document, _component_refs(kind, all_components), _dialect(document, kind))
     counts = walker.counts
     extra: list[tuple[str, object]] = []
     if kind == "openapi":
@@ -589,6 +697,7 @@ def measure_signals(
     root_title = ""
     if kind == "jsonschema":
         root = {key: value for key, value in document.items() if key not in {"definitions", "$defs"}}
+        walker.count_keywords(root)
         walker.walk_children(root, parent="#", name="", depth=0, component="")
         counts["root_is_object"] = _is_object(root) or root.get("type") == "object"
         root_title = title.strip() if isinstance(title := root.get("title"), str) else ""
@@ -604,6 +713,9 @@ def measure_signals(
     counts["dotted_keys"] = len(dotted)
     counts["dotted_key_namespaces"] = len({_module(key) for key in dotted})
     counts["dotted_namespace_reference_cycles"] = _reference_cycles(walker.references) if dotted else 0
+    counts["formats"] = walker.formats.total()
+    counts["integer_range_formats"] = sum(walker.formats[name] for name in _INTEGER_RANGE_FORMATS)
+    counts["decimal_formats"] = walker.formats["decimal"]
     counts["estimated_models"] = (
         counts["components"] + counts["inline_objects"] + counts["inline_enums"] + counts["inline_union_variants"]
     )
@@ -618,6 +730,7 @@ def measure_signals(
             "duplicate_title_examples": _example_text(shared_titles),
             "key_style": "".join(f"{style} ({count} of {len(components)})" for style, count in styles),
             "root_title": root_title,
+            "format_examples": _example_text(walker.formats),
         },
         component_names=frozenset(normalize_name(key) for key in all_components),
     )

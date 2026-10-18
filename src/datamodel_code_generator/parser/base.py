@@ -14,6 +14,7 @@ import re
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict, defaultdict
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import cache, partial
@@ -146,7 +147,7 @@ from datamodel_code_generator.types import (
 from datamodel_code_generator.util import camel_to_snake, record_watch_dependency
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Collection, Generator, Iterable, Iterator, Mapping, Sequence
 
     from datamodel_code_generator._format_types import Formatter, PythonVersion
     from datamodel_code_generator._types import ParserConfigDict
@@ -356,6 +357,32 @@ ClassGraph: TypeAlias = dict[ClassNode, set[ClassNode]]
 ModulePath: TypeAlias = tuple[str, ...]
 ModuleModels: TypeAlias = list[tuple[ModulePath, list[DataModel]]]
 ForwarderMap: TypeAlias = dict[ModulePath, tuple[ModulePath, list[tuple[str, str]]]]
+DroppedConstraintFields: TypeAlias = frozenset[tuple[ModulePath, str]]
+
+
+@dataclass(slots=True)
+class DroppedConstraints:
+    """The dropped-constraint warnings of the parse whose models a generation returns, each with its module."""
+
+    warnings: DroppedConstraintFields = frozenset()
+
+
+_DROPPED_CONSTRAINTS: ContextVar[DroppedConstraints | None] = ContextVar("dropped_constraints", default=None)
+
+
+@contextlib.contextmanager
+def dropped_constraints_recorded() -> Generator[DroppedConstraints]:
+    """Record the dropped-constraint warnings of the generations run inside, for the parse whose models they return.
+
+    A warning counts once per module and message, so same-named fields of different modules count apart, and a parse
+    a generation discards, such as a compatibility retry it does not take, adds nothing.
+    """
+    record = DroppedConstraints()
+    token = _DROPPED_CONSTRAINTS.set(record)
+    try:
+        yield record
+    finally:
+        _DROPPED_CONSTRAINTS.reset(token)
 
 
 def _module_key(
@@ -3236,6 +3263,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     _cache_parsed_sources_from_path: ClassVar[bool] = False
     _collapses_list_item_root_models: ClassVar[bool] = True
     _http_fetch_session: _HTTPFetchSession | None = None
+    _dropped_constraint_fields: DroppedConstraintFields = frozenset()
 
     @property
     def run_context(self) -> ParserRunContext:
@@ -5829,13 +5857,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         elif (recorded := self._variant_discriminator_tags.get(key)) is not None:
             recorded.others.pop(union_name, None)
 
-    def __warn_about_dropped_constraints(self, contexts: Sequence[ModuleContext]) -> None:  # noqa: PLR6301
-        """Warn once per field whose constraints the output model leaves out on its type."""
+    def __warn_about_dropped_constraints(self, contexts: Sequence[ModuleContext]) -> None:
+        """Warn once per field whose constraints the output model leaves out on its type, and keep each warning."""
+        fields: set[tuple[ModulePath, str]] = set()
         for ctx in contexts:
             for model in ctx.models:
                 for field in model.fields:
                     if (message := field.dropped_constraints_warning) is not None:
                         warn(message, stacklevel=2)
+                        fields.add((ctx.module, message))
+        self._dropped_constraint_fields = frozenset(fields)
+
+    def record_dropped_constraints(self) -> None:
+        """Record this parse's dropped-constraint warnings as those of the generation that returns its models."""
+        if (record := _DROPPED_CONSTRAINTS.get()) is not None:
+            record.warnings = self._dropped_constraint_fields
 
     def __warn_about_variant_discriminator_tags(self) -> None:
         """Warn once per variant whose generated tag differs from a tag a union maps it to."""
