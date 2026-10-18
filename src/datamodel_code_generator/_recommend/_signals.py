@@ -39,6 +39,7 @@ SignalName: TypeAlias = Literal[
     "component_titles_equal_other_key",
     "inline_titled_objects",
     "inline_title_max_repeat",
+    "inline_titles_equal_component",
     "unions",
     "discriminated_unions",
     "inline_union_variants",
@@ -123,6 +124,7 @@ _PRIMITIVE_TYPES = frozenset({"string", "integer", "number", "boolean"})
 _BOUND_KEYWORDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
 _CONSTRAINT_KEYWORDS = _BOUND_KEYWORDS | {"minLength", "maxLength", "pattern", "multipleOf"}
 _UNION_KEYWORDS = ("oneOf", "anyOf")
+_SIBLING_KEYWORDS = (*_SCHEMA_MAP_KEYWORDS, *_SUBSCHEMA_KEYWORDS)
 _REQUIRED_ONLY_KEYWORDS = frozenset({"required", "description", "title", "$comment"})
 _WIDE_INTEGER_FORMATS = frozenset({"int32", "int64"})
 _NAME_WORDS = re.compile(r"[A-Z][a-z0-9]*|[a-z0-9]+")
@@ -544,7 +546,7 @@ class _Walker:
         )
         owners = [_field_owners(self.document, ref) for member in members if isinstance(ref := member.get("$ref"), str)]
         counts["allof_independent_bases"] += any(
-            first and second and not first <= second and not second <= first for first in owners for second in owners
+            first - second and second - first for first in owners for second in owners
         )
 
     def inspect_discriminator(self, node: Mapping[str, Any], name: str) -> None:
@@ -593,12 +595,15 @@ class _Walker:
         self.counts["single_value_enums"] += isinstance(values, list) and len(values) == 1 and "const" not in node
 
     def record_reference(self, node: Mapping[str, Any], component: str) -> bool:
-        """Record a reference to a named schema; return whether the node is a reference."""
+        """Record a reference to a named schema; return whether the node is only a reference.
+
+        A reference with subschemas beside it, such as a oneOf or properties, is walked like any schema.
+        """
         if not isinstance(ref := node.get("$ref"), str):
             return False
         if (target := self.refs.get(ref)) is not None:
             self.references[component].add(target)
-        return True
+        return not any(keyword in node for keyword in _SIBLING_KEYWORDS)
 
     def walk_named(self, key: str, node: object) -> None:
         """Walk one named schema; the schema itself is the first parent model.
@@ -918,6 +923,10 @@ def measure_signals(
     shared_names = _count_names(counts, walker, components)
     shared_titles = _count_titles(counts, titles, components)
     counts["inline_title_max_repeat"] = max(walker.inline_titles.values(), default=0)
+    component_words = {normalize_name(name) for name in (*components, *titles.values())}
+    counts["inline_titles_equal_component"] = sum(
+        count for title, count in walker.inline_titles.items() if normalize_name(title) in component_words
+    )
     dotted = [key for key in components if "." in key]
     counts["dotted_keys"] = len(dotted)
     counts["dotted_key_namespaces"] = len({_module(key) for key in dotted})

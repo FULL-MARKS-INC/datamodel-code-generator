@@ -23,7 +23,7 @@
 #4823 full-path-dotted-cycle-import: --input 4823.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
   Work around known issues (1 option)
     --no-treat-dot-as-module   [#4823 full-path-dotted-cycle-import]
-        changes treat-dot-as-module from null to false: With --naming-strategy full-path or
+        changes treat-dot-as-module from unset to false: With --naming-strategy full-path or
         parent-prefixed, inline models of dotted-key schemas whose modules reference each other in a
         cycle move to a module of their own, and the package fails to import (inline models: 1).
     current: with the workarounds of #4823
@@ -44,22 +44,22 @@
   Known issues
     #4831 schema-validators-pattern-model-forward-ref (fails at import): --generate-schema-validators
         writes a patternProperties rule that names a model; when that model is defined later in the
-        module, the module fails with NameError (pattern values that reference a schema: 1). No option
-        avoids it.
+        module, the module fails with NameError (pattern values that reference a schema: 1). Removing
+        --generate-schema-validators from your configuration avoids it.
   Command
     datamodel-codegen --generate-schema-validators --input 4831.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4877 msgspec-allof-independent-bases: --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
-    current    rejected: known issue #4877 msgspec-allof-independent-bases
+    current    rejected (known issue #4877 msgspec-allof-independent-bases)
   Known issues
     #4877 msgspec-allof-independent-bases (stops generation): msgspec.Struct output stops for the
-        whole input when an allOf extends two schemas that both declare properties; Pydantic and
-        dataclass outputs are not affected (allOf schemas: 1). No option avoids it.
+        whole input when an allOf extends two schemas that both declare properties; the other output
+        model types are not affected (allOf schemas: 1). No option avoids it.
+    - Every candidate on the preset was rejected (known issue #4877 msgspec-allof-independent-bases),
   Command
     datamodel-codegen --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
 
 #4882 optional-literal-discriminator: --input 4882.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
-        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
   Work around known issues (1 option)
     --enum-field-as-literal none   [#4882 optional-literal-discriminator]
         changes enum-field-as-literal from "one" to "none": A discriminator property that is a
@@ -153,7 +153,6 @@
     datamodel-codegen --input 4824.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4825 primary-first-component-displaced: --input 4825.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
-        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
   Command
     datamodel-codegen --input 4825.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
 
@@ -177,17 +176,16 @@
 
 #4836 title-as-name-displaces-components: --input 4836.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-title-as-name
   Known issues
-    #4836 title-as-name-displaces-components (class names; the selected candidate has 1 displaced
-        component): --use-title-as-name names every titled schema after its title, so an inline schema
-        that copies a component's title can take the component's name; a scope for it is requested.
+    #4836 title-as-name-displaces-components (class names): --use-title-as-name names every titled
+        schema after its title, so an inline schema that copies a component's name or title can take
+        the component's name; a scope for it is requested (inline titles equal to a component's: 1).
   Command
     datamodel-codegen --input 4836.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-title-as-name
 
 #4839 union-variant-tag-behind-allof: --input 4839.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
   Known issues
-    #4839 union-variant-tag-behind-allof (class names; the selected candidate has 2 numbered union
-        variants): Tag-based variant names do not read a tag that a variant declares only through
-        allOf or $ref, so those variants stay numbered (branches: 2).
+    #4839 union-variant-tag-behind-allof (class names): Tag-based variant names do not read a tag that
+        a variant declares only through allOf or $ref, so those variants stay numbered (branches: 2).
   Command
     datamodel-codegen --input 4839.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
 
@@ -200,25 +198,24 @@
 
 #4845 full-path-allof-property-unprefixed: --input 4845.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
   Known issues
-    #4845 full-path-allof-property-unprefixed (class names; the selected candidate has 2 numbered
-        names): --naming-strategy full-path does not prefix the models it builds from a property's
-        allOf, so they stay numbered (Issue1, Issue2; allOf properties: 2).
+    #4845 full-path-allof-property-unprefixed (class names): --naming-strategy full-path does not
+        prefix the models it builds from a property's allOf, so they stay numbered (Issue1, Issue2;
+        allOf properties: 2).
   Command
     datamodel-codegen --input 4845.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4846 annotated-constrained-primitive-root-models: --input 4846.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
   Known issues
-    #4846 annotated-constrained-primitive-root-models (class names; the selected candidate has 1
-        displaced component): With --use-annotated, a constrained primitive in a union or array
-        becomes a named root model, which can take a component's name (Account becomes AccountModel;
-        branches and items: 2).
+    #4846 annotated-constrained-primitive-root-models (class names): With --use-annotated, a
+        constrained primitive in a union or array becomes a named root model, which can take a
+        component's name (Account becomes AccountModel; branches and items: 2).
   Command
     datamodel-codegen --input 4846.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4847 allof-nested-union-members-numbered: --input 4847.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name
   Known issues
-    #4847 allof-nested-union-members-numbered (class names; the selected candidate has 3 numbered
-        names): An allOf with a nested oneOf or anyOf numbers the union members (Event2, Event3), and
-        tag-based variant names name the helper classes instead (allOf schemas: 1).
+    #4847 allof-nested-union-members-numbered (class names): An allOf with a nested oneOf or anyOf
+        numbers the union members (Event2, Event3), and tag-based variant names name the helper
+        classes instead (allOf schemas: 1).
   Command
     datamodel-codegen --input 4847.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --use-tag-as-union-variant-name

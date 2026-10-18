@@ -28,7 +28,8 @@ Changes from the current configuration (current -> preset)
 Known issues
   #4830 discriminator-literal-keeps-pattern (fails at import): A discriminator property with a
       pattern keeps the pattern on its Literal tag with Annotated or Field constraints, so pydantic
-      rejects the union at import (tags: 2). No option avoids it.
+      rejects the union at import (tags: 2). Removing --field-constraints from your configuration
+      avoids it.
 
 Command
   datamodel-codegen --field-constraints --input 4830.yaml --preset standard-py314-20261017 --target-python-version 3.14 --no-use-annotated

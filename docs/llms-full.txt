@@ -4275,9 +4275,6 @@ Add (1 option)
       Inline union variants carry titles that no other schema uses (titled variants: 2, e.g. Card
       x1, Bank Account x1). Titles name them after what they are, instead of their parent property
       and a number.
-      known issue #4836: --use-title-as-name names every titled schema after its title, so an inline
-      schema that copies a component's title can take the component's name; a scope for it is
-      requested.
       measured: Train Travel API: BookingPayment.source variants became Card and BankAccount instead
       of Source and Source1
       trial: preset -> recommended - union-variant-names: classes 4 -> 4, problem names 1 -> 0; 2 of
@@ -4429,10 +4426,12 @@ first, and the notes say so.
 Each candidate's class names are measured like the naming benchmark the rules come from. A name is a problem when it
 is numbered (`Status1`), contains a status code, is a generic word (`Item`, `Data`), is longer than 40 characters,
 repeats a word the schema does not repeat (`ShapeShape`), takes a component's name from the component, or names an
-inline model like an unrelated component. Candidates are ranked by, in order: fewer problem names; with
-`--diff-against`, fewer classes renamed between the previous and the current schema; a shorter median name; fewer
-added options. The best candidate other than `current` is selected, and the command and `pyproject.toml` block carry
-its options.
+inline model like an unrelated component. Candidates are ranked by, in order: fewer numbered or doubled names; fewer
+other problem names, such as names over 40 characters; with `--diff-against`, fewer classes renamed between the
+previous and the current schema; a shorter median name. Numbered names count as worse than long descriptive names:
+`Event2` says nothing about the class, while a long name still describes it. Only when two candidates generate exactly
+the same class names does the one with fewer added options rank first; other ties keep the order above. The best
+candidate other than `current` is selected, and the command and `pyproject.toml` block carry its options.
 
 The `trial:` line of each option compares the candidates without and with it on the selected configuration, so it
 shows what that one option changes in the recommended command. When the selected candidate is not the rules'
@@ -4467,13 +4466,18 @@ by issue number and checks the recommended configuration against them:
   for a schema that hits the issue, never as a default. An option the rules recommend is left out when it causes such
   an issue or keeps its workaround from applying. In full
   mode, every candidate is checked the same way, and a candidate is rejected without being generated when a known
-  issue would stop its generation or when its options cause an issue nothing avoids.
+  issue would stop its generation, when its options cause an issue nothing avoids, or when two such issues need
+  different values. A workaround that would break the output in another way is not used. When no single configuration
+  avoids two issues (for example, one needs `--enum-field-as-literal all` and the other `none`), neither workaround is
+  added, and "Known issues" lists both with that reason. When an option you set causes the issue, the report says that
+  removing it avoids the issue.
 - **Other issues** (a dropped constraint, a wrong type, valid data rejected, a constraint not checked): listed under
   "Known issues" with the option that avoids each one, if any. The recommendation does not change your configuration
   for them, because the options that avoid them change other output too.
-- **Class-name issues**: listed when the schema shows them, or, in full mode, when the selected candidate's class
-  names have the issue's symptom, such as doubled or numbered names. An option whose names can hit an issue shows it
-  as a `known issue #N:` line.
+- **Class-name issues**: listed when the schema has the construct the issue needs, or, in full mode, when the
+  selected candidate's class names have the issue's symptom, such as doubled or numbered names. The count of such
+  names is shown only when the class-name metric counts that issue's names alone. An option whose names can hit an
+  issue shows it as a `known issue #N:` line, on the same evidence.
 
 For example, for this schema (`issues.yaml`):
 

@@ -195,8 +195,8 @@
           "full-path"
         ],
         "output": "models",
-        "file": "models/treasury/TransactionEntryTreasury.py",
-        "shows": "class Type("
+        "file": "models/_internal.py",
+        "shows": "from .treasury import TransactionEntryTreasury"
       }
     },
     {
@@ -285,8 +285,8 @@
           "standard-py314-20261017",
           "--generate-schema-validators"
         ],
-        "regex": true,
-        "shows": "class Services\\(.*class Service\\("
+        "shows": "class Services\\(.*class Service\\(",
+        "regex": true
       }
     },
     {
@@ -307,7 +307,7 @@
           }
         ]
       },
-      "message": "msgspec.Struct output stops for the whole input when an allOf extends two schemas that both declare properties; Pydantic and dataclass outputs are not affected (allOf schemas: {allof_independent_bases}).",
+      "message": "msgspec.Struct output stops for the whole input when an allOf extends two schemas that both declare properties; the other output model types are not affected (allOf schemas: {allof_independent_bases}).",
       "repro": {
         "input": "4877.yaml",
         "args": [
@@ -728,7 +728,10 @@
           "standard-py314-20261017",
           "--generate-schema-validators"
         ],
-        "shows": "floor: int | None = None"
+        "lacks": [
+          "13",
+          "'none'"
+        ]
       }
     },
     {
@@ -761,7 +764,9 @@
           "standard-py314-20261017",
           "--generate-schema-validators"
         ],
-        "shows": "reach: Reach | Reach1 | None = None"
+        "lacks": [
+          "one_of"
+        ]
       }
     },
     {
@@ -772,14 +777,26 @@
       "repro": {
         "input": "4837.json",
         "args": [
-          "--input-file-type",
-          "jsonschema",
-          "--preset",
-          "practical-py314-20261017",
-          "--no-use-title-as-name"
+          "--help"
         ],
-        "file": "stderr",
-        "shows": "unrecognized arguments: --no-use-title-as-name"
+        "output": null,
+        "file": "stdout",
+        "lacks": [
+          "--no-disable-timestamp",
+          "--no-strict-nullable",
+          "--no-use-subclass-enum",
+          "--no-reuse-model",
+          "--no-collapse-reuse-models",
+          "--no-use-title-as-name",
+          "--no-use-default-kwarg",
+          "--no-use-object-type",
+          "--no-use-tuple-for-fixed-items",
+          "--no-use-unique-items-as-set",
+          "--no-use-single-line-docstring",
+          "--no-use-schema-description",
+          "--no-use-field-description",
+          "--no-use-field-description-example"
+        ]
       }
     },
     {
@@ -834,11 +851,20 @@
       "issue": 4826,
       "effect": "names",
       "when": {
-        "config": "naming_strategy",
-        "op": "in",
-        "value": [
-          "full-path",
-          "parent-prefixed"
+        "all": [
+          {
+            "config": "naming_strategy",
+            "op": "in",
+            "value": [
+              "full-path",
+              "parent-prefixed"
+            ]
+          },
+          {
+            "signal": "inline_union_variants",
+            "op": ">=",
+            "value": 1
+          }
         ]
       },
       "symptom": "doubled_union_variants",
@@ -907,12 +933,21 @@
       "issue": 4836,
       "effect": "names",
       "when": {
-        "config": "use_title_as_name",
-        "op": "==",
-        "value": true
+        "all": [
+          {
+            "config": "use_title_as_name",
+            "op": "==",
+            "value": true
+          },
+          {
+            "signal": "inline_titles_equal_component",
+            "op": ">=",
+            "value": 1
+          }
+        ]
       },
       "symptom": "displaced",
-      "message": "--use-title-as-name names every titled schema after its title, so an inline schema that copies a component's title can take the component's name; a scope for it is requested.",
+      "message": "--use-title-as-name names every titled schema after its title, so an inline schema that copies a component's name or title can take the component's name; a scope for it is requested (inline titles equal to a component's: {inline_titles_equal_component}).",
       "repro": {
         "input": "4836.yaml",
         "args": [

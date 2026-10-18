@@ -345,8 +345,11 @@ class RecommendNameMetricsPayload(BaseModel):
     long: int = Field(description="Names longer than 40 characters that are not a component key.")
     doubled: int = Field(description="Names repeating a word the schema does not repeat.")
     doubled_union_variants: int = Field(description="Doubled names of oneOf/anyOf variants.")
-    doubled_variant_children: int = Field(description="Doubled names of the property models of oneOf/anyOf variants.")
+    doubled_variant_children: int = Field(
+        description="Doubled names of the one property model of single-property oneOf/anyOf variants."
+    )
     doubled_from_spec: int
+    other_problems: int = Field(description="Problem names that are neither numbered nor doubled.")
     displaced: int = Field(description="Components whose name another class took.")
     inline_like_component: int
     union_variants: int
@@ -418,6 +421,10 @@ class RecommendCitationPayload(BaseModel):
         )
     )
     dropped: list[str] = Field(description="Rule ids of the options left out because of the issue.")
+    dropping: list[str] = Field(description="Config fields the user set whose removal avoids the issue.")
+    conflicts: list[int] = Field(
+        description="Issues, by number, that break the output and that no single configuration avoids together with it."
+    )
 
 
 class RecommendCandidatePayload(BaseModel):

@@ -20,7 +20,7 @@
 #4823 full-path-dotted-cycle-import: --input 4823.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017 --naming-strategy full-path
   Work around known issues (1 option)
     --no-treat-dot-as-module   [#4823 full-path-dotted-cycle-import]
-        changes treat-dot-as-module from null to false: With --naming-strategy full-path or
+        changes treat-dot-as-module from unset to false: With --naming-strategy full-path or
         parent-prefixed, inline models of dotted-key schemas whose modules reference each other in a
         cycle move to a module of their own, and the package fails to import (inline models: 1).
   Command
@@ -39,21 +39,20 @@
   Known issues
     #4831 schema-validators-pattern-model-forward-ref (fails at import): --generate-schema-validators
         writes a patternProperties rule that names a model; when that model is defined later in the
-        module, the module fails with NameError (pattern values that reference a schema: 1). No option
-        avoids it.
+        module, the module fails with NameError (pattern values that reference a schema: 1). Removing
+        --generate-schema-validators from your configuration avoids it.
   Command
     datamodel-codegen --class-name Model4831 --generate-schema-validators --input 4831.json --input-file-type jsonschema --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4877 msgspec-allof-independent-bases: --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
   Known issues
     #4877 msgspec-allof-independent-bases (stops generation): msgspec.Struct output stops for the
-        whole input when an allOf extends two schemas that both declare properties; Pydantic and
-        dataclass outputs are not affected (allOf schemas: 1). No option avoids it.
+        whole input when an allOf extends two schemas that both declare properties; the other output
+        model types are not affected (allOf schemas: 1). No option avoids it.
   Command
     datamodel-codegen --input 4877.yaml --input-file-type openapi --output-model-type msgspec.Struct --preset standard-py314-20261017
 
 #4882 optional-literal-discriminator: --input 4882.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
-        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
   Work around known issues (1 option)
     --enum-field-as-literal none   [#4882 optional-literal-discriminator]
         changes enum-field-as-literal from "one" to "none": A discriminator property that is a
@@ -145,7 +144,6 @@
     datamodel-codegen --input 4824.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset standard-py314-20261017
 
 #4825 primary-first-component-displaced: --input 4825.yaml --input-file-type openapi --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
-        known issue #4826: --naming-strategy full-path joins a parent name with a child name that the
   Command
     datamodel-codegen --input 4825.yaml --input-file-type openapi --naming-strategy full-path --output-model-type pydantic_v2.BaseModel --preset practical-py314-20261017
 

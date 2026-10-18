@@ -107,14 +107,17 @@ class Option:
 class Citation:
     """A known issue the recommended configuration has, or that kept options out of it.
 
-    ``avoided_by`` are the config values that avoid it, when there are any; ``count`` is the selected candidate's
-    count of the class-name metric the issue shows in; ``dropped`` are the options left out because of it.
+    ``avoided_by`` are config values that avoid it, ``dropping`` the fields the user set whose removal avoids it, and
+    ``conflicts`` the issues that no single configuration avoids together with it; ``count`` is the selected
+    candidate's count of the class-name metric the issue shows in; ``dropped`` are the options left out because of it.
     """
 
     issue: KnownIssue
     avoided_by: Mapping[str, OptionValue] = field(default_factory=dict)
     count: int | None = None
     dropped: tuple[Option, ...] = ()
+    dropping: tuple[str, ...] = ()
+    conflicts: tuple[KnownIssue, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -724,7 +727,7 @@ def _trial_candidates(
             **_option_values(candidate.options),
             **{name: value for workaround in check.workarounds for name, value in workaround.values.items()},
         }
-        rejected_by = check.blocking or check.stops_generation
+        rejected_by = check.rejection
         trial_candidates.append(
             TrialCandidate(
                 candidate.label,
@@ -845,8 +848,10 @@ def _trial_notes(request: RecommendRequest, recommendation: Recommendation, dete
             f"{'was' if trial.dropped == 1 else 'were'} left out; the options they would measure show no trial result."
         )
     if trial.selected is None:
+        rejections = sorted({rejection for outcome in trial.outcomes if (rejection := outcome.candidate.rejection)})
+        reason = "failed to generate" if not rejections else f"was rejected ({'; '.join(rejections)})"
         recommendation.notes.append(
-            "Every candidate on the preset failed to generate, so the options are the rules' recommendation alone."
+            f"Every candidate on the preset {reason}, so the options are the rules' recommendation alone."
         )
     if detected is not None:
         recommendation.notes.append(
@@ -864,7 +869,10 @@ def _cite(recommendation: Recommendation, analysed: _Input, check: IssueCheck, m
 
     counts = _issue_signals(analysed).counts
     recommendation.workarounds = list(check.workarounds)
-    recommendation.known_issues.extend(Citation(hit.issue, avoided_by=hit.avoided_by) for hit in check.hits)
+    recommendation.known_issues.extend(
+        Citation(hit.issue, avoided_by=hit.avoided_by, dropping=hit.dropping, conflicts=hit.conflicts)
+        for hit in check.hits
+    )
     recommendation.known_issues.extend(
         Citation(issue, count=count) for issue, count in names_issues(counts, check.values, metrics)
     )
@@ -872,11 +880,27 @@ def _cite(recommendation: Recommendation, analysed: _Input, check: IssueCheck, m
 
     def with_caveats(option: Option) -> Option:
         values = {**check.values, **option.values}
+        measured = metrics if option.effect is None else option.effect.after_metrics
         caveats = (issues[caveat] for caveat in option.decision.rule.caveats)
-        return replace(option, caveats=tuple(issue for issue in caveats if issue.applies(counts, values)))
+        return replace(
+            option,
+            caveats=tuple(issue for issue in caveats if issue.applies(counts, values) and _shows(issue, measured)),
+        )
 
     for name in ("covers", "recommendations", "left_out", "consider", "not_recommended"):
         setattr(recommendation, name, [with_caveats(option) for option in getattr(recommendation, name)])
+
+
+def _shows(issue: KnownIssue, metrics: NameMetrics | None) -> bool:
+    """Return whether the schema or the trial shows a class-name issue's construct, which other issues need not.
+
+    The trial shows it when its symptom metric is not zero; without a measurement, its condition must test a signal.
+    """
+    from datamodel_code_generator._recommend._rules import SignalCondition, leaves  # noqa: PLC0415
+
+    if issue.symptom is not None and metrics is not None:
+        return bool(getattr(metrics, issue.symptom))
+    return issue.effect != "names" or any(isinstance(leaf, SignalCondition) for leaf in leaves(issue.when))
 
 
 def _set_command(request: RecommendRequest, recommendation: Recommendation, command_values: dict[str, Any]) -> None:

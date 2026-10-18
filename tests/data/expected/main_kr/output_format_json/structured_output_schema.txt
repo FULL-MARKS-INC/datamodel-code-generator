@@ -1093,13 +1093,31 @@
           },
           "title": "Dropped",
           "type": "array"
+        },
+        "dropping": {
+          "description": "Config fields the user set whose removal avoids the issue.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Dropping",
+          "type": "array"
+        },
+        "conflicts": {
+          "description": "Issues, by number, that break the output and that no single configuration avoids together with it.",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Conflicts",
+          "type": "array"
         }
       },
       "required": [
         "known_issue",
         "avoided_by",
         "count",
-        "dropped"
+        "dropped",
+        "dropping",
+        "conflicts"
       ],
       "title": "RecommendCitationPayload",
       "type": "object"
@@ -1391,12 +1409,17 @@
           "type": "integer"
         },
         "doubled_variant_children": {
-          "description": "Doubled names of the property models of oneOf/anyOf variants.",
+          "description": "Doubled names of the one property model of single-property oneOf/anyOf variants.",
           "title": "Doubled Variant Children",
           "type": "integer"
         },
         "doubled_from_spec": {
           "title": "Doubled From Spec",
+          "type": "integer"
+        },
+        "other_problems": {
+          "description": "Problem names that are neither numbered nor doubled.",
+          "title": "Other Problems",
           "type": "integer"
         },
         "displaced": {
@@ -1451,6 +1474,7 @@
         "doubled_union_variants",
         "doubled_variant_children",
         "doubled_from_spec",
+        "other_problems",
         "displaced",
         "inline_like_component",
         "union_variants",

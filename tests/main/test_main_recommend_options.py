@@ -657,6 +657,11 @@ def _known_issue_problems(data: dict[str, Any], issues: list[dict[str, Any]], pl
             for issue in issues
             if not (KNOWN_ISSUE_INPUTS / issue["repro"]["input"]).is_file()
         ),
+        *(
+            f"known issue {issue['id']} has a repro that checks nothing; give it shows or lacks"
+            for issue in issues
+            if "shows" not in issue["repro"] and not issue["repro"].get("lacks")
+        ),
     ]
 
 
@@ -828,6 +833,27 @@ def test_recommender_rules_match_the_option_registry(tmp_path: Path, capsys: pyt
             ("full",),
             "full/known_issue_explicit.txt",
             id="known-issue-explicit-options",
+        ),
+        pytest.param(
+            [KNOWN_ISSUE_INPUTS / "4830.yaml"],
+            ["--input", "4830.yaml", "--use-annotated", "--field-constraints", "--target-python-version", "3.14"],
+            ("quick",),
+            "known_issue_explicit_both.txt",
+            id="known-issue-explicit-both",
+        ),
+        pytest.param(
+            [INPUT_PATH / "conflict.yaml"],
+            ["--input", "conflict.yaml", "--target-python-version", "3.14"],
+            ("quick",),
+            "known_issue_conflict.txt",
+            id="known-issue-conflict",
+        ),
+        pytest.param(
+            [INPUT_PATH / "conflict.yaml"],
+            ["--input", "conflict.yaml", "--target-python-version", "3.14"],
+            ("full",),
+            "full/known_issue_conflict.txt",
+            id="known-issue-conflict-full",
         ),
     ],
 )
@@ -1030,24 +1056,24 @@ def test_recommend_options_full_reports_generation_errors(
 
 
 def _reproduction(issue: Mapping[str, Any], run_dir: Path, capsys: pytest.CaptureFixture[str]) -> str:
-    """Generate a known issue's repro in its own directory and return whether the symptom still shows."""
+    """Run a known issue's repro in its own directory and return whether the issue still occurs."""
     repro = issue["repro"]
     run_dir.mkdir()
     shutil.copy(KNOWN_ISSUE_INPUTS / repro["input"], run_dir / repro["input"])
     output = repro.get("output", "model.py")
     with chdir(run_dir), suppress(SystemExit):
         main(["--input", repro["input"], *repro["args"], *(() if output is None else ("--output", output))])
-    stderr = capsys.readouterr().err
+    captured = capsys.readouterr()
     target = repro.get("file", "model.py")
     path = run_dir / target
-    text = stderr if target == "stderr" else path.read_text(encoding="utf-8") if path.is_file() else ""
-    shows = repro["shows"]
-    found = re.search(shows, text, re.DOTALL) is not None if repro.get("regex") else shows in text
-    if found:
-        return "reproduces"
+    text = {"stdout": captured.out, "stderr": captured.err}.get(target) or (
+        path.read_text(encoding="utf-8") if path.is_file() else ""
+    )
+    shows, lacks = repro.get("shows"), repro.get("lacks", [])
+    shown = shows is None or (re.search(shows, text, re.DOTALL) is not None if repro.get("regex") else shows in text)
+    lacking = not lacks or any(item not in text for item in lacks)
     return (
-        f"{RETIRED} ({target} does not show {shows!r}); retire it: delete its entry from {KNOWN_ISSUES_FILE}, its "
-        "repro input, and the rule caveats and option registry entries that name it"
+        "reproduces" if shown and lacking else f"{RETIRED}; retire it: delete its entry, repro, caveats, registry ids"
     )
 
 
@@ -1090,7 +1116,7 @@ def test_recommend_options_cites_known_issues(mode: str, tmp_path: Path, capsys:
     """Recommend options for the repro of every known issue, which the recommendation avoids or cites.
 
     The options that have no --no-* form are cited where a preset sets them (see api_practical.txt), so that issue
-    has no recommendation here: its repro is a command line the CLI rejects.
+    has no recommendation here: its repro reads the help.
     """
     blocks: list[str] = []
     for issue in _known_issues():

@@ -50,6 +50,7 @@
     "inline_title_max_repeat": 0,
     "inline_titled_objects": 0,
     "inline_titled_union_variants": 0,
+    "inline_titles_equal_component": 0,
     "inline_union_variants": 2,
     "integer_enums_with_null": 0,
     "max_inline_depth": 1,
@@ -184,6 +185,7 @@
           "doubled_union_variants": 0,
           "doubled_variant_children": 0,
           "doubled_from_spec": 0,
+          "other_problems": 0,
           "displaced": 0,
           "inline_like_component": 2,
           "union_variants": 2,
@@ -225,6 +227,7 @@
           "doubled_union_variants": 0,
           "doubled_variant_children": 0,
           "doubled_from_spec": 0,
+          "other_problems": 0,
           "displaced": 0,
           "inline_like_component": 2,
           "union_variants": 2,
@@ -269,6 +272,7 @@
           "doubled_union_variants": 2,
           "doubled_variant_children": 0,
           "doubled_from_spec": 0,
+          "other_problems": 0,
           "displaced": 0,
           "inline_like_component": 0,
           "union_variants": 2,
@@ -348,7 +352,9 @@
       "count": null,
       "dropped": [
         "enums.inline-value-sets-as-literal"
-      ]
+      ],
+      "dropping": [],
+      "conflicts": []
     },
     {
       "known_issue": {
@@ -361,7 +367,9 @@
         "generate_schema_validators": true
       },
       "count": null,
-      "dropped": []
+      "dropped": [],
+      "dropping": [],
+      "conflicts": []
     },
     {
       "known_issue": {
@@ -372,7 +380,9 @@
       },
       "avoided_by": {},
       "count": null,
-      "dropped": []
+      "dropped": [],
+      "dropping": [],
+      "conflicts": []
     },
     {
       "known_issue": {
@@ -383,7 +393,9 @@
       },
       "avoided_by": {},
       "count": null,
-      "dropped": []
+      "dropped": [],
+      "dropping": [],
+      "conflicts": []
     },
     {
       "known_issue": {
@@ -394,7 +406,9 @@
       },
       "avoided_by": {},
       "count": 2,
-      "dropped": []
+      "dropped": [],
+      "dropping": [],
+      "conflicts": []
     }
   ],
   "notes": [],

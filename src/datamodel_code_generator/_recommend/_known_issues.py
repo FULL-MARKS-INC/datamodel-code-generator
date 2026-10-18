@@ -9,7 +9,7 @@ configuration whose options cause it is rejected. Every other issue is cited.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
@@ -77,17 +77,19 @@ class Workaround(_Data):
 class Repro(_Data):
     """A generation that shows an issue, which the retirement guard runs.
 
-    ``input`` is a file under tests/data/recommend_options/known_issues, generated with ``args`` and ``--output`` set
-    to ``output``. While the issue occurs, ``file`` (a path in the run directory, or ``stderr``) contains ``shows``,
-    or matches it as a regular expression when ``regex`` is set.
+    ``input`` is a file under tests/data/recommend_options/known_issues, run with ``args`` and ``--output`` set to
+    ``output``. While the issue occurs, ``file`` (a path in the run directory, ``stdout``, or ``stderr``) contains
+    ``shows`` (a regular expression when ``regex`` is set) and lacks at least one of the texts in ``lacks``, which a
+    fix would add.
     """
 
     input: str
     args: tuple[str, ...]
     output: str | None = "model.py"
     file: str = "model.py"
-    shows: str
+    shows: str | None = None
     regex: bool = False
+    lacks: tuple[str, ...] = ()
 
 
 class KnownIssue(_Data):
@@ -187,10 +189,17 @@ class AppliedWorkaround:
 
 @dataclass(frozen=True, slots=True)
 class Hit:
-    """A known issue a configuration has, and the config values that would avoid it, if any."""
+    """A known issue a configuration has, and what would avoid it.
+
+    ``avoided_by`` are config values that avoid it without causing an issue that breaks the output; ``dropping`` are
+    the fields the user set whose removal avoids it; ``conflicts`` are issues that break the output and that no single
+    configuration avoids together with this one.
+    """
 
     issue: KnownIssue
-    avoided_by: Mapping[str, OptionValue]
+    avoided_by: Mapping[str, OptionValue] = field(default_factory=dict)
+    dropping: tuple[str, ...] = ()
+    conflicts: tuple[KnownIssue, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,10 +217,14 @@ class IssueCheck:
     values: Mapping[str, Any]
 
     @property
-    def stops_generation(self) -> KnownIssue | None:
-        """Return an issue that stops generation of this configuration, so it need not be generated."""
-        issues = (self.blocking, *(hit.issue for hit in self.hits))
-        return next((issue for issue in issues if issue and issue.effect == "generation-error"), None)
+    def rejection(self) -> KnownIssue | None:
+        """Return the issue that rejects this configuration in a trial, if any.
+
+        That is an issue its options cause, one that stops generation, or one that conflicts with another issue that
+        breaks the output.
+        """
+        conflicted = (hit.issue for hit in self.hits if hit.conflicts or hit.issue.effect == "generation-error")
+        return self.blocking or next(conflicted, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,16 +234,56 @@ class _Configuration:
     counts: Mapping[str, int]
     values_of: Callable[[Mapping[str, OptionValue]], Mapping[str, Any]]
 
+    def breaking(self, values: Mapping[str, Any]) -> set[str]:
+        """Return the ids of the issues that break the output of a configuration."""
+        return {issue.id for issue in load_known_issues().issues if issue.breaks and issue.applies(self.counts, values)}
+
     def avoiding(
         self, issue: KnownIssue, values: Mapping[str, Any], options: Mapping[str, OptionValue]
-    ) -> list[Mapping[str, OptionValue]]:
-        """Return the workarounds of an issue that apply to a configuration and avoid the issue on top of options."""
-        return [
-            workaround
-            for condition, workaround in load_known_issues().workarounds[issue.id]
-            if (condition is None or matches(condition, self.counts, values))
-            and not issue.applies(self.counts, self.values_of({**options, **workaround}))
-        ]
+    ) -> tuple[list[Mapping[str, OptionValue]], set[str]]:
+        """Return the workarounds that avoid an issue on top of options without breaking the output in a new way.
+
+        Also return the issues that break the output only with the other workarounds that avoid it.
+        """
+        before = self.breaking(values)
+        safe: list[Mapping[str, OptionValue]] = []
+        introduced: set[str] = set()
+        for condition, workaround in load_known_issues().workarounds[issue.id]:
+            if condition is not None and not matches(condition, self.counts, values):
+                continue
+            after = self.values_of({**options, **workaround})
+            if issue.applies(self.counts, after):
+                continue
+            if new := self.breaking(after) - before:
+                introduced |= new
+            else:
+                safe.append(workaround)
+        return safe, introduced
+
+    def dropping(
+        self, issue: KnownIssue, options: Mapping[str, OptionValue], explicit: AbstractSet[str]
+    ) -> tuple[str, ...]:
+        """Return a switch the user set whose removal avoids the issue without breaking the output in a new way."""
+        from datamodel_code_generator.config import GenerateConfig  # noqa: PLC0415
+
+        before = self.breaking(self.values_of(options))
+        for name in sorted({test.config for test in config_tests(issue)} & explicit):
+            if (default := GenerateConfig.model_fields[name].default) is not None and default is not False:
+                continue
+            after = self.values_of({**options, name: default})
+            if not issue.applies(self.counts, after) and not self.breaking(after) - before:
+                return (name,)
+        return ()
+
+
+@dataclass(slots=True)
+class _Avoidance:
+    """One pass that avoids the issues breaking a configuration; ``conflicts`` are pairs it found to exclude."""
+
+    applied: dict[str, OptionValue] = field(default_factory=dict)
+    setters: dict[str, str] = field(default_factory=dict)
+    workarounds: list[AppliedWorkaround] = field(default_factory=list)
+    conflicts: set[str] = field(default_factory=set)
 
 
 def check_configuration(
@@ -244,49 +297,103 @@ def check_configuration(
     """Check a configuration, ``options`` on top of its base, against the known issues.
 
     ``values_of`` returns the config values of the base with option values on top. With ``avoid``, each issue that
-    breaks the output takes the first workaround that avoids it and keeps the values the user set and earlier
-    workarounds set. When only workarounds that change one of the options would avoid it, or nothing avoids it and
-    only the options cause it, the issue blocks the configuration. Any other issue that breaks the output is a hit,
-    like every other issue that matches, except names issues; a hit names the workaround that would avoid it.
+    breaks the output takes the first workaround that avoids it, keeps the values the user set, and breaks nothing
+    else. Issues whose workarounds exclude each other, by setting one field differently or by breaking the output in
+    another way, take none of them and are hits that name each other. When only workarounds that change one of the
+    options would avoid an issue, or nothing avoids it and only the options cause it, the issue blocks the
+    configuration. Any other issue that matches is a hit, except names issues.
     """
     configuration = _Configuration(counts, values_of)
-    issues = load_known_issues().issues
-    applied: dict[str, OptionValue] = {}
-    workarounds: list[AppliedWorkaround] = []
+    excluded: set[str] = set()
+    while True:
+        result = _avoid(configuration, options, explicit, excluded, avoid=avoid)
+        if isinstance(result, IssueCheck):
+            return result
+        excluded |= result
+
+
+def _avoid(
+    configuration: _Configuration,
+    options: Mapping[str, OptionValue],
+    explicit: AbstractSet[str],
+    excluded: AbstractSet[str],
+    *,
+    avoid: bool,
+) -> IssueCheck | set[str]:
+    """Avoid the breaking issues of a configuration, leaving ``excluded`` ones unavoided.
+
+    Return the check, or the ids of issues whose workarounds turn out to exclude each other.
+    """
+    counts, values_of = configuration.counts, configuration.values_of
+    data = load_known_issues()
+    state = _Avoidance()
     hits: list[Hit] = []
     handled: set[str] = set()
     values = values_of(options)
     while (
         issue := next(
-            (item for item in issues if item.breaks and item.id not in handled and item.applies(counts, values)), None
+            (item for item in data.issues if item.breaks and item.id not in handled and item.applies(counts, values)),
+            None,
         )
     ) is not None:
         handled.add(issue.id)
-        avoiding = configuration.avoiding(issue, values, {**options, **applied})
-        allowed = (
-            [workaround for workaround in avoiding if not workaround.keys() & {*explicit, *applied}] if avoid else []
-        )
-        if (
-            usable := next(
-                (item for item in allowed if all(options.get(name, value) == value for name, value in item.items())),
-                None,
-            )
-        ) is not None:
-            applied.update(usable)
-            arguments = [argument for name, value in usable.items() for argument in option_arguments(name, value) or ()]
-            workarounds.append(
-                AppliedWorkaround(issue, dict(usable), arguments, {name: values[name] for name in usable})
-            )
-            values = values_of({**options, **applied})
+        safe, introduced = configuration.avoiding(issue, values, {**options, **state.applied})
+        allowed = [item for item in safe if not item.keys() & explicit] if avoid and issue.id not in excluded else []
+        clashing = {
+            state.setters[name]
+            for item in allowed
+            for name, value in item.items()
+            if state.applied.get(name, value) != value
+        }
+        usable = [
+            item for item in allowed if all(state.applied.get(name, value) == value for name, value in item.items())
+        ]
+        if usable_item := next(
+            (item for item in usable if all(options.get(name, value) == value for name, value in item.items())), None
+        ):
+            state.applied.update(usable_item)
+            state.setters.update(dict.fromkeys(usable_item, issue.id))
+            arguments = [
+                argument for name, value in usable_item.items() for argument in option_arguments(name, value) or ()
+            ]
+            previous = {name: values[name] for name in usable_item}
+            state.workarounds.append(AppliedWorkaround(issue, dict(usable_item), arguments, previous))
+            values = values_of({**options, **state.applied})
             continue
-        if allowed or (avoid and not issue.applies(counts, values_of(applied))):
-            return IssueCheck(tuple(workarounds), issue, tuple(hits), values)
-        hits.append(Hit(issue, dict(avoiding[0]) if avoiding else {}))
-    for issue in issues:
-        if not issue.breaks and issue.when is not None and issue.effect != "names" and issue.applies(counts, values):
-            avoiding = configuration.avoiding(issue, values, {**options, **applied})
-            hits.append(Hit(issue, dict(avoiding[0]) if avoiding else {}))
-    return IssueCheck(tuple(workarounds), None, tuple(hits), values)
+        if not usable and (partners := (clashing | introduced) if avoid and issue.id not in excluded else set()):
+            return {issue.id, *partners}
+        if usable or (avoid and not issue.applies(counts, values_of(state.applied))):
+            return IssueCheck(tuple(state.workarounds), issue, tuple(hits), values)
+        hits.append(_hit(configuration, issue, {**options, **state.applied}, explicit, excluded))
+    hits.extend(
+        _hit(configuration, issue, {**options, **state.applied}, explicit, frozenset())
+        for issue in data.issues
+        if not issue.breaks and issue.when is not None and issue.effect != "names" and issue.applies(counts, values)
+    )
+    return IssueCheck(tuple(state.workarounds), None, tuple(hits), values)
+
+
+def _hit(
+    configuration: _Configuration,
+    issue: KnownIssue,
+    options: Mapping[str, OptionValue],
+    explicit: AbstractSet[str],
+    excluded: AbstractSet[str],
+) -> Hit:
+    """Return a hit with what would avoid the issue: a safe workaround, or dropping a value the user set."""
+    issues = load_known_issues().by_id
+    values = configuration.values_of(options)
+    conflicts = tuple(
+        issues[other]
+        for other in sorted(excluded - {issue.id})
+        if issue.id in excluded and issues[other].applies(configuration.counts, values)
+    )
+    if conflicts:
+        return Hit(issue, conflicts=conflicts)
+    safe, _ = configuration.avoiding(issue, values, options)
+    if safe:
+        return Hit(issue, avoided_by=dict(safe[0]))
+    return Hit(issue, dropping=configuration.dropping(issue, options, explicit) if issue.breaks else ())
 
 
 def names_issues(

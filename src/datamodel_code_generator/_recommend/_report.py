@@ -90,12 +90,9 @@ _EFFECTS: dict[str, str] = {
     "names": "class names",
     "cli-inexpressible": "command line",
 }
-_SYMPTOMS: dict[str, str] = {
-    "numbered": "numbered name",
+_ATTRIBUTED_SYMPTOMS: dict[str, str] = {
     "doubled_union_variants": "doubled union variant name",
     "doubled_variant_children": "doubled variant property name",
-    "displaced": "displaced component",
-    "union_variants_numbered": "numbered union variant",
 }
 
 
@@ -219,7 +216,8 @@ def _trial_lines(trial: Trial) -> list[str]:
     ]
     for outcome, row in zip(trial.outcomes, rows, strict=True):
         if outcome.error is not None:
-            lines.append(f"{_table_row(row, widths)}  rejected: {outcome.error}")
+            reason = f" ({outcome.error})" if outcome.candidate.rejection is not None else f": {outcome.error}"
+            lines.append(f"{_table_row(row, widths)}  rejected{reason}")
         else:
             lines.append(_table_row(row, widths) + ("   selected" if outcome is trial.selected else ""))
     lines.extend(_trial_footnotes(trial, stability=stability))
@@ -292,7 +290,7 @@ def _workaround_lines(workarounds: Sequence[AppliedWorkaround], signals: Signals
     for workaround in workarounds:
         issue = workaround.issue
         changes = ", ".join(
-            f"{name.replace('_', '-')} from {_value_text(workaround.previous[name])} to {_value_text(value)}"
+            f"{name.replace('_', '-')} from {_setting_text(workaround.previous[name])} to {_value_text(value)}"
             for name, value in workaround.values.items()
         )
         lines.append(f"  {' '.join(workaround.arguments)}   [#{issue.issue} {issue.id}]")
@@ -300,12 +298,19 @@ def _workaround_lines(workarounds: Sequence[AppliedWorkaround], signals: Signals
     return lines
 
 
+def _setting_text(value: Any) -> str:
+    return "unset" if value is None else _value_text(value)
+
+
 def _citation_text(citation: Citation, signals: Signals, worked_around: AbstractSet[str]) -> str:
-    """Return a citation: the issue, its effect, and the message, or the options left out for a worked-around one."""
+    """Return a citation: the issue, its effect, and the message, or the options left out for a worked-around one.
+
+    A trial count is shown only for a class-name metric that counts the names of that one issue.
+    """
     issue = citation.issue
     effect = _EFFECTS[issue.effect]
-    if citation.count is not None:
-        effect = f"{effect}; the selected candidate has {_count(citation.count, _SYMPTOMS[cast('str', issue.symptom)])}"
+    if citation.count is not None and (noun := _ATTRIBUTED_SYMPTOMS.get(cast("str", issue.symptom))):
+        effect = f"{effect}; the selected candidate has {_count(citation.count, noun)}"
     head = f"#{issue.issue} {issue.id} ({effect})"
     if citation.dropped:
         left_out = ", ".join(" ".join(option.arguments) for option in citation.dropped)
@@ -313,8 +318,14 @@ def _citation_text(citation: Citation, signals: Signals, worked_around: Abstract
             return f"{head}: left out {left_out}, which keeps the workaround above from applying."
         return f"{head}: left out {left_out}. {_issue_message(issue, signals)}"
     text = f"{head}: {_issue_message(issue, signals)}"
+    if citation.conflicts:
+        others = ", ".join(f"#{other.issue}" for other in citation.conflicts)
+        return f"{text} No single configuration avoids it together with {others}, so the command keeps it."
     if citation.avoided_by:
         return f"{text} {_setting_arguments(citation.avoided_by)} avoids it."
+    if citation.dropping:
+        flags = ", ".join(_flag(name) for name in citation.dropping)
+        return f"{text} Removing {flags} from your configuration avoids it."
     return f"{text} No option avoids it." if issue.breaks else text
 
 
@@ -488,6 +499,8 @@ def _citation_payload(citation: Citation, signals: Signals) -> RecommendCitation
         avoided_by=dict(citation.avoided_by),
         count=citation.count,
         dropped=[option.decision.rule.id for option in citation.dropped],
+        dropping=list(citation.dropping),
+        conflicts=[other.issue for other in citation.conflicts],
     )
 
 

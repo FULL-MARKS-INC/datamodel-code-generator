@@ -268,6 +268,17 @@ def _doubled_segment(name: str) -> str | None:
     return None
 
 
+def _single_key_children(records: Sequence[NameRecord], indexes: Sequence[int]) -> int:
+    """Count the classes at the given indexes that are the one property model of a oneOf/anyOf variant."""
+    members = {record.path: record.members for record in records}
+    return sum(
+        1
+        for index in indexes
+        if _VARIANT_CHILD.search(path := records[index].path)
+        and len(members.get(path.rpartition("/")[0].removesuffix("/allOf"), ())) == 1
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class NameMetrics:
     """Counts over the generated class names of one configuration; ``problems`` counts each class once."""
@@ -285,6 +296,7 @@ class NameMetrics:
     doubled_union_variants: int
     doubled_variant_children: int
     doubled_from_spec: int
+    other_problems: int
     displaced: int
     inline_like_component: int
     union_variants: int
@@ -307,7 +319,7 @@ def name_metrics(records: Sequence[NameRecord], vocabulary: SchemaVocabulary) ->
     counts = Counter(classes)
     origins = Counter(_origin(record.path) for record in records)
     problems = {index for index, kind in enumerate(classes) if kind in _PROBLEM_CLASSES}
-    doubled: list[str] = []
+    doubled: list[int] = []
     doubled_from_spec = 0
     for index, record in enumerate(records):
         if (segment := _doubled_segment(record.name)) is None:
@@ -315,7 +327,7 @@ def name_metrics(records: Sequence[NameRecord], vocabulary: SchemaVocabulary) ->
         if vocabulary.contains_doubled(segment):
             doubled_from_spec += 1
         else:
-            doubled.append(record.path)
+            doubled.append(index)
             problems.add(index)
     component_names: dict[str, str] = {}
     for record in records:
@@ -356,9 +368,10 @@ def name_metrics(records: Sequence[NameRecord], vocabulary: SchemaVocabulary) ->
         generic=counts["generic"],
         long=counts["long"],
         doubled=len(doubled),
-        doubled_union_variants=sum(1 for path in doubled if _UNION_VARIANT.search(path)),
-        doubled_variant_children=sum(1 for path in doubled if _VARIANT_CHILD.search(path)),
+        doubled_union_variants=sum(1 for index in doubled if _UNION_VARIANT.search(records[index].path)),
+        doubled_variant_children=_single_key_children(records, doubled),
         doubled_from_spec=doubled_from_spec,
+        other_problems=len(problems - {*doubled, *(index for index, kind in enumerate(classes) if kind == "numbered")}),
         displaced=len(displaced),
         inline_like_component=len(inline_like),
         union_variants=len(variants),
