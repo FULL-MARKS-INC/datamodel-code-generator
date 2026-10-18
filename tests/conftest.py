@@ -54,6 +54,7 @@ from tests.units import (
     format_refs,
     item_problem,
     label_path,
+    label_problem,
     merge_environments,
     nodeid_key,
     payload_predicate,
@@ -906,6 +907,14 @@ class _Ledger:
             )
             if (problem := item_problem(nodeid, self.config.rootpath, self.tests_root, listings))
         ]
+        problems += [
+            f"{entry['item']}: {problem}"
+            for observations in self.observations
+            for entry in observations["items"]
+            for label, _, storage, _ in entry["compared"]
+            for name in dict.fromkeys((label, storage))
+            if (problem := label_problem(name))
+        ]
         if problems:
             msg = "--expected-apply rejected its input; nothing was written:\n" + "\n".join(problems)
             raise pytest.UsageError(msg)
@@ -1276,14 +1285,14 @@ class _Ledger:
             if self.observing or (self.can_fix if present else self.can_create):
                 return "changed"
             self.fail_mismatch(observation, stored)
-        if self.observing:
-            return "home" if equal else "new"
         if observation.label.startswith("../"):
             pytest.fail(
                 "Expected outputs live under tests/data/expected. "
                 "Fix: remove the path argument (pytest names the file)",
                 pytrace=False,
             )
+        if self.observing:
+            return "home" if equal else "new"
         if not self.can_create:
             self.fail_missing(observation, present)
         if equal:
