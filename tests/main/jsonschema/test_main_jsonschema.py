@@ -18225,6 +18225,17 @@ def test_main_allof_class_hierarchy(output_file: Path) -> None:
     )
 
 
+def test_main_allof_class_hierarchy_default(output_file: Path) -> None:
+    """Generate the default allOf hierarchy that the --allof-class-hierarchy docs compare with."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "allof_class_hierarchy.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file="allof_class_hierarchy_ref.py",
+    )
+
+
 @pytest.mark.benchmark
 def test_main_allof_root_model_constraints_none(output_file: Path) -> None:
     """Test allOf with root model reference without merging (issue #1901)."""
@@ -27488,9 +27499,7 @@ def test_allof_outer_constraints(
         if "dump_file" in payloads:
             assert_output(
                 json.dumps([model.model_validate(value).model_dump(mode="json") for value in payloads["valid"]]) + "\n",
-                EXPECTED_JSON_SCHEMA_PATH
-                / "allof_outer_constraints"
-                / payloads.get("runtime_dump_files", {}).get(PYDANTIC_VERSION, payloads["dump_file"]),
+                EXPECTED_JSON_SCHEMA_PATH / "allof_outer_constraints" / payloads["dump_file"],
             )
         for value in payloads["invalid"]:
             with pytest.raises(SchemaValidationError):
@@ -27955,12 +27964,7 @@ def test_nested_schema_resources(tmp_path: Path, case: str, entrypoint: str, for
                 )
         assert_output(
             json.dumps([str(warning.message) for warning in recorded_warnings], indent=2),
-            RESOURCES_EXPECTED
-            / (
-                "oneof_minimum_warnings.txt"
-                if case.startswith("oneof") and PYDANTIC_VERSION in {"2.0", "2.0.0"}
-                else "no_warnings.txt"
-            ),
+            RESOURCES_EXPECTED / "no_warnings.txt",
         )
         if entrypoint.endswith("cli"):
             assert_output(output.read_text(encoding="utf-8"), expected_file)
@@ -28097,9 +28101,7 @@ def test_missing_embedded_anchor(
                     ],
                     expected_exit=Exit.ERROR,
                     capsys=capsys,
-                    expected_stderr=stored_expected(RESOURCES_EXPECTED / "missing_anchor_cli_error.txt").read_text(
-                        encoding="utf-8"
-                    ),
+                    expected_stderr_path=RESOURCES_EXPECTED / "missing_anchor_cli_error.txt",
                 )
             else:
                 with pytest.raises(Error) as error:
@@ -29014,7 +29016,6 @@ def test_numeric_null_custom_template(output_file: Path, entrypoint: str) -> Non
     template_dir = DATA_PATH / "templates_numeric_null"
     filename = {
         (False, 22): "null_custom_black22.py",
-        (False, 23): "null_custom_black23.py",
     }.get((_uses_builtin_test_default_formatter(), int(black.__version__.split(".")[0])), "null_custom.py")
     if entrypoint == "cli":
         run_main_and_assert(

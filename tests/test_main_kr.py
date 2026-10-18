@@ -238,7 +238,7 @@ def test_main_fail_on_multi_module_stdout(input_path: Path, capsys: pytest.Captu
         expected_exit=Exit.ERROR,
         capsys=capsys,
         expected_stdout_path=EXPECTED_EMPTY_OUTPUT_PATH,
-        expected_stderr=stored_expected(EXPECTED_MAIN_KR_PATH / "multi_module_stdout" / "error.txt").read_text(),
+        expected_stderr_path=EXPECTED_MAIN_KR_PATH / "multi_module_stdout" / "error.txt",
     )
 
 
@@ -3906,6 +3906,18 @@ def test_custom_file_header(output_file: Path) -> None:
         assert_func=assert_file_content,
         expected_file=EXPECTED_MAIN_KR_PATH / "custom_file_header" / "with_option.py",
         extra_args=["--custom-file-header", "# Copyright 2024 MyCompany"],
+    )
+
+
+@freeze_time("2019-07-26")
+def test_no_alias_without_option(output_file: Path) -> None:
+    """Generate the output the --no-alias, --use-serialization-alias and --custom-file-header docs compare with."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "no_alias.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        expected_file=EXPECTED_MAIN_KR_PATH / "no_alias" / "without_option.py",
     )
 
 

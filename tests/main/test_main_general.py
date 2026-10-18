@@ -1005,9 +1005,7 @@ def test_standard_preset_msgspec_struct(output_file: Path) -> None:
             "msgspec.Struct",
         ],
         assert_func=assert_file_content,
-        expected_file=(
-            "standard_preset_msgspec_struct_black_lt_24.py" if BLACK_LT_24 else "standard_preset_msgspec_struct.py"
-        ),
+        expected_file="standard_preset_msgspec_struct.py",
     )
 
 
@@ -4472,7 +4470,7 @@ for multi-module Pydantic output where runtime imports might otherwise be preser
         "--use-type-checking-imports",
         "--disable-timestamp",
     ],
-    golden_output="openapi/use_type_checking_imports_internal.py",
+    golden_output="openapi/use_type_checking_imports_for_multi_module_pydantic_ruff/_internal.py",
     related_options=["--no-use-type-checking-imports", "--formatters", "--use-exact-imports"],
 )
 def test_use_type_checking_imports_for_multi_module_pydantic_ruff() -> None:
