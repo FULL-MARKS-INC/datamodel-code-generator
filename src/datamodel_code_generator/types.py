@@ -530,7 +530,7 @@ class Nullable(Protocol):
         raise NotImplementedError
 
 
-class DataType(_BaseModel):
+class DataType(_BaseModel):  # noqa: PLR0904
     """Represents a type in generated code with imports and references."""
 
     model_config = ConfigDict(
@@ -1060,14 +1060,40 @@ class DataType(_BaseModel):
             type_ = self._wrap_discriminator_type_hint(type_, discriminator)
         return type_
 
-    def _apply_nullable_from_reference(self) -> None:
-        if not self.reference:
-            return
+    @property
+    def names_nullable_model(self) -> bool:
+        """Return whether the type names a model that admits null and is not a type alias."""
+        return (
+            (reference := self.reference) is not None
+            and not getattr(source := reference.source, "is_alias", False)
+            and bool(getattr(source, "nullable", False))
+        )
 
-        source = self.reference.source
-        if getattr(source, "is_alias", False):
-            return
-        if self.is_optional or not getattr(source, "nullable", False) or _NULL_STRIPPED_DATA_TYPE_KEY in self.__dict__:
+    def _reference_adds_null(self) -> bool:
+        """Return whether the type hint adds the None of the nullable model the type names."""
+        return _NULL_STRIPPED_DATA_TYPE_KEY not in self.__dict__ and self.names_nullable_model
+
+    @property
+    def admits_none(self) -> bool:
+        """Return whether the rendered type hint includes None, without the writes that rendering makes.
+
+        The None is the type's own, that of the nullable model it names, or that of a union member whose hint
+        includes None, which the union takes over when it is rendered.
+        """
+        if self.is_optional or self._reference_adds_null():
+            return True
+        return (
+            not self.is_tuple
+            and self.is_union
+            and not self.preserve_union_member_order
+            and any(
+                (member.type == NONE and not member.data_types) or (member.type != ANY and member.admits_none)
+                for member in self.data_types
+            )
+        )
+
+    def _apply_nullable_from_reference(self) -> None:
+        if self.is_optional or not self._reference_adds_null():
             return
         self.is_optional = True
         self.__dict__[_REFERENCE_NULL_DATA_TYPE_KEY] = True

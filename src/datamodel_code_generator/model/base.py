@@ -1190,7 +1190,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         ):
             return False
 
-        if self._reference_source_nullable_without_type_hint(data_type=data_type):
+        if data_type.names_nullable_model:
             return True
 
         match self.nullable:
@@ -1201,15 +1201,6 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
             case None:
                 return bool(self.type_has_null) if self.required else bool(self.fall_back_to_nullable)
         return False  # pragma: no cover
-
-    def _reference_source_nullable_without_type_hint(self, *, data_type: DataType | None = None) -> bool:
-        """Return whether a referenced non-alias model should make this type optional."""
-        data_type = data_type or self.data_type
-        reference = data_type.reference
-        if reference is None:
-            return False
-        source = reference.source
-        return not getattr(source, "is_alias", False) and bool(getattr(source, "nullable", False))
 
     def _has_renderable_data_type_without_type_hint(self, *, data_type: DataType | None = None) -> bool:
         """Return whether this simple DataType renders to something other than None."""
@@ -2019,6 +2010,11 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     FIELD_PARTICIPATES_IN_CONSTRUCTOR: ClassVar[Callable[[DataModelFieldBase], bool]] = staticmethod(
         _field_participates_in_constructor
     )
+    FIELD_CONSTRUCTION_ORDER_KEY: ClassVar[Callable[[DataModelFieldBase], bool] | None] = None
+    """Order key of the fields when the model is built: True for a field whose class-body default is known then.
+
+    None for a model that keeps its fields in schema order when it is built.
+    """
     SUPPORTS_TREE_SCOPE_REUSE_MODEL_INHERITANCE: ClassVar[bool] = False
     # Kept opaque so this generic layer does not import reference-layer policy.
     FIELD_NAME_MODEL_TYPE: ClassVar[Any] = None
@@ -2104,6 +2100,11 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     ) -> DataModelFieldBase | None:
         """Create a model-specific typed extra field when supported."""
         return None
+
+    @classmethod
+    def order_fields_for_construction(cls, fields: Iterable[DataModelFieldBase]) -> list[DataModelFieldBase]:
+        """Return the fields sorted by ``FIELD_CONSTRUCTION_ORDER_KEY``, or as given when the model has no such key."""
+        return list(fields) if (key := cls.FIELD_CONSTRUCTION_ORDER_KEY) is None else sorted(fields, key=key)
 
     def apply_discriminator_tag(
         self,

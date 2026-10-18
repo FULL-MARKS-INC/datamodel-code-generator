@@ -259,7 +259,12 @@ synthetic enum (`_extract_const_enum_from_combined`). Names come from `ModelReso
 a new `DataType` that points to the one shared `Reference`. allOf `$ref` items become base classes; inherited fields
 whose parent is not parsed yet stay as placeholders that L5 resolves. Discriminators are only captured here
 (`field.extras["discriminator"]`). Field construction already decides const handling: `DataModelFieldBase.__init__`
-calls `process_const()`.
+calls `process_const()`. Dataclass-like models (`dataclasses`, Pydantic dataclasses, msgspec Structs) sort their
+fields when they are built, by `DataModel.FIELD_CONSTRUCTION_ORDER_KEY`. The key reads only facts known then: on a
+Pydantic dataclass, a `None` default that `--strip-default-none` may keep counts as no default, while a msgspec
+Struct counts every optional field as having one, as it never strips its defaults. L5
+`__fix_constructor_field_ordering` decides with the output model's `FIELD_ASSIGNMENT_CHECKER`, which states what the
+template writes, and moves fields whose default the template keeps after the fields without one.
 
 **L2–L4.**
 
@@ -273,7 +278,7 @@ calls `process_const()`.
 | L3 `__replace_duplicate_name_in_module` | class names | `class_name` |
 | L3 `__reuse_model_tree_scope` | rendered model text across modules | moves canonicals to a shared module, replaces duplicates by empty subclasses or removes them |
 | L3 `__resolve_circular_imports` | module dependency graph | merges cyclic modules into `_internal` modules, relocates models |
-| L4 `__flatten_conflicting_base_layouts` (msgspec) | bases, fields, possible tags (`__find_possible_tag_names`) and reuse duplicates (`__find_possible_reuse_duplicates`) | copies base fields into Structs whose generated bases have conflicting layouts and drops those bases |
+| L4 `__flatten_conflicting_base_layouts` (msgspec) | bases, fields, possible tags (`__find_possible_tag_names`) and reuse duplicates (`__find_possible_reuse_duplicates`) | copies base fields into Structs whose generated bases have conflicting layouts, sorted by the construction key (`DataModel.FIELD_CONSTRUCTION_ORDER_KEY`), and drops those bases |
 | L4 `unconstrain_union_members` (msgspec) | union members | field types |
 | L4 `__set_circular_root_model_paths` | root-model reference graph | circular root-model paths that every module's collapse reads |
 
@@ -301,7 +306,7 @@ Single-file output has one module, so "per module" then means the whole graph.
 | process | `__set_one_literal_on_default` | required one-literal fields | default, required, nullable |
 | process | `refresh_field_config` (model) | field state | backend field config |
 | process | `__rename_fields_hiding_types` | same-named fields and types of the model family | field names or type names |
-| process | `__fix_constructor_field_ordering` | required and default state, inherited fields | field order, constructor adjustments |
+| process | `__fix_constructor_field_ordering` | required and default state, inherited fields, rendered nullability (`types.py:DataType.admits_none`) | field order, constructor adjustments |
 | process | `__remove_overridden_models` | model-level `--type-overrides` | removes overridden models |
 | finalize | `__apply_type_overrides` | `--type-overrides` | field types; model-level overrides edit nodes on fields and base classes in place |
 | finalize | `unbind_fields` (model) | hidden type names | field binding |
@@ -333,9 +338,14 @@ opt-out decided in L6).
 **L7.** `_generate_module_output` builds the import block, calls the backend's `render_module_code`, renders each
 model and formats the body. `DataModel.render` uses the compiled renderer in `model/_compiled_templates/` for built-in
 templates and Jinja2 when a custom template directory is set. Type-alias styles are chosen when the parser is built
-(`model/__init__.py:get_data_model_types`). Rendering is not read-only: `DataType.type_hint` sets `is_optional` on a
-reference to a nullable model (`types.py:DataType._apply_nullable_from_reference`), and L3 deduplication renders
-models, so this write can happen before L5.
+(`model/__init__.py:get_data_model_types`). Rendering is not read-only. Rendering a type hint or collecting a field's
+imports writes `is_optional`: `types.py:DataType._apply_nullable_from_reference` adds the None of a nullable model
+that the type names; `types.py:DataType._render_union_type_hint` makes a union optional when a member's hint includes
+None; `model/base.py:DataModelFieldBase._normalize_data_type_import_state`, which import collection runs, applies the
+first write and makes a union optional for a `null` member; and `parser/base.py:_flatten_union_members` (L5
+finalize) moves member nullability onto the union. Import collection already runs in L3 deduplication, so
+`is_optional` read before L7 depends on what ran first. A decision before L7 reads `types.py:DataType.admits_none`,
+which computes the rendered nullability without writing it.
 
 ### Hidden Couplings
 
@@ -381,9 +391,10 @@ collapse replacing a member of a shared list.
 | model kind (Enum, root model, class) | the model's own L5 `__extract_inherited_enum` and `__reuse_model` (tree scope: L3) |
 | bases | L6 `__apply_generic_base_class`; base order is sorted in L2 before reuse adds bases |
 | instance field set | end of the L5 loop; msgspec: L6 `_tag_fields_of_tagged_bases` |
-| field order | end of the L5 loop (discriminator tags append fields to variants of any module); msgspec keyword-only: L6 `__fix_tag_opt_out_field_ordering` |
+| field order | end of the L5 loop (discriminator tags append fields to variants of any module); initial order: L1 construction key (`DataModel.FIELD_CONSTRUCTION_ORDER_KEY`); msgspec keyword-only: L6 `__fix_tag_opt_out_field_ordering` |
 | field names | the model's own L5 `__rename_fields_hiding_types` |
-| field types | end of the L5 loop (collapse, overrides and discriminator tags reach every module); pydantic v2 type-alias bodies: L6 `__prepare_type_alias_fields` |
+| field types | end of the L5 loop (collapse, overrides and discriminator tags reach every module; overrides replace the module's own field types in its L5 finalize, after constructor ordering); pydantic v2 type-alias bodies: L6 `__prepare_type_alias_fields` |
+| rendered nullability of a type | end of the L5 loop, like the field types it is computed from with `types.py:DataType.admits_none`; L7 writes it into `is_optional` (see L7). Known gap: the module's own `__apply_type_overrides` replaces field types after `__fix_constructor_field_ordering` has read it |
 | set vs list containers | end of the L5 loop (collapse and overrides can still replace item types) |
 | required, nullable | end of the L5 loop (discriminator tags, one-literal defaults, collapse `process_const()`); msgspec: L6 |
 | default values | the model's own L5 `__set_validate_default_on_fields`, unless another module's discriminator pass changes it; default-factory metadata: L6 `_set_nested_model_default_factory_metadata` |
@@ -523,6 +534,18 @@ it survives each of these steps is not verified.
   remains is rejected when the module is rendered (`model/msgspec.py:Struct._validate_base_layouts` through
   `render_module_code`, first in L6 `_check_model_inheritance`). Making those facts final earlier, as a discriminator
   tag plan and reuse groups computed before L5, lets flattening read plans instead of predictions.
+- **`--strip-default-none` constructor order** (Pydantic dataclasses, msgspec Structs): two readers answered "does the
+  class body give this field a default?" differently. The Pydantic dataclass template keeps `= None` when the rendered
+  type admits None, and msgspec Structs write `UNSET` or `None` for every optional field, while the constructor
+  classifiers treated every stripped `None` default as no default, so a field without a default could follow one with
+  a default. The L1 construction key reads only facts known when the model is built, and a `None` default that the
+  option may keep counts as no default there, because rendered nullability is final only at L7. L5
+  `__fix_constructor_field_ordering` decides with the template rule (`FIELD_ASSIGNMENT_CHECKER`, through
+  `DataType.admits_none`) and moves a kept `None` after the fields without a default, where the output stays valid whichever
+  way the `= None` resolves at render. msgspec reads one predicate in both places, as a Struct never strips its
+  defaults. The module's own `__apply_type_overrides` still runs after ordering: an override that replaces the type of
+  a kept `None` can reorder working output, or leave a field without a default after another kept `None`. Applying
+  overrides before `__fix_constructor_field_ordering` closes that gap.
 
 ## References And Names
 
