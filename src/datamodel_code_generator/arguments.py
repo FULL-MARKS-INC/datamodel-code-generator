@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from argparse import (
+    OPTIONAL,
     ArgumentParser,
     ArgumentTypeError,
     BooleanOptionalAction,
@@ -116,12 +117,26 @@ def _json_value_or_file(value: str) -> dict[str, object]:
         raise ArgumentTypeError(msg) from e
 
 
+def _recommend_mode(value: str) -> str:
+    """Accept the recommendation mode; the option is documented without a value, which selects quick."""
+    if value != "quick":
+        msg = f"unknown mode {value!r}; use --recommend-options without a value"
+        raise ArgumentTypeError(msg)
+    return value
+
+
 class SortingHelpFormatter(RawDescriptionHelpFormatter):
     """Help formatter that sorts arguments, adds color to section headers, and preserves epilog formatting."""
 
     def _bold_cyan(self, text: str) -> str:  # noqa: PLR6301
         """Wrap text in ANSI bold cyan escape codes."""
         return f"\x1b[36;1m{text}\x1b[0m"
+
+    def _format_action_invocation(self, action: Action) -> str:
+        """Show an option whose value is optional and has an empty metavar without a value placeholder."""
+        if action.nargs == OPTIONAL and isinstance(action.metavar, str) and not action.metavar:
+            return ", ".join(action.option_strings)
+        return super()._format_action_invocation(action)
 
     def add_arguments(self, actions: Iterable[Action]) -> None:
         """Add arguments sorted by option strings."""
@@ -173,6 +188,7 @@ arg_parser = SuggestingArgumentParser(
     "For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev",
     epilog="Documentation: https://datamodel-code-generator.koxudaxi.dev\n"
     "Agent skill: https://datamodel-code-generator.koxudaxi.dev/coding-agent-skill/\n"
+    "Option recommendations: datamodel-codegen --input SCHEMA --recommend-options (experimental)\n"
     "GitHub: https://github.com/datamodel-code-generator/datamodel-code-generator",
     formatter_class=SortingHelpFormatter,
     add_help=False,
@@ -1505,9 +1521,9 @@ general_options.add_argument(
 )
 general_options.add_argument(
     "--output-format-json-schema",
-    choices=["config", "generate-prompt", "generation", "model-metadata", "structured-output"],
+    choices=["config", "generate-prompt", "generation", "model-metadata", "recommend-options", "structured-output"],
     default=None,
-    metavar="{config,generate-prompt,generation,model-metadata,structured-output}",
+    metavar="{config,generate-prompt,generation,model-metadata,recommend-options,structured-output}",
     help="Output JSON Schema for the selected JSON output or JSON configuration format and exit.",
 )
 general_options.add_argument(
@@ -1534,6 +1550,18 @@ general_options.add_argument(
         "Optionally provide your question as an argument. "
         "Pipe to CLI tools (e.g., `| claude -p`, `| codex exec`) "
         "or copy to clipboard (e.g., `| pbcopy`, `| xclip`) for web LLM chats."
+    ),
+)
+general_options.add_argument(
+    "--recommend-options",
+    nargs="?",
+    const="quick",
+    type=_recommend_mode,
+    metavar="",
+    default=None,
+    help=(
+        "Analyse the input schema and print the options to add on top of the latest dated preset, with the reasons, "
+        "as a command and a pyproject.toml block, then exit (experimental)."
     ),
 )
 general_options.add_argument(

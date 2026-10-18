@@ -794,6 +794,12 @@ def get_latest_preset_name() -> str:
     return max(get_preset_names(), key=_preset_name_sort_key)
 
 
+def latest_preset_name(family: str, target_python_version: PythonVersion) -> str:
+    """Return the newest dated preset of a family, standard or practical, for a target Python version."""
+    names = {"standard": _STANDARD_PRESET_NAMES_BY_TARGET, "practical": _PRACTICAL_PRESET_NAMES_BY_TARGET}[family]
+    return names[target_python_version].value
+
+
 def get_preset_infos() -> tuple[PresetInfo, ...]:
     """Return public preset metadata."""
     return _PRESET_INFOS
