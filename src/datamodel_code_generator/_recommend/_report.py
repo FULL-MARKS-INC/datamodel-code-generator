@@ -4,20 +4,38 @@ from __future__ import annotations
 
 import json
 import textwrap
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from datamodel_code_generator._recommend._rules import format_text
+from datamodel_code_generator._recommend._rules import format_text, option_arguments
 from datamodel_code_generator._recommend._signals import Signals
 
 if TYPE_CHECKING:
-    from datamodel_code_generator._recommend import Disagreement, Option, Recommendation
+    from collections.abc import Sequence
+
+    from datamodel_code_generator._recommend import Disagreement, Option, Recommendation, Trial
+    from datamodel_code_generator._recommend._metrics import NameChanges, NameMetrics, NameStability
+    from datamodel_code_generator._recommend._trial import CandidateOutcome
     from datamodel_code_generator._structured_output import (
+        RecommendCandidatePayload,
         RecommendDisagreementPayload,
+        RecommendNameChangesPayload,
         RecommendOptionPayload,
+        RecommendTrialPayload,
     )
 
 _WIDTH = 100
 _DETAIL_INDENT = " " * 6
+_EXAMPLE_INDENT = " " * 8
+_TABLE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("classes", "types"),
+    ("problems", "problems"),
+    ("numbered", "numbered"),
+    ("long", "long"),
+    ("doubled", "doubled"),
+    ("displaced", "displaced"),
+    ("median", "median_length"),
+)
 _SIGNAL_LINES: tuple[tuple[str, str], ...] = (
     ("components", "{components}, {operations} operations"),
     ("inline objects / enums", "{inline_objects} / {inline_enums}, nesting depth {max_inline_depth}"),
@@ -66,6 +84,33 @@ def _value_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _count(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 'es' if noun.endswith('s') else 's'}"
+
+
+def _changes_text(changes: NameChanges) -> str:
+    return (
+        f"{changes.renamed} of {_count(changes.matched, 'class')} matched by schema location renamed "
+        f"({changes.renumbered} only renumbered), {changes.removed} removed, {changes.added} added"
+        f"{', e.g.' if changes.examples else ''}"
+    )
+
+
+def _example_lines(changes: NameChanges, indent: str = _EXAMPLE_INDENT) -> list[str]:
+    return [f"{indent}{change.before} -> {change.after}   at {change.location}" for change in changes.examples]
+
+
+def _effect_lines(option: Option) -> list[str]:
+    if (effect := option.effect) is None:
+        return []
+    without, with_ = effect.before_metrics, effect.after_metrics
+    text = (
+        f"trial: {effect.before} -> {effect.after}: classes {without.types} -> {with_.types}, "
+        f"problem names {without.problems} -> {with_.problems}; {_changes_text(effect.changes)}"
+    )
+    return [*_wrap(text), *_example_lines(effect.changes)]
+
+
 def _option_lines(option: Option, signals: Signals, *, against: bool = False) -> list[str]:
     rule = option.decision.rule
     lines = [f"  {' '.join(option.arguments)}   [{rule.id}]", *_wrap(format_text(rule.reason, signals))]
@@ -73,6 +118,72 @@ def _option_lines(option: Option, signals: Signals, *, against: bool = False) ->
         lines.extend(_wrap(f"against: {format_text(rule.contested_reason, signals)}"))
     lines.extend(line for caveat in rule.caveats for line in _wrap(f"caveat: {format_text(caveat, signals)}"))
     lines.extend(line for evidence in rule.evidence for line in _wrap(f"measured: {evidence}"))
+    lines.extend(_effect_lines(option))
+    return lines
+
+
+def _metric_cells(metrics: NameMetrics, stability: NameStability | None) -> list[str]:
+    cells = [
+        f"{metrics.problems} ({metrics.problems_percent}%)" if name == "problems" else str(getattr(metrics, name))
+        for _, name in _TABLE_COLUMNS
+    ]
+    return [*cells, *(() if stability is None else (str(stability.locations.renamed),))]
+
+
+def _table_row(cells: Sequence[str], widths: Sequence[int]) -> str:
+    return "  " + "  ".join(
+        cell.ljust(width) if index == 0 else cell.rjust(width)
+        for index, (cell, width) in enumerate(zip(cells, widths, strict=False))
+    )
+
+
+def _trial_footnotes(trial: Trial, *, stability: bool) -> list[str]:
+    notes: list[str] = []
+    if not trial.outcomes[0].candidate.selectable:
+        notes.append(
+            f"{trial.outcomes[0].candidate.label}: the configuration as set, without the preset; never selected"
+        )
+    if trial.remeasured:
+        notes.append(
+            f"the last {_count(trial.remeasured, 'row')}: the selected configuration without or with one option, "
+            "to measure each option on it; never selected"
+        )
+    if stability:
+        notes.append("renamed: classes a candidate renames between --diff-against and the input")
+    return [line for note in notes for line in _wrap(note, "  ")]
+
+
+def _trial_lines(trial: Trial) -> list[str]:
+    """Render the candidates' table and the changes from the current configuration."""
+    stability = any(outcome.stability is not None for outcome in trial.outcomes)
+    headers = ["candidate", *(header for header, _ in _TABLE_COLUMNS), *(("renamed",) if stability else ())]
+    rows = [
+        [
+            outcome.candidate.label,
+            *(() if outcome.metrics is None else _metric_cells(outcome.metrics, outcome.stability)),
+        ]
+        for outcome in trial.outcomes
+    ]
+    widths = [max(len(row[index]) for row in (headers, *rows) if index < len(row)) for index in range(len(headers))]
+    lines = [
+        "",
+        f"Trial  {_count(len(trial.outcomes), 'candidate')} generated in memory without formatting; nothing written",
+        _table_row(headers, widths),
+    ]
+    for outcome, row in zip(trial.outcomes, rows, strict=True):
+        if outcome.error is not None:
+            lines.append(f"{_table_row(row, widths)}  rejected: {outcome.error}")
+        else:
+            lines.append(_table_row(row, widths) + ("   selected" if outcome is trial.selected else ""))
+    lines.extend(_trial_footnotes(trial, stability=stability))
+    if trial.migration is not None and trial.selected is not None:
+        labels = f"{trial.current.candidate.label} -> {trial.selected.candidate.label}"
+        lines.extend((
+            "",
+            f"Changes from the current configuration ({labels})",
+            *_wrap(_changes_text(trial.migration), "  "),
+            *_example_lines(trial.migration, "    "),
+        ))
     return lines
 
 
@@ -107,8 +218,24 @@ def _disagreement_text(disagreement: Disagreement, preset: str) -> str:
     return text if disagreement.decision is None else f"{text}   [{disagreement.decision.rule.id}]"
 
 
-def render_text(recommendation: Recommendation, *, command: str, pyproject: str | None) -> str:
-    """Render a recommendation as the text report."""
+def _start_lines(recommendation: Recommendation, signals: Signals) -> list[str]:
+    """Render the preset to start from and the options to add on top of it."""
+    added = sum(len(option.values) for option in recommendation.recommendations)
+    return [
+        "",
+        f"Start from  --preset {recommendation.preset}",
+        *(
+            f"  already sets {' '.join(option.arguments)}   [{option.decision.rule.id}]"
+            for option in recommendation.covers
+        ),
+        "",
+        f"Add ({added} option{'' if added == 1 else 's'})" if added else "Add  nothing on top of the preset",
+        *(line for option in recommendation.recommendations for line in _option_lines(option, signals)),
+    ]
+
+
+def render_text(recommendation: Recommendation, *, command: str | None, pyproject: str | None) -> str:
+    """Render a recommendation as the text report; with nothing to run, it shows the schema and the notes only."""
     signals = recommendation.signals or _NO_SIGNALS
     lines = [
         f"Option recommendations (experimental; {recommendation.mode} mode; rules {recommendation.rules_revision})",
@@ -118,24 +245,18 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
         lines.append(f"Schema  not analysed ({recommendation.input_file_type or recommendation.source} input)")
     else:
         lines.extend(_signal_lines(signals, recommendation.input_file_type))
-    lines.extend(("", f"Start from  --preset {recommendation.preset}"))
-    lines.extend(
-        f"  already sets {' '.join(option.arguments)}   [{option.decision.rule.id}]" for option in recommendation.covers
-    )
-    added = sum(len(option.values) for option in recommendation.recommendations)
-    lines.extend((
-        "",
-        f"Add ({added} option{'' if added == 1 else 's'})" if added else "Add  nothing on top of the preset",
-    ))
-    for option in recommendation.recommendations:
-        lines.extend(_option_lines(option, signals))
+    if recommendation.runnable:
+        lines.extend(_start_lines(recommendation, signals))
     for title, options, against in (
+        ("Left out after the trial (the rules recommend these)", recommendation.left_out, False),
         ("Consider (the schema also has signals against these)", recommendation.consider, True),
         ("Not recommended", recommendation.not_recommended, False),
     ):
         if options:
             lines.extend(("", title))
             lines.extend(line for option in options for line in _option_lines(option, signals, against=against))
+    if recommendation.trial is not None:
+        lines.extend(_trial_lines(recommendation.trial))
     if recommendation.disagreements:
         lines.extend(("", "Your configuration"))
         lines.extend(f"  {_disagreement_text(item, recommendation.preset)}" for item in recommendation.disagreements)
@@ -147,7 +268,8 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
                     note, width=_WIDTH, initial_indent="  - ", subsequent_indent="    ", break_on_hyphens=False
                 )
             )
-    lines.extend(("", "Command", f"  {command}"))
+    if command is not None:
+        lines.extend(("", "Command", f"  {command}"))
     if pyproject is not None:
         complete = recommendation.config_complete
         title = "pyproject.toml" if complete else "pyproject.toml: keys to add or change"
@@ -156,10 +278,62 @@ def render_text(recommendation: Recommendation, *, command: str, pyproject: str 
     return "\n".join(lines) + "\n"
 
 
+def _changes_payload(changes: NameChanges) -> RecommendNameChangesPayload:
+    from datamodel_code_generator._structured_output import RecommendNameChangesPayload  # noqa: PLC0415
+
+    return RecommendNameChangesPayload.model_validate(asdict(changes))
+
+
+def _candidate_payload(outcome: CandidateOutcome) -> RecommendCandidatePayload:
+    from datamodel_code_generator._structured_output import (  # noqa: PLC0415
+        RecommendCandidatePayload,
+        RecommendNameMetricsPayload,
+        RecommendNameStabilityPayload,
+    )
+
+    candidate, metrics, stability = outcome.candidate, outcome.metrics, outcome.stability
+    return RecommendCandidatePayload(
+        label=candidate.label,
+        preset=candidate.preset,
+        set=dict(candidate.options),
+        arguments=[
+            argument for name, value in candidate.options.items() for argument in option_arguments(name, value) or ()
+        ],
+        selectable=candidate.selectable,
+        error=outcome.error,
+        metrics=None
+        if metrics is None
+        else RecommendNameMetricsPayload(**asdict(metrics), problems_percent=metrics.problems_percent),
+        stability=None if stability is None else RecommendNameStabilityPayload.model_validate(asdict(stability)),
+    )
+
+
+def _trial_payload(trial: Trial | None) -> RecommendTrialPayload | None:
+    from datamodel_code_generator._recommend._metrics import METRICS_VERSION  # noqa: PLC0415
+    from datamodel_code_generator._structured_output import RecommendTrialPayload  # noqa: PLC0415
+
+    if trial is None:
+        return None
+    return RecommendTrialPayload(
+        metrics_version=METRICS_VERSION,
+        candidates=[_candidate_payload(outcome) for outcome in trial.outcomes],
+        ranking=[outcome.candidate.label for outcome in trial.ranking],
+        selected=None if trial.selected is None else trial.selected.candidate.label,
+        current=trial.current.candidate.label,
+        migration=None if trial.migration is None else _changes_payload(trial.migration),
+        dropped=trial.dropped,
+        remeasured=trial.remeasured,
+    )
+
+
 def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
-    from datamodel_code_generator._structured_output import RecommendOptionPayload  # noqa: PLC0415
+    from datamodel_code_generator._structured_output import (  # noqa: PLC0415
+        RecommendOptionPayload,
+        RecommendOptionTrialPayload,
+    )
 
     rule = option.decision.rule
+    effect = option.effect
     return RecommendOptionPayload(
         rule=rule.id,
         decision=rule.decision,
@@ -169,6 +343,13 @@ def _option_payload(option: Option, signals: Signals) -> RecommendOptionPayload:
         contested_reason=format_text(rule.contested_reason, signals) if option.decision.contested else None,
         caveats=[format_text(caveat, signals) for caveat in rule.caveats],
         evidence=list(rule.evidence),
+        trial=None
+        if effect is None
+        else RecommendOptionTrialPayload(
+            before=effect.before,
+            after=effect.after,
+            changes=_changes_payload(effect.changes),
+        ),
     )
 
 
@@ -228,9 +409,11 @@ def render_json(recommendation: Recommendation, *, content: str, arguments: list
             covers=[_option_payload(option, signals) for option in recommendation.covers],
         ),
         recommendations=[_option_payload(option, signals) for option in recommendation.recommendations],
+        left_out=[_option_payload(option, signals) for option in recommendation.left_out],
         consider=[_option_payload(option, signals) for option in recommendation.consider],
         not_recommended=[_option_payload(option, signals) for option in recommendation.not_recommended],
         disagreements=[_disagreement_payload(item) for item in recommendation.disagreements],
+        trial=_trial_payload(recommendation.trial),
         notes=recommendation.notes,
         arguments=arguments,
         config=None

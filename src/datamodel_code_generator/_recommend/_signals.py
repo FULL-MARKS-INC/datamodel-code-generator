@@ -182,14 +182,14 @@ def _unwrap(node: object) -> object:
     return node
 
 
-def _uses_definitions(document: Mapping[str, Any], kind: SchemaKind) -> bool:
-    """Return whether named schemas live in definitions/$defs: JSON Schema, or a Swagger 2.0 document."""
-    return kind == "jsonschema" or "swagger" in document
+def _uses_definitions(kind: SchemaKind) -> bool:
+    """Return whether named schemas live in definitions/$defs, as in JSON Schema and Swagger 2.0 read as JSON Schema."""
+    return kind == "jsonschema"
 
 
 def _components(document: Mapping[str, Any], kind: SchemaKind) -> dict[str, Any]:
     """Return the named schemas of a document: $defs and definitions, or components/schemas."""
-    if _uses_definitions(document, kind):
+    if _uses_definitions(kind):
         return {key: value for keyword in ("$defs", "definitions") for key, value in _items(document.get(keyword))}
     components = document.get("components")
     return {
@@ -198,8 +198,8 @@ def _components(document: Mapping[str, Any], kind: SchemaKind) -> dict[str, Any]
     }
 
 
-def _component_refs(document: Mapping[str, Any], kind: SchemaKind, components: Iterable[str]) -> dict[str, str]:
-    prefixes = ("#/$defs/", "#/definitions/") if _uses_definitions(document, kind) else ("#/components/schemas/",)
+def _component_refs(kind: SchemaKind, components: Iterable[str]) -> dict[str, str]:
+    prefixes = ("#/$defs/", "#/definitions/") if _uses_definitions(kind) else ("#/components/schemas/",)
     return {f"{prefix}{key}": key for key in components for prefix in prefixes}
 
 
@@ -227,7 +227,7 @@ def _operation_schemas(
         for path, item in _items(items):
             if section == "webhooks" or _path_selected(path, include_paths):
                 for method, operation in _items(item):
-                    yield from _operation_parts(f"{path} {method}", operation, parameters=api or "parameters" in scopes)
+                    yield from _operation_parts(f"{path} {method}", operation)
     components = document.get("components")
     bodies = (
         components.get("requestBodies") if isinstance(components, dict) and (api or "requestbodies" in scopes) else None
@@ -236,7 +236,12 @@ def _operation_schemas(
         yield from _media_schemas(name, body)
 
 
-def _operation_parts(key: str, operation: object, *, parameters: bool) -> Iterator[tuple[str, object]]:
+def _operation_parts(key: str, operation: object) -> Iterator[tuple[str, object]]:
+    """Yield the request body, response, and parameter schemas of one operation.
+
+    Generation parses every parameter's schema of the operations it walks, so inline enums and objects of parameters
+    are models whether or not the parameters scope also emits the operation's parameters model.
+    """
     if not isinstance(operation, dict) or key.rpartition(" ")[2] not in _HTTP_METHODS:
         return
     yield from _media_schemas(f"{key} request", operation.get("requestBody"))
@@ -245,7 +250,6 @@ def _operation_parts(key: str, operation: object, *, parameters: bool) -> Iterat
     fields = {
         name: parameter.get("schema")
         for parameter in operation.get("parameters") or ()
-        if parameters
         if isinstance(parameter, dict) and isinstance(name := parameter.get("name"), str)
     }
     yield f"{key} parameters", {"type": "object", "properties": fields} if fields else None
@@ -564,7 +568,7 @@ def measure_signals(
     path scopes.
     """
     all_components = _components(document, kind)
-    walker = _Walker(document, _component_refs(document, kind, all_components))
+    walker = _Walker(document, _component_refs(kind, all_components))
     counts = walker.counts
     extra: list[tuple[str, object]] = []
     if kind == "openapi":

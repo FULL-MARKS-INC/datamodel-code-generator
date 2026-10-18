@@ -118,8 +118,8 @@ def _json_value_or_file(value: str) -> dict[str, object]:
 
 
 def _recommend_mode(value: str) -> str:
-    """Accept the recommendation mode; the option is documented without a value, which selects quick."""
-    if value != "quick":
+    """Accept a recommendation mode, quick or full; the option is documented without a value, which picks by size."""
+    if value not in {"quick", "full"}:
         msg = f"unknown mode {value!r}; use --recommend-options without a value"
         raise ArgumentTypeError(msg)
     return value
@@ -1555,13 +1555,14 @@ general_options.add_argument(
 general_options.add_argument(
     "--recommend-options",
     nargs="?",
-    const="quick",
+    const=True,
     type=_recommend_mode,
     metavar="",
     default=None,
     help=(
         "Analyse the input schema and print the options to add on top of the latest dated preset, with the reasons, "
-        "as a command and a pyproject.toml block, then exit (experimental)."
+        "as a command and a pyproject.toml block, then exit (experimental). Schemas of up to 3000 estimated models "
+        "are also compared by generating the candidate configurations in memory."
     ),
 )
 general_options.add_argument(

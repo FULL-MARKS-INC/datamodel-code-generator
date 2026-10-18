@@ -170,6 +170,7 @@ def __getattr__(name: str) -> Any:
 if TYPE_CHECKING:
     from argparse import Namespace
     from collections import defaultdict
+    from collections.abc import Callable
     from urllib.parse import ParseResult
 
     from datamodel_code_generator._publication import (
@@ -1550,7 +1551,7 @@ def _recommend_options_conflict(args: Namespace) -> str | None:
     conflicts = (
         (args.check, "--check"),
         (args.watch, "--watch"),
-        (args.diff_against is not None, "--diff-against"),
+        (args.diff_against is not None and args.recommend_options == "quick", "--diff-against in quick mode"),
         (args.all_jobs, "--all-jobs"),
         (len(args.job or ()) > 1, "more than one --job"),
         (args.generate_pyproject_config, "--generate-pyproject-config"),
@@ -1591,6 +1592,45 @@ def _recommend_lock_observer(config: Config, pyproject_path: Path | None) -> Any
     ).record_response
 
 
+def _recommend_generation_config(config: Config, namespace: Namespace) -> Callable[[Mapping[str, Any]], Config]:
+    """Return a function giving the config a generation run takes for the command's config with updates applied.
+
+    The updates are applied like ``--preset`` applies its values; the rest is prepared as the command's own run with
+    its output format prepares it, to stdout or to ``--output``, which stays a virtual path that selects the layout.
+    """
+    import copy  # noqa: PLC0415
+
+    prepared: list[tuple[Config, defaultdict[str, dict[str, Any]] | None]] = []
+
+    def generation_config(updates: Mapping[str, Any]) -> Config:
+        if not prepared:
+            base = config.model_copy()
+            if base.url and base.allow_remote_refs is None:
+                base.allow_remote_refs = True
+            prepared.append((base, _template_data(base)))
+        base, extra_template_data = prepared[0]
+        run_config = base.model_copy()
+        for name, value in updates.items():
+            setattr(run_config, name, value)
+        run_config.repair_invalid_dotted_stdout = _repairs_invalid_dotted_stdout(
+            run_config, namespace, run_config.output
+        )
+        return _generation_config(
+            run_config,
+            output=run_config.output,
+            extra_template_data=copy.deepcopy(extra_template_data),
+            aliases=run_config.aliases,
+            serialization_aliases=run_config.serialization_aliases,
+            command_line=None,
+            custom_formatters_kwargs=None,
+            settings_path=run_config.output,
+            validators=run_config.validators,
+            default_value_overrides=run_config.default_values,
+        )
+
+    return generation_config
+
+
 def _run_recommend_options(  # noqa: PLR0913
     args: Namespace,
     config: Config,
@@ -1601,10 +1641,26 @@ def _run_recommend_options(  # noqa: PLR0913
     table: tuple[str, ...] = ("tool", "datamodel-codegen"),
     selector: tuple[str, ...] = (),
 ) -> Exit:
-    """Print option recommendations for the resolved configuration (experimental)."""
+    """Print option recommendations for the resolved configuration (experimental).
+
+    A server or client target is checked and its implied settings applied as for generation, so the recommendation
+    starts from the preset the target can use.
+    """
     from datamodel_code_generator._recommend import RecommendRequest, recommend_options  # noqa: PLC0415
     from datamodel_code_generator._recommend._report import render_json, render_text  # noqa: PLC0415
+    from datamodel_code_generator.base_config import (  # noqa: PLC0415
+        _flag,
+        _selected_target,
+        _target_options_error,
+        implied_target_settings,
+    )
     from datamodel_code_generator.remote_lock import RemoteLockError  # noqa: PLC0415
+
+    if (target := _selected_target(config)) is not None:
+        if (error := _target_options_error(config)) is not None:
+            print(f"Error: {error}", file=sys.stderr)  # noqa: T201
+            return Exit.ERROR
+        config = config.model_copy(update=implied_target_settings(config, config.model_fields_set))
 
     preset_on_command_line = "preset" in cli_config_args
     explicit = set(cli_config_args) if preset_on_command_line else {*pyproject_config, *cli_config_args}
@@ -1618,17 +1674,23 @@ def _run_recommend_options(  # noqa: PLR0913
                 has_project_config=bool(pyproject_config),
                 preset_on_command_line=preset_on_command_line,
                 read_stdin=sys.stdin.read,
+                generation_config=_recommend_generation_config(config, args),
                 table=table,
                 selector=selector,
-                mode=args.recommend_options,
+                mode=args.recommend_options if isinstance(args.recommend_options, str) else None,
                 response_observer=_recommend_lock_observer(config, pyproject_path),
+                target=None if target is None else _flag(target[0]),
             )
         )
     except (Error, RemoteLockError) as e:
         print(str(e), file=sys.stderr)  # noqa: T201
         return Exit.ERROR
-    arguments = [*recommendation.command_selector, *_cli_arguments(recommendation.command_values)]
-    command = shlex.join(["datamodel-codegen", *arguments])
+    arguments = (
+        [*recommendation.command_selector, *_cli_arguments(recommendation.command_values)]
+        if recommendation.runnable
+        else []
+    )
+    command = shlex.join(["datamodel-codegen", *arguments]) if recommendation.runnable else None
     pyproject = (
         None
         if recommendation.config_values is None
@@ -2576,6 +2638,27 @@ def _diff_against_validation_error(config: Config, namespace: Namespace) -> str 
     return next((message for is_incompatible, message in incompatible_options if is_incompatible), None)
 
 
+def _repairs_invalid_dotted_stdout(config: Config, namespace: Namespace, output: Path | None) -> bool:
+    """Return whether a run printing text to stdout repairs dotted module names it cannot print as modules."""
+    return (
+        output is None
+        and namespace.output_format != "json"
+        and namespace.fail_on_multi_module_stdout is not True
+        and config.treat_dot_as_module is None
+        and not config.strict_dotted_module_names
+        and config.module_split_mode is None
+        and not config.generate_schema_validators
+        and not config.use_generic_base_class
+        and getattr(config, "custom_class_name_generator", None) is None
+        and config.custom_template_dir is None
+        and not config.custom_formatters
+        and config.custom_file_header is None
+        and config.custom_file_header_path is None
+        and config.extra_template_data is None
+        and not config.additional_imports
+    )
+
+
 def _watch_and_regenerate(
     args: Sequence[str],
     config: Config,
@@ -3072,24 +3155,7 @@ def _main(  # noqa: PLR0911, PLR0912, PLR0914, PLR0915
         is_directory_output = False
         compare_output = None
 
-    repair_invalid_dotted_stdout = (
-        generate_output is None
-        and namespace.output_format != "json"
-        and namespace.fail_on_multi_module_stdout is not True
-        and config.treat_dot_as_module is None
-        and not config.strict_dotted_module_names
-        and config.module_split_mode is None
-        and not config.generate_schema_validators
-        and not config.use_generic_base_class
-        and getattr(config, "custom_class_name_generator", None) is None
-        and config.custom_template_dir is None
-        and not config.custom_formatters
-        and config.custom_file_header is None
-        and config.custom_file_header_path is None
-        and config.extra_template_data is None
-        and not config.additional_imports
-    )
-    config.repair_invalid_dotted_stdout = repair_invalid_dotted_stdout
+    config.repair_invalid_dotted_stdout = _repairs_invalid_dotted_stdout(config, namespace, generate_output)
 
     def cleanup_and_return(exit_code: Exit) -> Exit:
         if temp_context is not None:

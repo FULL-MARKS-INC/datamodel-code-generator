@@ -31,9 +31,11 @@ from datamodel_code_generator import (
     InputFileType,
     ModuleSplitMode,
     YamlValue,
+    chdir,
     generate,
     load_pyproject_config,
 )
+from datamodel_code_generator.__main__ import Exit, main
 from datamodel_code_generator.model.msgspec import DataModelField as MsgspecDataModelField
 from datamodel_code_generator.model.msgspec import DataTypeManager as MsgspecDataTypeManager
 from datamodel_code_generator.model.msgspec import Struct as MsgspecStruct
@@ -1270,6 +1272,27 @@ def test_perf_kubernetes_style_pydantic_v2(tmp_path: Path) -> None:
     )
     content = output_file.read_text()
     assert "ObjectMeta" in content
+
+
+@pytest.mark.perf
+@pytest.mark.benchmark
+def test_perf_recommend_options_full_kubernetes_style(tmp_path: Path) -> None:
+    """Performance test: --recommend-options full over the Kubernetes-style schema.
+
+    The recommender generates each candidate configuration in memory and measures its class names.
+    """
+    with chdir(tmp_path):
+        exit_code = main([
+            "--input",
+            str(PERFORMANCE_DATA_PATH / "kubernetes_style.json"),
+            "--input-file-type",
+            "jsonschema",
+            "--target-python-version",
+            "3.14",
+            "--recommend-options",
+            "full",
+        ])
+    assert exit_code == Exit.OK
 
 
 @pytest.mark.perf

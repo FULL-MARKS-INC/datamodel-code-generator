@@ -176,17 +176,18 @@ EXPERIMENTAL_FEATURES: dict[ExperimentalFeatureId, ExperimentalFeature] = {
     "cli-option.recommend-options": ExperimentalFeature(
         id="cli-option.recommend-options",
         kind="cli-option",
-        target="--recommend-options, its rule data, and its JSON payload",
+        target="--recommend-options, its rule data, its candidate comparison, and its JSON payload",
         message=(
-            "Option recommendations are experimental; the rules, the schema signals they read, the report, and the "
-            "JSON payload may change."
+            "Option recommendations are experimental; the rules, the schema signals they read, the class-name "
+            "metrics, the report, and the JSON payload may change."
         ),
         since_version="0.86.0",
         note=(
             "--recommend-options reads the input schema, measures naming-relevant signals of OpenAPI, AsyncAPI, and "
             "JSON Schema documents, and prints the latest dated preset to start from with the options to add, as a "
-            "command and a pyproject.toml block, without generating code. Options set on the command line or in "
-            "pyproject.toml are kept."
+            "command and a pyproject.toml block. Options set on the command line or in pyproject.toml are kept. "
+            "For schemas of up to 3000 estimated models, it also generates the candidate configurations in memory "
+            "and recommends the one whose class names score best; nothing is written."
         ),
     ),
     "cli-option.schema-validator-type": ExperimentalFeature(
