@@ -34,6 +34,7 @@ from datamodel_code_generator.imports import (
     IMPORT_UNION,
     Import,
 )
+from datamodel_code_generator.model._decisions.nullability import field_renders_none
 from datamodel_code_generator.python_literal import (
     _make_internal_type_expression,
     _normalize_string,
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator import types as _types
     from datamodel_code_generator.imports import Imports
     from datamodel_code_generator.model import runtime_validation as _runtime_validation
+    from datamodel_code_generator.model._decisions.nullability import FieldNullSource
     from datamodel_code_generator.python_literal import PythonRuntimeExpression
 
 TEMPLATE_DIR: Path = Path(__file__).parents[0] / "template"
@@ -786,25 +788,33 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         """Get the type hint string for this field, including nullability."""
         return self._type_hint_from_data_type(self.data_type)
 
-    def _type_hint_from_data_type(self, data_type: DataType) -> str:  # noqa: PLR0911
+    def _type_hint_from_data_type(self, data_type: DataType) -> str:
         """Get the type hint string for a field data type, including nullability."""
         type_hint = data_type.type_hint
 
         if not type_hint:
             return NONE
-        if self.has_default_factory or (data_type.is_optional and data_type.type != ANY):
+        if self._field_null_source(data_type) is None:
             return type_hint
-        if self.nullable is not None:
-            if self.nullable:
-                return get_optional_type(type_hint, self._use_union_operator)
-            return type_hint
-        if self.required:
-            if self.type_has_null:
-                return get_optional_type(type_hint, self._use_union_operator)
-            return type_hint
-        if self.fall_back_to_nullable:
-            return get_optional_type(type_hint, self._use_union_operator)
-        return type_hint
+        return get_optional_type(type_hint, self._use_union_operator)
+
+    def _field_null_source(
+        self,
+        data_type: DataType,
+        *,
+        pending_reference_null: bool = False,
+    ) -> FieldNullSource | None:
+        """Return why the field writes None around the hint of ``data_type`` (``field_renders_none``)."""
+        required = self.required
+        return field_renders_none(
+            hint_has_none=data_type.is_optional and data_type.type != ANY,
+            has_default_factory=self.has_default_factory,
+            nullable=self.nullable,
+            required=required,
+            type_has_null=required and self.type_has_null,
+            fall_back_to_nullable=not required and self.fall_back_to_nullable,
+            pending_reference_null=pending_reference_null,
+        )
 
     @property
     def base_type_hint(self) -> str:
@@ -818,18 +828,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         if not base_hint:  # pragma: no cover
             return NONE
 
-        needs_optional = (
-            (self.nullable is True)
-            or (self.required and self.type_has_null)
-            or (self.nullable is None and not self.required and self.fall_back_to_nullable)
-        )
-        skip_optional = (
-            self.has_default_factory
-            or (self.data_type.is_optional and self.data_type.type != ANY)
-            or (self.nullable is False)
-        )
-
-        if needs_optional and not skip_optional:  # pragma: no cover
+        if self._field_null_source(self.data_type) is not None:  # pragma: no cover
             return get_optional_type(base_hint, self._use_union_operator)
         return base_hint
 
@@ -898,9 +897,9 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         return chain_as_tuple(filtered_imports, missing_imports)
 
     def _normalize_data_type_import_state(self, data_type: DataType) -> None:
-        """Apply import-relevant DataType mutations before cache lookup."""
+        """Write the render-time state that the imports read, before the cache lookup."""
         if data_type.reference:
-            data_type._apply_nullable_from_reference()  # noqa: SLF001
+            data_type._materialize_render_state("reference-null")  # noqa: SLF001
 
         for child in data_type.data_types:
             self._normalize_data_type_import_state(child)
@@ -910,7 +909,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         if not data_type.is_union or data_type.preserve_union_member_order:
             return
         if any(self._data_type_renders_none(child) for child in data_type.data_types):
-            data_type.is_optional = True
+            data_type._materialize_render_state("member-null")  # noqa: SLF001
 
     @staticmethod
     def _import_key(import_: Import | None) -> tuple[str, str | None, str | None, str | None] | None:
@@ -1065,27 +1064,9 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
 
     def _needs_field_optional_import_from_structure(self, *, data_type: DataType | None = None) -> bool:
         data_type = data_type or self.data_type
-        if (
-            self._use_union_operator
-            or self.has_default_factory
-            or not self._data_type_renders_importable_hint(data_type)
-        ):
+        if self._use_union_operator or not self._data_type_renders_importable_hint(data_type):
             return False
-        if data_type.is_optional and data_type.type != ANY:
-            return False
-
-        match self.nullable:
-            case True:
-                result = True
-            case False:
-                result = False
-            case None if self.required:
-                result = bool(self.type_has_null)
-            case None:
-                result = bool(self.fall_back_to_nullable)
-            case _:
-                result = False  # pragma: no cover
-        return result
+        return self._field_null_source(data_type) is not None
 
     def _data_type_renders_importable_hint(self, data_type: DataType) -> bool:
         if self._data_type_renders_none(data_type):
@@ -1180,27 +1161,14 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         )
 
     def _needs_optional_import_without_type_hint(self, *, data_type: DataType | None = None) -> bool:
-        """Return whether the field-level nullable wrapper needs typing.Optional."""
+        """Return whether the field-level nullable wrapper needs typing.Optional.
+
+        No hint is rendered here, so the None of a nullable model that the type names is not written yet.
+        """
         data_type = data_type or self.data_type
-        if (
-            self._use_union_operator
-            or not self._has_renderable_data_type_without_type_hint(data_type=data_type)
-            or self.has_default_factory
-            or (data_type.is_optional and data_type.type != ANY)
-        ):
+        if self._use_union_operator or not self._has_renderable_data_type_without_type_hint(data_type=data_type):
             return False
-
-        if data_type.names_nullable_model:
-            return True
-
-        match self.nullable:
-            case True:
-                return True
-            case False:
-                return False
-            case None:
-                return bool(self.type_has_null) if self.required else bool(self.fall_back_to_nullable)
-        return False  # pragma: no cover
+        return self._field_null_source(data_type, pending_reference_null=data_type.names_nullable_model) is not None
 
     def _has_renderable_data_type_without_type_hint(self, *, data_type: DataType | None = None) -> bool:
         """Return whether this simple DataType renders to something other than None."""
@@ -1909,8 +1877,9 @@ class BaseClassDataType(DataType):
     """DataType subclass for base class references."""
 
     @override
-    def _apply_nullable_from_reference(self) -> None:
+    def _reference_adds_null(self) -> bool:
         """Keep nullable model references out of class inheritance clauses."""
+        return False
 
 
 UNDEFINED: Any = object()
