@@ -10434,6 +10434,15 @@ def test_main_jsonschema_anyof_const_enum_descriptions(output_file: Path) -> Non
         ),
         pytest.param(["--output-model-type", "pydantic_v2.dataclass"], id="pydantic-v2-dataclass"),
         pytest.param(["--output-model-type", "pydantic_v2.BaseModel", "--reuse-model"], id="pydantic-v2-reuse-model"),
+        pytest.param(
+            [
+                "--output-model-type",
+                "pydantic_v2.BaseModel",
+                "--custom-template-dir",
+                str(DATA_PATH / "templates_enum_member_fields"),
+            ],
+            id="pydantic-v2-custom-enum-template",
+        ),
     ],
 )
 def test_main_jsonschema_enum_member_descriptions(extra_args: list[str], output_file: Path) -> None:
@@ -10442,6 +10451,7 @@ def test_main_jsonschema_enum_member_descriptions(extra_args: list[str], output_
     Up to 0.86.0 an enum whose members had descriptions (``x-enum-descriptions`` or described ``const`` branches)
     imported pydantic's ``Field``, which nothing in the module used. The module still binds the name, as in 0.86.0:
     the model named ``Field`` stays ``FieldModel``, and ``--reuse-model`` keeps ``StatusCopy`` apart from ``Status``.
+    A custom ``Enum.jinja2`` may render the members' ``Field`` calls, so the module imports what they use.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "enum_member_descriptions.json",
@@ -13171,8 +13181,8 @@ def test_main_jsonschema_prefix_items_unique_items(output_model: str, extra_args
     """Warn that a uniqueItems tuple is generated without uniqueness under --use-unique-items-as-set.
 
     The option writes a uniqueItems list as a set, which a tuple cannot be without losing its positions, so a closed or
-    explicitly fixed tuple keeps its positions and the warning names it. Schema validators check uniqueness on the
-    tuple at runtime, so they need no warning.
+    explicitly fixed tuple keeps its positions and the warning names it, with its default and the lists at its
+    positions unchanged. Schema validators check uniqueness on the tuple at runtime, so they need no warning.
     """
     with warnings.catch_warnings(record=True) as recorded_warnings:
         warnings.simplefilter("always")
@@ -13185,7 +13195,9 @@ def test_main_jsonschema_prefix_items_unique_items(output_model: str, extra_args
         )
     assert_output(
         "".join(
-            f"{warning.message}\n" for warning in recorded_warnings if "is generated without" in str(warning.message)
+            f"{message}\n"
+            for message in dict.fromkeys(str(warning.message) for warning in recorded_warnings)
+            if "is generated without" in message
         ),
         name="warnings",
     )
@@ -29715,6 +29727,7 @@ def test_type_union_constraints(name: str, constraints: bool, entry: str, output
     expected_file = TYPE_UNION_CASES[name].get(f"{name}_{int(constraints)}.py", f"{name}_{int(constraints)}.py")
     expected_file = f"type_union_constraints/{expected_file}"
     schema = json.loads(input_path.read_text())
+    dynamic_model: Any = None
     with (
         pytest.warns(UserWarning, match="is generated without this constraint")
         if not constraints and TYPE_UNION_CASES[name].get("dropped_property_counts")

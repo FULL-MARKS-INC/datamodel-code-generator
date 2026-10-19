@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -11,6 +12,8 @@ from jsonschema import Draft202012Validator
 from jsonschema import ValidationError as SchemaValidationError
 from pydantic import TypeAdapter, ValidationError
 
+from datamodel_code_generator.format import Formatter
+from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
 from tests.conftest import assert_output
 from tests.main.conftest import (
     DATA_PATH,
@@ -23,6 +26,9 @@ from tests.main.conftest import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from datamodel_code_generator.parser.jsonschema import JsonSchemaObject
+    from datamodel_code_generator.types import DataType
+
 OBJECT_MAPS = JSON_SCHEMA_DATA_PATH / "object_maps"
 PAYLOADS = DATA_PATH / "payloads" / "object_maps"
 OBJECT_MAP_INPUTS = ("pattern_maps", "nullable_maps", "type_array_maps", "pattern_counts", "pattern_additional")
@@ -30,7 +36,12 @@ OUTPUT_MODEL_TYPES = (
     "pydantic_v2.BaseModel",
     "pydantic_v2.dataclass",
     "dataclasses.dataclass",
-    "typing.TypedDict",
+    pytest.param(
+        "typing.TypedDict",
+        marks=pytest.mark.skipif(
+            sys.version_info < (3, 12), reason="Pydantic validates typing.TypedDict from Python 3.12 on"
+        ),
+    ),
     "msgspec.Struct",
 )
 OPTION_SETS = {
@@ -125,3 +136,38 @@ def test_object_maps_schema_validators(output_file: Path, recwarn: pytest.Warnin
     )
     payloads = json.loads((PAYLOADS / f"{name}.json").read_text())
     assert_output(_payload_verdicts(output_file, "pydantic_v2.BaseModel", payloads), name="payloads")
+
+
+def test_object_maps_released_pattern_properties_hook(tmp_path: Path) -> None:
+    """Call a ``parse_pattern_properties`` override written for 0.86.0 with the arguments of that release.
+
+    The dict of a map whose additionalProperties types the keys that match no pattern is built without the hook.
+    """
+
+    class ReleasedHookParser(JsonSchemaParser):
+        def parse_pattern_properties(
+            self,
+            name: str,
+            pattern_properties: dict[str, JsonSchemaObject | bool],
+            path: list[str],
+            *,
+            property_names: JsonSchemaObject | bool | None = None,
+        ) -> DataType:
+            return super().parse_pattern_properties(name, pattern_properties, path, property_names=property_names)
+
+    (input_path := tmp_path / "maps.json").write_text(
+        json.dumps({
+            "type": "object",
+            "properties": {
+                "patterns": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}},
+                "others": {
+                    "type": "object",
+                    "patternProperties": {"^a": {"type": "integer"}},
+                    "additionalProperties": {"type": "integer"},
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    parser = ReleasedHookParser(input_path, base_path=tmp_path, formatters=[Formatter.BUILTIN])
+    assert_output(parser.parse())
