@@ -17,6 +17,7 @@ SOURCE_ROOT = ROOT / "src" / "datamodel_code_generator"
 Layer: TypeAlias = Literal[
     "entrypoint",
     "parser",
+    "facts",
     "config",
     "input-model",
     "reference",
@@ -74,8 +75,23 @@ _TARGET_MODULES: Final = frozenset({
     "datamodel_code_generator._target_selection",
     "datamodel_code_generator._target_templates",
 })
-_REQUIREMENTS_ALLOWED_PACKAGE_MODULES: Final = frozenset({"datamodel_code_generator.enums"})
-_REQUIREMENTS_ALLOWED_EXTERNAL_ROOTS: Final = frozenset({*sys.stdlib_module_names, "typing_extensions"})
+_LEAF_LAYER_IMPORTS: Final[dict[str, tuple[frozenset[str], str]]] = {
+    "facts": (
+        frozenset({*sys.stdlib_module_names, "typing_extensions"}),
+        (
+            "the attribute-to-fact table is read by checkers without the package: import only the standard library "
+            "and typing_extensions"
+        ),
+    ),
+    "requirements": (
+        frozenset({*sys.stdlib_module_names, "typing_extensions", "datamodel_code_generator.enums"}),
+        (
+            "the requirement table is a leaf: import only the standard library, typing_extensions and "
+            "datamodel_code_generator.enums"
+        ),
+    ),
+}
+"""Leaf layers: the modules (with their submodules) each may import, and the reason shown on a violation."""
 _NEUTRAL_MODEL_FILENAMES: Final = frozenset({
     "base.py",
     "enum.py",
@@ -254,6 +270,7 @@ def _module_name(path: Path, layer: Layer) -> str:
         return {
             "entrypoint": "datamodel_code_generator.entrypoint_fixture",
             "parser": "datamodel_code_generator.parser.fixture",
+            "facts": "datamodel_code_generator.parser.facts_fixture",
             "config": "datamodel_code_generator.config_fixture",
             "input-model": "datamodel_code_generator.input_model_fixture",
             "reference": "datamodel_code_generator.reference_fixture",
@@ -287,16 +304,6 @@ def _concrete_backend_module(target: str) -> str | None:
     if parts[:2] != prefix or len(parts) < _BACKEND_MODULE_PART_COUNT or parts[2] not in CONCRETE_BACKEND_ROOTS:
         return None
     return ".".join((*prefix, parts[2]))
-
-
-def _is_requirements_dependency(target: str) -> bool:
-    """Return whether the requirement table may import a module: stdlib, typing_extensions, or enums."""
-    root = target.partition(".")[0]
-    if root == "datamodel_code_generator":
-        return any(
-            target == module or target.startswith(f"{module}.") for module in _REQUIREMENTS_ALLOWED_PACKAGE_MODULES
-        )
-    return root in _REQUIREMENTS_ALLOWED_EXTERNAL_ROOTS
 
 
 def _is_reference_backend_import(target: str) -> bool:
@@ -562,7 +569,7 @@ class ArchitectureBoundaryVisitor(ast.NodeVisitor):
         dynamic_target = None
         if self._is_dynamic_import(node.func) and (argument := self._dynamic_import_target_argument(node)) is not None:
             dynamic_target = self._resolved_dynamic_target(node, self._resolved_string(argument))
-        if dynamic_target and self.layer == "requirements":
+        if dynamic_target and self.layer in _LEAF_LAYER_IMPORTS:
             self._check_import(node, dynamic_target)
         elif (
             dynamic_target
@@ -1025,14 +1032,10 @@ class ArchitectureBoundaryVisitor(ast.NodeVisitor):
         return False
 
     def _check_import(self, node: ast.AST, target: str) -> None:
-        if self.layer == "requirements" and not _is_requirements_dependency(target):
-            self._add(
-                node,
-                "requirements-import",
-                target,
-                "the requirement table is a leaf: import only the standard library, typing_extensions and "
-                "datamodel_code_generator.enums",
-            )
+        if (leaf := _LEAF_LAYER_IMPORTS.get(self.layer)) is not None:
+            allowed, reason = leaf
+            if not any(target == module or target.startswith(f"{module}.") for module in allowed):
+                self._add(node, f"{self.layer}-import", target, reason)
             return
         if self.layer == "reference" and _is_reference_backend_import(target):
             self._add(
@@ -1117,6 +1120,8 @@ def _classify_source_path(path: Path) -> Layer:
     match relative.parts:
         case ("__init__.py",):
             layer = "entrypoint"
+        case ("parser", "_facts.py"):
+            layer = "facts"
         case ("parser", *_):
             layer = "parser"
         case ("config.py" | "input_model.py" as filename,):

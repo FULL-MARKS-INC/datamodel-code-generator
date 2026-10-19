@@ -388,6 +388,7 @@ collapse replacing a member of a shared list.
 ### Fact Finality
 
 "Final after" names the last pass that can still change the fact. A decision that reads the fact belongs after it.
+`parser/_facts.py` holds the same information per attribute (`final_after`, `frozen_at`) for the checkers.
 
 | Fact | Final after |
 | --- | --- |
@@ -429,9 +430,47 @@ incrementally for appended and changed models or with a full rebuild.
 
 The mutation APIs are the `GenerationStore` methods listed in `GENERATION_STORE_MUTATION_METHODS`, for example
 `replace_field_type`, `replace_nested_data_type`, `set_fields`, `set_base_classes`, `update_model_reference` and
-`redirect_reference_users`. `scripts/check_generation_store_usage.py` (with
-`tests/parser/test_generation_store_usage.py`) rejects direct writes to `.data_type`, `.fields`, `.base_classes` and
-`.reference` and list mutators on model collections, in `parser/` only.
+`redirect_reference_users`.
+
+`parser/_facts.py` says which attribute holds which fact. `ATTRIBUTE_FACTS` has one row per owner class and attribute,
+`__dict__` key, dict entry (`extras["kw_only"]`) or cached property, with its kind (`fact`, `presentation`, `cache` or
+`bookkeeping`), the `Fact` and `RenderFact` members a write changes, the store operations allowed to write it, the
+`Phase` whose passes write it last today and its freeze point: the latest freeze point among its facts (every `Fact`
+at B1, every `RenderFact` at its `RENDER_FACT_FREEZE_POINTS` entry), after which nothing may write it once the pass
+pipeline is in place. The finality checks still check each `Fact` at B1 unless a pass declares an exception.
+Bookkeeping rows name no fact and no store operation. The module docstring lists the three allowed exceptions to the
+kind rules (plan rows, rendered nullability, the schema-validator plan cache). The module imports only the standard
+library and `typing_extensions` (`scripts/check_architecture_boundaries.py` registers it as the `facts` leaf layer), so
+the checkers can read it without importing the package.
+
+`scripts/check_generation_store_usage.py` (with `tests/parser/test_generation_store_usage.py`) reads that table and
+`GENERATION_STORE_MUTATION_METHODS` with `ast` and reports every write that does not go through a store operation:
+
+- in `parser/`: writes of fact and presentation attributes of model-graph classes (assignment, `del`, augmented
+  assignment, `setattr` and `object.__setattr__` with a literal name, item writes and list, dict and set mutators,
+  also through a local alias), `__dict__` writes, the direct `.data_type`, `.fields`, `.base_classes` and
+  `.reference` writes, list mutators on model collections and `Reference.children` reads. A `setattr` with a
+  computed name is reported too. Writes to the parser itself (`self`) and to schema objects (parameters annotated
+  `JsonSchemaObject`, and the copies and `SCHEMA_OBJECT_TYPE.model_validate` results made from them) are not model
+  writes;
+- in `model/` and `types.py`: the same writes inside the parser-facing hooks (`PARSER_HOOK_METHODS`), the private
+  helpers that write rendered state when a pass reads `type_hint` or collects imports (`RENDER_STATE_WRITERS`), and
+  every model function these reach through calls on any receiver, at any depth, including writes to `self`. The
+  closure stops at construction (`CONSTRUCTION_METHODS`), reference bookkeeping (`REFERENCE_METHODS`) and render
+  entry points (`RENDER_ENTRY_POINTS`, each with its reason);
+- in all three: caches kept on model objects: `__dict__` entries, cache attributes and `cached_property`.
+
+Every finding is keyed by path, function and target, without line numbers, and
+`scripts/generation_store_allowlist.toml` holds the findings that existed when the checker learned them, with a count
+each. A new finding fails, and so does an entry that no longer matches, so the list only shrinks: a change that routes
+a write through the store removes its entry. The checker also fails when a model-graph class sets an attribute (in
+any method) without a row, when a row names nothing the sources declare or write, when a model method that parser
+code calls (directly, or by name through `getattr`/`hasattr`) reaches a fact write that no hook covers, and when a
+hook, construction or render-entry list names a function that no model module defines.
+
+The checker does not follow these forms, so they must not be used for model writes: `obj.__setattr__("name", value)`,
+`obj.extras.__setitem__(key, value)` and other dunder calls, unbound method calls such as `list.append(obj.fields,
+field)`, and `functools.partial(setattr, obj)`.
 
 Current behaviour that a decision reading the index must allow for:
 
@@ -444,7 +483,9 @@ Current behaviour that a decision reading the index must allow for:
   `__assign_forward_reference_fields` change models this way.
 - Renames through the `class_name` setter (`__change_field_name`, `__rename_named_type`,
   `__replace_duplicate_name_in_module`) do not go through `rename_model`.
-- Writes to `data_types` and `dict_key`, and writes in `model/` and `types.py`, are outside the checker's scope.
+- Most fact writes after parsing still bypass the store; `scripts/generation_store_allowlist.toml` lists them by
+  function. The checker cannot see writes through a model-list variable (`models.sort()` on a module's list), writes
+  to module imports (`ModuleContext.imports`), or writes in model methods that the hook closure does not reach.
 - Dedup keys (`DataModel.get_dedup_key`), model shapes and imports caches are separate caches, not store facts.
 
 ### Placement Guide
