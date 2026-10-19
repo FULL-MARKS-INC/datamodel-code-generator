@@ -26,6 +26,7 @@ Layer: TypeAlias = Literal[
     "shared-model",
     "target",
     "requirements",
+    "checks",
     "shared",
 ]
 SharedModelAliasState: TypeAlias = tuple[set[str], set[str], set[str], set[str], dict[str, str]]
@@ -88,6 +89,13 @@ _LEAF_LAYER_IMPORTS: Final[dict[str, tuple[frozenset[str], str]]] = {
         (
             "the requirement table is a leaf: import only the standard library, typing_extensions and "
             "datamodel_code_generator.enums"
+        ),
+    ),
+    "checks": (
+        frozenset({*sys.stdlib_module_names, "typing_extensions"}),
+        (
+            "the debug check flags module is a leaf that every layer reads: import only the standard library "
+            "and typing_extensions"
         ),
     ),
 }
@@ -279,6 +287,7 @@ def _module_name(path: Path, layer: Layer) -> str:
             "shared-model": "datamodel_code_generator.model.shared_fixture",
             "target": "datamodel_code_generator.target_fixture",
             "requirements": "datamodel_code_generator.requirements_fixture",
+            "checks": "datamodel_code_generator.checks_fixture",
             "shared": "datamodel_code_generator.shared_fixture",
         }[layer]
 
@@ -1130,6 +1139,8 @@ def _classify_source_path(path: Path) -> Layer:
             layer = "reference"
         case ("_requirements.py",):
             layer = "requirements"
+        case ("_checks.py",):
+            layer = "checks"
         case ("_client" | "_fastapi", *_):
             layer = "target"
         case (filename,) if f"datamodel_code_generator.{filename.removesuffix('.py')}" in _TARGET_MODULES:

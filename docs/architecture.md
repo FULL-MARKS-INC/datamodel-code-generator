@@ -674,10 +674,11 @@ paths:
 
 Run `python scripts/check_architecture_boundaries.py` to validate these rules. The checker parses imports and semantic
 backend inspection with the Python AST, including lazy and dynamic imports. Entrypoint, parser, configuration,
-input-model, reference, model-composition, output-model, shared-model, and requirement-table files are classified
-explicitly. The composition root may select concrete backends, while shared-model modules must remain neutral: they
-cannot import a concrete backend or resolve one through `sys.modules`, including module-name constants and aliases.
-The requirement table may import only the standard library, `typing_extensions` and `enums`. This keeps
+input-model, reference, model-composition, output-model, shared-model, requirement-table, and debug check flag files are
+classified explicitly. The composition root may select concrete backends, while shared-model modules must remain
+neutral: they cannot import a concrete backend or resolve one through `sys.modules`, including module-name constants and
+aliases. The requirement table may import only the standard library, `typing_extensions` and `enums`, and `_checks.py`,
+which every layer reads for the debug check flags, only the standard library and `typing_extensions`. This keeps
 backend-specific lifecycle and cache ownership with the backend or composition root, without blocking neutral module
 registry access such as `sys.modules[model_type.__module__]`. Private parser lifecycle access and reference-owned
 backend policy therefore cannot hide in the shared layer. Its legacy allowlist is keyed by file, enclosing symbol, rule,
