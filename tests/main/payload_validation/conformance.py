@@ -204,6 +204,13 @@ MSGSPEC_VALIDATION_EXCLUDED_CASES: Final[dict[str, str]] = {
     "jsonschema/enum_names_beside_null.json": (
         "msgspec conversion only supports Enum classes with homogeneous str or int values"
     ),
+    "jsonschema/enum_value_base_kinds.json": (
+        "msgspec conversion only supports Enum classes with homogeneous str or int values"
+    ),
+    "jsonschema/msgspec_enum_value_base_kept.json": (
+        "msgspec conversion only supports Enum classes with homogeneous str or int values; "
+        "test_main_jsonschema_msgspec_enum_value_base_kept decodes the --use-subclass-enum form"
+    ),
     **dict.fromkeys(
         (
             "jsonschema/msgspec_enum_diagnostics/nullable.json",
