@@ -875,6 +875,8 @@ typing.TypedDict-const_field_typed_dict.py	main/openapi/const_field_typed_dict.p
 	main/openapi/custom_template_dir_include_override.py
 [test_main_openapi_dataclass_inheritance_parent_default]
 	main/openapi/dataclass_inheritance_field_ordering_py310.py
+[test_main_openapi_dataclass_inheritance_parent_default_annotated]
+	main/openapi/main_openapi/dataclass_inheritance_parent_default_annotated.py	= main/openapi/dataclass_inheritance_field_ordering_py310.py
 [test_main_openapi_dataclass_optional_metadata_defaults]
 	main/openapi/dataclass_optional_metadata_defaults.py
 [test_main_openapi_date_class]

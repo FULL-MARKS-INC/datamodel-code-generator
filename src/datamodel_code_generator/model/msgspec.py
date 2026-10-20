@@ -20,6 +20,11 @@ from datamodel_code_generator._target_unicode import is_identifier
 from datamodel_code_generator.imports import IMPORT_UNION, Import
 from datamodel_code_generator.model import DataModel, DataModelFieldBase, _rebuild_model_with_datamodel_namespace
 from datamodel_code_generator.model._constraints import PatternConstraints as _Constraints
+from datamodel_code_generator.model._decisions.assignment import (
+    MsgspecWritten,
+    struct_assigned,
+    written_data,
+)
 from datamodel_code_generator.model._decisions.literal_default import decide_literal_default
 from datamodel_code_generator.model._decisions.tag_value import struct_discriminator_tag, struct_tag_options
 from datamodel_code_generator.model.base import (
@@ -150,6 +155,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Iterator, Mapping
     from pathlib import Path
 
+    from datamodel_code_generator.model._decisions.assignment import AssignmentRow
     from datamodel_code_generator.reference import Reference
 
 
@@ -181,7 +187,7 @@ def has_field_assignment(field: DataModelFieldBase) -> bool:
 
     A Struct writes a default for every optional field, ``UNSET`` or ``None``, with ``--strip-default-none`` too.
     """
-    return field.use_default_with_required or not field.required
+    return struct_assigned(required=field.required and not field.use_default_with_required)
 
 
 def get_field_default_info(field: DataModelFieldBase) -> tuple[bool, bool]:
@@ -231,6 +237,7 @@ class Struct(DataModel):
     FIELD_ASSIGNMENT_CHECKER = staticmethod(has_field_assignment)
     FIELD_CONSTRUCTION_ORDER_KEY = staticmethod(has_field_assignment)
     FIELD_DEFAULT_CLASSIFIER = staticmethod(get_field_default_info)
+    _ASSIGNMENT_ROW: ClassVar[AssignmentRow | None] = "msgspec"
     FIELD_NAME_MODEL_TYPE: ClassVar[ModelType] = ModelType.MSGSPEC
     FIELD_NAME_RESOLVER_CLASS: ClassVar[type[FieldNameResolver]] = MsgspecFieldNameResolver
     SUPPORTS_DISCRIMINATOR: ClassVar[bool] = True
@@ -594,6 +601,8 @@ class Constraints(_Constraints):
 class DataModelField(DataModelFieldBase):
     """Field implementation for msgspec Struct models."""
 
+    _FIELD_ASSIGNMENT_ROW: ClassVar[AssignmentRow] = "msgspec"
+
     SUPPORTS_ANNOTATED_CONSTRAINTS: ClassVar[bool] = True
     ANNOTATED_CONSTRAINTS_CONTEXT: ClassVar[object | None] = _ANNOTATED_CONSTRAINTS_CONTEXT
     _FIELD_KEYS: ClassVar[set[str]] = {
@@ -908,16 +917,9 @@ class DataModelField(DataModelFieldBase):
         return not self.required or super()._has_default_for_nested_model_factory()
 
     @override
-    def _get_constructor_default_info(self) -> tuple[bool, bool]:
-        """Return constructor-default semantics from structured field data."""
-        if not has_field_assignment(self) or (self.required and not self.use_default_with_required):
-            return False, False
-        data, _ = self._get_field_data_and_import_requirements()
-        if "default_factory" in data:
-            return True, False
-        if data and "default" not in data:
-            return False, False
-        return True, True
+    def _written_assignment(self) -> MsgspecWritten:
+        """Return the ``field()`` arguments the field writes."""
+        return MsgspecWritten(data=written_data(self._get_field_data_and_import_requirements()[0]))
 
     def _get_field_render_plan(self) -> _MsgspecFieldRenderPlan:
         """Build the msgspec field output and imports without parsing rendered Python."""

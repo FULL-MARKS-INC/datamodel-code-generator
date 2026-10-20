@@ -22,9 +22,10 @@ from datamodel_code_generator.model.pydantic_v2.dataclass import DataClass as Py
 from datamodel_code_generator.model.pydantic_v2.dataclass import (
     has_field_assignment as pydantic_dataclass_has_field_assignment,
 )
-from datamodel_code_generator.parser.base import Parser
+from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
 from datamodel_code_generator.reference import Reference
 from datamodel_code_generator.types import DataType
+from tests.conftest import assert_output
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,7 +69,6 @@ def test_standard_models_declare_parser_behavior_capabilities(
     )
 
     assert type(model).FIELD_ASSIGNMENT_CHECKER is expected_checker
-    assert Parser._get_field_assignment_checker(model) is expected_checker
     assert model.SUPPORTS_TREE_SCOPE_REUSE_MODEL_INHERITANCE is expected_tree_reuse_inheritance
     assert model.REQUIRES_EXPLICIT_DEFERRED_ANNOTATIONS_FOR_FORWARD_REFS is expected_explicit_deferred_annotations
 
@@ -97,6 +97,48 @@ def test_external_model_subclasses_inherit_parser_behavior_capabilities(
         external_model_type.REQUIRES_EXPLICIT_DEFERRED_ANNOTATIONS_FOR_FORWARD_REFS
         is expected_explicit_deferred_annotations
     )
+
+
+@pytest.mark.parametrize("how", ["body", "mixin", "setattr"])
+def test_external_model_assignment_hooks_order_its_fields(how: str) -> None:
+    """An output model that replaces an assignment hook without naming a row orders its fields by its hooks."""
+    model_types = get_data_model_types(DataModelType.DataclassesDataclass, target_python_version=PythonVersion.PY_311)
+
+    if how == "body":
+
+        class StructOrderedDataClass(model_types.data_model):
+            """A dataclass that counts every optional field as assigned, as a msgspec Struct does."""
+
+            FIELD_ASSIGNMENT_CHECKER = staticmethod(msgspec_has_field_assignment)
+
+    elif how == "mixin":
+
+        class StructOrderedMixin:
+            """Counts every optional field as assigned, as a msgspec Struct does."""
+
+            FIELD_ASSIGNMENT_CHECKER = staticmethod(msgspec_has_field_assignment)
+
+        class StructOrderedDataClass(StructOrderedMixin, model_types.data_model):
+            """A dataclass that takes its hook from a mixin."""
+
+    else:
+
+        class StructOrderedDataClass(model_types.data_model):
+            """A dataclass whose hook is set after the class exists."""
+
+        StructOrderedDataClass.FIELD_ASSIGNMENT_CHECKER = staticmethod(msgspec_has_field_assignment)
+
+    parser = JsonSchemaParser(
+        '{"title": "Model", "type": "object", "required": ["b"],'
+        ' "properties": {"a": {"type": "string"}, "b": {"type": "string"}}}',
+        data_model_type=StructOrderedDataClass,
+        data_model_root_type=model_types.root_model,
+        data_model_field_type=model_types.field_model,
+        data_type_manager_type=model_types.data_type_manager,
+        strip_default_none=True,
+    )
+
+    assert_output(parser.parse())
 
 
 @pytest.mark.allow_direct_assert

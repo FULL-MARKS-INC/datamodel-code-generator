@@ -90,29 +90,6 @@ def test_generation_import_does_not_load_pydantic_v2_dependency_policy() -> None
 
 
 @pytest.mark.allow_direct_assert
-def test_field_assignment_checker_does_not_load_output_model_generators() -> None:
-    """Resolving an output-owned ordering hook should not import concrete backends."""
-    module_names = (
-        "datamodel_code_generator.model.dataclass",
-        "datamodel_code_generator.model.msgspec",
-    )
-    code = (
-        "import sys\n"
-        "from datamodel_code_generator.parser.base import Parser\n"
-        "class ExternalModel:\n"
-        "    @staticmethod\n"
-        "    def FIELD_ASSIGNMENT_CHECKER(field):\n"
-        "        return field == 'assigned'\n"
-        "checker = Parser._get_field_assignment_checker(ExternalModel())\n"
-        "assert checker('assigned') is True\n"
-        f"module_names = {module_names!r}\n"
-        "print('\\n'.join(name for name in module_names if name in sys.modules))\n"
-    )
-
-    assert _run_import_probe(code) == "\n"
-
-
-@pytest.mark.allow_direct_assert
 def test_parser_model_compatibility_attributes_remain_available() -> None:
     """Parser modules should keep moved compatibility attributes available."""
     code = (
@@ -154,9 +131,10 @@ def test_parser_model_compatibility_attributes_reject_unknown_names() -> None:
 @pytest.mark.allow_direct_assert
 def test_parser_behavior_capabilities_have_no_concrete_helper_dependencies() -> None:
     """Keep output-specific field and reuse behavior behind DataModel capabilities."""
+    from datamodel_code_generator.model.base import DataModel
     from datamodel_code_generator.parser import base
 
-    checker_tree = ast.parse(textwrap.dedent(inspect.getsource(base.Parser._get_field_assignment_checker)))
+    checker_tree = ast.parse(textwrap.dedent(inspect.getsource(DataModel._field_assignment_facts)))
     tree_reuse_source = inspect.getsource(vars(base.Parser)["_Parser__create_shared_module_from_duplicates"])
 
     assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(checker_tree))

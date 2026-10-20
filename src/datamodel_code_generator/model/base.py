@@ -36,8 +36,17 @@ from datamodel_code_generator.imports import (
     IMPORT_UNION,
     Import,
 )
+from datamodel_code_generator.model._decisions.assignment import (
+    AssignmentInputs,
+    DataclassVisibility,
+    ModelWritten,
+    PydanticDataclassWritten,
+    classify_assignment,
+    participates_in_constructor,
+)
 from datamodel_code_generator.model._decisions.literal_default import const_type, decide_literal_default
 from datamodel_code_generator.model._decisions.nullability import field_renders_none
+from datamodel_code_generator.model._render_plan import AssignmentFacts
 from datamodel_code_generator.python_literal import (
     _make_internal_type_expression,
     _normalize_string,
@@ -63,6 +72,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._requirements import PydanticConstruct
     from datamodel_code_generator.imports import Imports
     from datamodel_code_generator.model import runtime_validation as _runtime_validation
+    from datamodel_code_generator.model._decisions.assignment import AssignmentRow, WrittenAssignment
     from datamodel_code_generator.model._decisions.literal_default import LiteralDefault
     from datamodel_code_generator.model._decisions.nullability import FieldNullSource
     from datamodel_code_generator.python_literal import PythonRuntimeExpression
@@ -577,6 +587,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
     SUPPORTS_ANNOTATED_CONSTRAINTS: ClassVar[bool] = False
     ANNOTATED_CONSTRAINTS_CONTEXT: ClassVar[object | None] = None
     SUPPORTS_DISCRIMINATOR: ClassVar[bool] = False
+    _FIELD_ASSIGNMENT_ROW: ClassVar[AssignmentRow] = "model"
 
     if TYPE_CHECKING:
 
@@ -1299,8 +1310,20 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         return False
 
     def _get_constructor_default_info(self) -> tuple[bool, bool]:
-        """Return neutral constructor-default semantics for this field."""
-        return _get_field_default_info(self)
+        """Return the constructor default of the field, as its own written assignment gives it."""
+        return _classify_field_assignment(self, self._FIELD_ASSIGNMENT_ROW).default_info
+
+    def _written_assignment(self) -> WrittenAssignment:
+        """Return what the field's backend writes after its annotation, as assignment classification reads it."""
+        return _model_written(self)
+
+    def _dataclass_visibility(self) -> DataclassVisibility:
+        """Return what the Pydantic dataclass template needs to see of the field as an assignment."""
+        return DataclassVisibility(
+            metadata_assignment=self.use_annotated and getattr(self, "requires_dataclass_field_assignment", False),
+            factory_in_field=getattr(self, "has_default_factory_in_field", False),
+            admits_none=self.data_type.admits_none,
+        )
 
     def _has_default_for_nested_model_factory(self) -> bool:
         """Return whether the emitted constructor supplies this field's default."""
@@ -1433,6 +1456,15 @@ def _default_factory_type_name(data_type: DataType) -> str:
     if (alias := data_type.alias) and not data_type._is_quoted_reference:  # noqa: SLF001
         return alias
     return cast("DataModel", cast("Reference", data_type.reference).source).class_name
+
+
+_ASSIGNMENT_HOOK_NAMES = frozenset({
+    "FIELD_ASSIGNMENT_CHECKER",
+    "FIELD_DEFAULT_CLASSIFIER",
+    "FIELD_PARTICIPATES_IN_CONSTRUCTOR",
+    "FIELD_CONSTRUCTION_ORDER_KEY",
+})
+"""The ``DataModel`` hooks that are views of an assignment row."""
 
 
 def _is_hidden_by_earlier_field(field: DataModelFieldBase, name: str) -> bool:
@@ -1924,27 +1956,64 @@ class BaseLayoutView(NamedTuple):
     is_opaque: Callable[[DataModel], bool]
 
 
+def _model_written(field: DataModelFieldBase) -> ModelWritten:
+    """Return the written assignment of a field as the neutral rule reads it: its call, declared factory and default."""
+    default = field.default
+    return ModelWritten(
+        text=bool(field.field),
+        declared_factory="default_factory" in field.extras,
+        default="undefined" if default is UNDEFINED else "none" if default is None else "value",
+    )
+
+
+def _assignment_inputs(
+    field: DataModelFieldBase, row: AssignmentRow, written: WrittenAssignment | None = None
+) -> AssignmentInputs:
+    """Read the facts ``classify_assignment`` decides on from a live field, with its own written assignment by default.
+
+    The written assignment is read as the field renders it now, nested-model default factories included, before L6
+    records the recursive paths that drop them (row ``legacy-nested-factory-at-read`` of
+    ``model/_decisions/assignment.py``).
+    """
+    written = field._written_assignment() if written is None else written  # noqa: SLF001
+    return AssignmentInputs(
+        row=row,
+        written=written,
+        required=field.required and not field.use_default_with_required,
+        strips_none=field.should_strip_default_none(),
+        annotated=field.use_annotated,
+        class_var=field.is_class_var,
+        init_excluded=field.extras.get("init") is False,
+        visibility=(
+            field._dataclass_visibility()  # noqa: SLF001
+            if row == "pydantic-dataclass" or isinstance(written, PydanticDataclassWritten)
+            else None
+        ),
+    )
+
+
+def _classify_field_assignment(
+    field: DataModelFieldBase, row: AssignmentRow, written: WrittenAssignment | None = None
+) -> AssignmentFacts:
+    """Return the assignment facts of a field under an output model's row."""
+    return classify_assignment(_assignment_inputs(field, row, written))
+
+
 def _has_field_assignment(field: DataModelFieldBase) -> bool:
     """Return whether a standard model field renders with an assignment."""
-    return (bool(field.field) and not field.use_annotated) or not (
-        (field.required and not field.use_default_with_required) or field.should_strip_default_none()
-    )
+    return _classify_field_assignment(field, "model").assigned
 
 
 def _get_field_default_info(field: DataModelFieldBase) -> tuple[bool, bool]:
     """Return neutral constructor-default semantics for output fields."""
-    if not _has_field_assignment(field) or (field.required and not field.use_default_with_required):
-        return False, False
-    if "default_factory" in field.extras:
-        return True, False
-    if field.default is UNDEFINED or (field.default is None and field.should_strip_default_none()):
-        return False, False
-    return True, True
+    return _classify_field_assignment(field, "model", _model_written(field)).default_info
 
 
-def _field_participates_in_constructor(_: DataModelFieldBase) -> bool:
+def _field_participates_in_constructor(field: DataModelFieldBase) -> bool:
     """Return whether a field participates in its model constructor."""
-    return True
+    return participates_in_constructor(
+        "model", init_excluded=field.extras.get("init") is False, class_var=field.is_class_var
+    )
 
 
 def _bind_field_expressions(rendered: str, class_name: str, bindings: Mapping[str, str]) -> str:
@@ -2012,6 +2081,11 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     """Order key of the fields when the model is built: True for a field whose class-body default is known then.
 
     None for a model that keeps its fields in schema order when it is built.
+    """
+    _ASSIGNMENT_ROW: ClassVar[AssignmentRow | None] = "model"
+    """The row of ``classify_assignment`` that the hooks above are views of.
+
+    None for a class that brings its own assignment hooks without naming a row, whose hooks then answer.
     """
     SUPPORTS_TREE_SCOPE_REUSE_MODEL_INHERITANCE: ClassVar[bool] = False
     # Kept opaque so this generic layer does not import reference-layer policy.
@@ -2693,9 +2767,34 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
         """
         return ()
 
+    def _field_assignment_facts(self, field: DataModelFieldBase) -> AssignmentFacts:
+        """Return what the class body writes for the field and what the field is in the model's constructor.
+
+        Constructor ordering, keyword-only fixes, the hidden-type checks and the signature warning read the field
+        through this, classified once by the model's row, or by its own hooks (rule ``hook``).
+        """
+        cls = type(self)
+        owner = next(base for base in cls.__mro__ if "_ASSIGNMENT_ROW" in vars(base))
+        if (
+            (row := getattr(owner, "_ASSIGNMENT_ROW")) is not None  # noqa: B009
+            and type(field)._get_constructor_default_info is DataModelFieldBase._get_constructor_default_info  # noqa: SLF001
+            and all(getattr(cls, name) is getattr(owner, name) for name in _ASSIGNMENT_HOOK_NAMES)
+        ):
+            return _classify_field_assignment(field, row)
+        assigned = cls.FIELD_ASSIGNMENT_CHECKER(field)
+        has_default, has_value = cls.FIELD_DEFAULT_CLASSIFIER(field)
+        return AssignmentFacts(
+            assigned=assigned,
+            construction_assigned=(cls.FIELD_CONSTRUCTION_ORDER_KEY or cls.FIELD_ASSIGNMENT_CHECKER)(field),
+            binds_class_attribute=bool(field.field) or assigned,
+            constructor_default="value" if has_value else "factory" if has_default else "none",
+            participates_in_constructor=cls.FIELD_PARTICIPATES_IN_CONSTRUCTOR(field),
+            rule="hook",
+        )
+
     def field_binds_class_attribute(self, field: DataModelFieldBase) -> bool:
         """Return whether the class body assigns a field call or a default to the field's name."""
-        return bool(field.field) or type(self).FIELD_ASSIGNMENT_CHECKER(field)
+        return self._field_assignment_facts(field).binds_class_attribute
 
     def field_name_hides_types(self, field: DataModelFieldBase) -> bool:  # noqa: PLR6301, ARG002
         """Return whether the field's name hides a type of that name from annotations that are not strings."""

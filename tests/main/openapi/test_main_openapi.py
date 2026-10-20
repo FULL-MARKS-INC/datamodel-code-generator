@@ -9600,6 +9600,26 @@ def test_main_openapi_dataclass_inheritance_parent_default(output_file: Path) ->
     )
 
 
+def test_main_openapi_dataclass_inheritance_parent_default_annotated(output_file: Path) -> None:
+    """Keep the keyword-only ``field()`` a stdlib dataclass writes for a required child field under --use-annotated.
+
+    Constructor ordering counts that ``field()`` as no assignment (row ``legacy-stdlib-annotated``), as if it went
+    into ``Annotated``, which the dataclass template never writes.
+    """
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "dataclass_inheritance_field_ordering.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=[
+            "--output-model-type",
+            "dataclasses.dataclass",
+            "--target-python-version",
+            "3.10",
+            "--use-annotated",
+        ],
+    )
+
+
 def test_main_openapi_pydantic_dataclass_inheritance_parent_default(output_file: Path) -> None:
     """Keep Pydantic dataclass field ordering aligned with standard dataclasses."""
     run_main_and_assert(
