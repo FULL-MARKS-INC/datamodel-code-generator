@@ -15,6 +15,9 @@ api	main/jsonschema/allof_ref_siblings/enum_model_items_False_True.py
 api	payloads/allof_ref_sibling_outputs/validated_model_items.txt
 cli	main/jsonschema/allof_ref_siblings/enum_model_items_False_True.py
 cli	payloads/allof_ref_sibling_outputs/validated_model_items.txt
+[test_allof_ref_sibling_empty_intersection]
+enum_disjoint	main/jsonschema/allof_ref_siblings/allof_ref_sibling_empty_intersection[enum_disjoint].py
+literal_boolean_number	main/jsonschema/allof_ref_siblings/allof_ref_sibling_empty_intersection[literal_boolean_number].py
 [test_allof_ref_siblings]
 array_external-all-False-api-False	main/jsonschema/allof_ref_siblings/array_external_False_False.py	= main/jsonschema/allof_ref_siblings/array_external_False_True.py
 array_external-all-False-api-False	payloads/allof_ref_sibling_outputs/array_external_without_validators.txt

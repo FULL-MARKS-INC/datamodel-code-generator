@@ -28,7 +28,8 @@ Q: TypeAlias = Annotated[int, Meta(ge=1)]
 Wa: TypeAlias = AB
 
 
-Wb: TypeAlias = AB
+class Wb(Enum):
+    b = 'b'
 
 
 Wc: TypeAlias = AB

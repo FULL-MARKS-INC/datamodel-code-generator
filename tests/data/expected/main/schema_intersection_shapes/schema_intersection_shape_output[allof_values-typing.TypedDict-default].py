@@ -56,8 +56,7 @@ class Pat(TypedDict):
     pass
 
 
-class Untyped(TypedDict):
-    pass
+Untyped: TypeAlias = Any
 
 
 class Model(TypedDict):

@@ -15,6 +15,12 @@ Number5Map: TypeAlias = Annotated[int, Meta(ge=5)]
 NonNegativeMap: TypeAlias = Annotated[float, Meta(ge=0.0)]
 
 
+TwoRefsProp: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
+
+
+TwoRefsItem: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
+
+
 TwoRefsMap: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
 
 
@@ -100,14 +106,6 @@ AllOfRoot2: TypeAlias = Annotated[int, Meta(ge=1, le=10)]
 
 
 Number5Item: TypeAlias = Annotated[Number, Meta(ge=5)]
-
-
-class TwoRefsProp(Struct):
-    pass
-
-
-class TwoRefsItem(Struct):
-    pass
 
 
 StampLenItem: TypeAlias = Annotated[Stamp, Meta(max_length=40)]

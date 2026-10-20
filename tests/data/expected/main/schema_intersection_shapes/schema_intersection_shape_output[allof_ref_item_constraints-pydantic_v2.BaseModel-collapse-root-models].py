@@ -24,14 +24,6 @@ class Point(BaseModel):
     x: int | None = None
 
 
-class TwoItem(BaseModel):
-    pass
-
-
-class TwoMap(BaseModel):
-    pass
-
-
 class Model(BaseModel):
     disjoint_items: list[conint(ge=1)] | None = None
     disjoint_map: dict[str, conint(ge=1)] | None = None
@@ -43,8 +35,8 @@ class Model(BaseModel):
     looser_map: dict[str, conint(ge=1)] | None = None
     member_items: list[conint(ge=1)] | None = None
     member_map: dict[str, conint(ge=1)] | None = None
-    two_items: list[TwoItem] | None = None
-    two_map: dict[str, TwoMap] | None = None
+    two_items: list[conint(ge=4, le=5)] | None = None
+    two_map: dict[str, conint(ge=4, le=5)] | None = None
     stamp_items: list[AwareDatetime] | None = None
     stamp_map: dict[str, AwareDatetime] | None = None
     enum_items: list[conint(ge=1)] | None = None

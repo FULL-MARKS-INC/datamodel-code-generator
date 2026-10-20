@@ -199,8 +199,8 @@ EXCLUDED_CASES: dict[str, str] = {
     ),
     **{
         f"jsonschema/allof_ref_siblings/{name}.json": (
-            "empty literal intersection; CLI/API diagnostics and native rejection are exercised by "
-            "test_allof_ref_sibling_empty_intersection"
+            "empty literal intersection, so no payload is valid; test_allof_ref_sibling_empty_intersection pins its "
+            "output and warning"
         )
         for name in ALLOF_REF_SIBLING_DIAGNOSTICS
     },

@@ -19,7 +19,8 @@ Q: TypeAlias = int
 Wa: TypeAlias = AB
 
 
-Wb: TypeAlias = AB
+class Wb(Enum):
+    b = 'b'
 
 
 Wc: TypeAlias = AB

@@ -22,7 +22,8 @@ Q = TypeAliasType("Q", Annotated[int, Field(ge=1)])
 Wa = TypeAliasType("Wa", AB)
 
 
-Wb = TypeAliasType("Wb", AB)
+class Wb(Enum):
+    b = 'b'
 
 
 Wc = TypeAliasType("Wc", AB)

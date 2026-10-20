@@ -18,10 +18,6 @@ class Pat(BaseModel):
     pass
 
 
-class Untyped(BaseModel):
-    pass
-
-
 class Model(BaseModel):
     model_config = ConfigDict(
         regex_engine="python-re",
@@ -38,7 +34,7 @@ class Model(BaseModel):
     pat_prop: constr(pattern=r'(?=^a)(?=b$)') | None = None
     pat_items: list[constr(pattern=r'(?=^a)(?=b$)')] | None = None
     pat_map: dict[str, constr(pattern=r'(?=^a)(?=b$)')] | None = None
-    untyped: Untyped | None = None
+    untyped: Any | None = None
     untyped_prop: Any | None = None
     untyped_items: list[Any] | None = None
     untyped_map: dict[str, Any] | None = None

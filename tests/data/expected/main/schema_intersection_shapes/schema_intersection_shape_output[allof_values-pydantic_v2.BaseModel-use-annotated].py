@@ -77,8 +77,8 @@ class Pat(BaseModel):
     pass
 
 
-class Untyped(BaseModel):
-    pass
+class Untyped(RootModel[Any]):
+    root: Any
 
 
 class Model(BaseModel):

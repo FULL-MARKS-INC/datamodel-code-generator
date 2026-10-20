@@ -9350,11 +9350,11 @@ False-AllOfMergeMode.All-outside_null-cli	main/jsonschema/numeric_allof_types/ou
 False-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 False-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 False-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_0.py
 False-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 False-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt
@@ -9578,11 +9578,11 @@ False-AllOfMergeMode.Constraints-outside_null-cli	main/jsonschema/numeric_allof_
 False-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 False-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 False-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_0.py
 False-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 False-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt
@@ -9806,11 +9806,11 @@ False-AllOfMergeMode.NoMerge-outside_null-cli	main/jsonschema/numeric_allof_type
 False-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 False-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 False-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 False-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-False-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+False-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 False-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_0.py
 False-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 False-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt
@@ -10034,11 +10034,11 @@ True-AllOfMergeMode.All-outside_null-cli	main/jsonschema/numeric_allof_types/out
 True-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.All-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 True-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.All-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 True-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_1.py
 True-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 True-AllOfMergeMode.All-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt
@@ -10262,11 +10262,11 @@ True-AllOfMergeMode.Constraints-outside_null-cli	main/jsonschema/numeric_allof_t
 True-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.Constraints-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 True-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.Constraints-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 True-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_1.py
 True-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 True-AllOfMergeMode.Constraints-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt
@@ -10490,11 +10490,11 @@ True-AllOfMergeMode.NoMerge-outside_null-cli	main/jsonschema/numeric_allof_types
 True-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.NoMerge-outside_root-api	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/outside_root_warnings~numeric_allof_types[False-AllOfMergeMode.All-outside_root-api].txt
 True-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_all_0.py
 True-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_base_runtime.txt
 True-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_runtime.txt
-True-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt	= main/jsonschema/numeric_allof_types/field_warnings.txt
+True-AllOfMergeMode.NoMerge-outside_root-cli	main/jsonschema/numeric_allof_types/outside_root_warnings.txt
 True-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_all_1.py
 True-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_base_runtime.txt
 True-AllOfMergeMode.NoMerge-reversed_number_integer-api	main/jsonschema/numeric_allof_types/reversed_number_integer_runtime.txt	= main/jsonschema/numeric_allof_types/integer_number_runtime.txt

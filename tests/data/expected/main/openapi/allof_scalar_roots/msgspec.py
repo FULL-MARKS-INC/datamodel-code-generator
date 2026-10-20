@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 from msgspec import UNSET, Meta, Struct, UnsetType
 
@@ -42,8 +42,7 @@ LabelAlias: TypeAlias = Annotated[Label, Meta(description='Another name for a la
 ShortLabel: TypeAlias = Annotated[str, Meta(max_length=9, min_length=1)]
 
 
-class Anything(Struct):
-    pass
+Anything: TypeAlias = Any
 
 
 class Mismatch(Struct):

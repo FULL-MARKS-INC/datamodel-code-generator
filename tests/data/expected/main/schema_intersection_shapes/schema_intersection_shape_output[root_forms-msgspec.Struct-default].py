@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 from msgspec import UNSET, Meta, Struct, UnsetType
 
+TwoRefs: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
 
-class M2(Struct):
-    pass
+
+M2: TypeAlias = dict[str, Any] | None
 
 
 Tags: TypeAlias = list[str]
@@ -27,12 +28,10 @@ Small: TypeAlias = Annotated[int, Meta(le=5)]
 Big: TypeAlias = Annotated[int, Meta(ge=3)]
 
 
-class Arr(Struct):
-    pass
+Arr: TypeAlias = Annotated[list[str], Meta(min_length=1)]
 
 
-class ArrRef(Struct):
-    pass
+ArrRef: TypeAlias = Annotated[list[str], Meta(min_length=1)]
 
 
 class EnumC(Enum):
@@ -50,12 +49,10 @@ class Pat(Struct):
     pass
 
 
-class Untyped(Struct):
-    pass
+Untyped: TypeAlias = Any
 
 
-class NullableMap(Struct):
-    pass
+NullableMap: TypeAlias = dict[str, Any] | None
 
 
 Base: TypeAlias = Annotated[str, Meta(examples=['bb'], title='BaseT')]
@@ -74,10 +71,6 @@ RootMulti: TypeAlias = Annotated[
 InlineRoot: TypeAlias = Annotated[
     str, Meta(description='D', examples=['ab'], min_length=2)
 ]
-
-
-class TwoRefs(Struct):
-    pass
 
 
 class Model(Struct):

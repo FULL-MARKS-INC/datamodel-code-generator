@@ -46,10 +46,10 @@ pydantic_v2.BaseModel default pat_map {"k": "ab"} rejected
 pydantic_v2.BaseModel default pat_map {"k": "axb"} rejected
 pydantic_v2.BaseModel default pat_map {"k": "a"} rejected
 pydantic_v2.BaseModel default pat_map {"k": "ba"} rejected
-pydantic_v2.BaseModel default untyped "a" rejected
-pydantic_v2.BaseModel default untyped 5 rejected
-pydantic_v2.BaseModel default untyped "" rejected
-pydantic_v2.BaseModel default untyped "abcdef" rejected
+pydantic_v2.BaseModel default untyped "a" accepted
+pydantic_v2.BaseModel default untyped 5 accepted
+pydantic_v2.BaseModel default untyped "" accepted
+pydantic_v2.BaseModel default untyped "abcdef" accepted
 pydantic_v2.BaseModel default untyped_prop "a" accepted
 pydantic_v2.BaseModel default untyped_prop 5 accepted
 pydantic_v2.BaseModel default untyped_prop "" accepted
@@ -112,10 +112,10 @@ pydantic_v2.dataclass default pat_map {"k": "ab"} rejected
 pydantic_v2.dataclass default pat_map {"k": "axb"} rejected
 pydantic_v2.dataclass default pat_map {"k": "a"} rejected
 pydantic_v2.dataclass default pat_map {"k": "ba"} rejected
-pydantic_v2.dataclass default untyped "a" rejected
-pydantic_v2.dataclass default untyped 5 rejected
-pydantic_v2.dataclass default untyped "" rejected
-pydantic_v2.dataclass default untyped "abcdef" rejected
+pydantic_v2.dataclass default untyped "a" accepted
+pydantic_v2.dataclass default untyped 5 accepted
+pydantic_v2.dataclass default untyped "" accepted
+pydantic_v2.dataclass default untyped "abcdef" accepted
 pydantic_v2.dataclass default untyped_prop "a" accepted
 pydantic_v2.dataclass default untyped_prop 5 accepted
 pydantic_v2.dataclass default untyped_prop "" accepted
@@ -178,10 +178,10 @@ msgspec.Struct default pat_map {"k": "ab"} rejected
 msgspec.Struct default pat_map {"k": "axb"} rejected
 msgspec.Struct default pat_map {"k": "a"} rejected
 msgspec.Struct default pat_map {"k": "ba"} rejected
-msgspec.Struct default untyped "a" rejected
-msgspec.Struct default untyped 5 rejected
-msgspec.Struct default untyped "" rejected
-msgspec.Struct default untyped "abcdef" rejected
+msgspec.Struct default untyped "a" accepted
+msgspec.Struct default untyped 5 accepted
+msgspec.Struct default untyped "" accepted
+msgspec.Struct default untyped "abcdef" accepted
 msgspec.Struct default untyped_prop "a" accepted
 msgspec.Struct default untyped_prop 5 accepted
 msgspec.Struct default untyped_prop "" accepted
@@ -244,10 +244,10 @@ pydantic_v2.BaseModel --field-constraints pat_map {"k": "ab"} accepted
 pydantic_v2.BaseModel --field-constraints pat_map {"k": "axb"} accepted
 pydantic_v2.BaseModel --field-constraints pat_map {"k": "a"} accepted
 pydantic_v2.BaseModel --field-constraints pat_map {"k": "ba"} accepted
-pydantic_v2.BaseModel --field-constraints untyped "a" rejected
-pydantic_v2.BaseModel --field-constraints untyped 5 rejected
-pydantic_v2.BaseModel --field-constraints untyped "" rejected
-pydantic_v2.BaseModel --field-constraints untyped "abcdef" rejected
+pydantic_v2.BaseModel --field-constraints untyped "a" accepted
+pydantic_v2.BaseModel --field-constraints untyped 5 accepted
+pydantic_v2.BaseModel --field-constraints untyped "" accepted
+pydantic_v2.BaseModel --field-constraints untyped "abcdef" accepted
 pydantic_v2.BaseModel --field-constraints untyped_prop "a" accepted
 pydantic_v2.BaseModel --field-constraints untyped_prop 5 accepted
 pydantic_v2.BaseModel --field-constraints untyped_prop "" accepted
@@ -310,10 +310,10 @@ pydantic_v2.BaseModel --use-annotated pat_map {"k": "ab"} rejected
 pydantic_v2.BaseModel --use-annotated pat_map {"k": "axb"} rejected
 pydantic_v2.BaseModel --use-annotated pat_map {"k": "a"} rejected
 pydantic_v2.BaseModel --use-annotated pat_map {"k": "ba"} rejected
-pydantic_v2.BaseModel --use-annotated untyped "a" rejected
-pydantic_v2.BaseModel --use-annotated untyped 5 rejected
-pydantic_v2.BaseModel --use-annotated untyped "" rejected
-pydantic_v2.BaseModel --use-annotated untyped "abcdef" rejected
+pydantic_v2.BaseModel --use-annotated untyped "a" accepted
+pydantic_v2.BaseModel --use-annotated untyped 5 accepted
+pydantic_v2.BaseModel --use-annotated untyped "" accepted
+pydantic_v2.BaseModel --use-annotated untyped "abcdef" accepted
 pydantic_v2.BaseModel --use-annotated untyped_prop "a" accepted
 pydantic_v2.BaseModel --use-annotated untyped_prop 5 accepted
 pydantic_v2.BaseModel --use-annotated untyped_prop "" accepted
@@ -376,10 +376,10 @@ pydantic_v2.BaseModel --collapse-root-models pat_map {"k": "ab"} rejected
 pydantic_v2.BaseModel --collapse-root-models pat_map {"k": "axb"} rejected
 pydantic_v2.BaseModel --collapse-root-models pat_map {"k": "a"} rejected
 pydantic_v2.BaseModel --collapse-root-models pat_map {"k": "ba"} rejected
-pydantic_v2.BaseModel --collapse-root-models untyped "a" rejected
-pydantic_v2.BaseModel --collapse-root-models untyped 5 rejected
-pydantic_v2.BaseModel --collapse-root-models untyped "" rejected
-pydantic_v2.BaseModel --collapse-root-models untyped "abcdef" rejected
+pydantic_v2.BaseModel --collapse-root-models untyped "a" accepted
+pydantic_v2.BaseModel --collapse-root-models untyped 5 accepted
+pydantic_v2.BaseModel --collapse-root-models untyped "" accepted
+pydantic_v2.BaseModel --collapse-root-models untyped "abcdef" accepted
 pydantic_v2.BaseModel --collapse-root-models untyped_prop "a" accepted
 pydantic_v2.BaseModel --collapse-root-models untyped_prop 5 accepted
 pydantic_v2.BaseModel --collapse-root-models untyped_prop "" accepted
@@ -442,10 +442,10 @@ msgspec.Struct --collapse-root-models pat_map {"k": "ab"} rejected
 msgspec.Struct --collapse-root-models pat_map {"k": "axb"} rejected
 msgspec.Struct --collapse-root-models pat_map {"k": "a"} rejected
 msgspec.Struct --collapse-root-models pat_map {"k": "ba"} rejected
-msgspec.Struct --collapse-root-models untyped "a" rejected
-msgspec.Struct --collapse-root-models untyped 5 rejected
-msgspec.Struct --collapse-root-models untyped "" rejected
-msgspec.Struct --collapse-root-models untyped "abcdef" rejected
+msgspec.Struct --collapse-root-models untyped "a" accepted
+msgspec.Struct --collapse-root-models untyped 5 accepted
+msgspec.Struct --collapse-root-models untyped "" accepted
+msgspec.Struct --collapse-root-models untyped "abcdef" accepted
 msgspec.Struct --collapse-root-models untyped_prop "a" accepted
 msgspec.Struct --collapse-root-models untyped_prop 5 accepted
 msgspec.Struct --collapse-root-models untyped_prop "" accepted

@@ -67,9 +67,7 @@ class Pat:
     pass
 
 
-@dataclass
-class Untyped:
-    pass
+Untyped = TypeAliasType("Untyped", Any)
 
 
 @dataclass(config=ConfigDict(regex_engine="python-re"))

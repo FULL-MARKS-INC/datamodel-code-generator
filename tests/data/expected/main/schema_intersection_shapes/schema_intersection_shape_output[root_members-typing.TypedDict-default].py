@@ -16,7 +16,7 @@ Q: TypeAlias = int
 Wa: TypeAlias = AB
 
 
-Wb: TypeAlias = AB
+Wb: TypeAlias = Literal['b']
 
 
 Wc: TypeAlias = AB

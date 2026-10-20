@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeAlias
+from typing import Any, TypeAlias
+
+TwoRefs: TypeAlias = int
 
 
-@dataclass
-class M2:
-    pass
+M2: TypeAlias = dict[str, Any] | None
 
 
 Tags: TypeAlias = list[str]
@@ -27,14 +27,10 @@ Small: TypeAlias = int
 Big: TypeAlias = int
 
 
-@dataclass
-class Arr:
-    pass
+Arr: TypeAlias = list[str]
 
 
-@dataclass
-class ArrRef:
-    pass
+ArrRef: TypeAlias = list[str]
 
 
 class EnumC(Enum):
@@ -53,14 +49,10 @@ class Pat:
     pass
 
 
-@dataclass
-class Untyped:
-    pass
+Untyped: TypeAlias = Any
 
 
-@dataclass
-class NullableMap:
-    pass
+NullableMap: TypeAlias = dict[str, Any] | None
 
 
 Base: TypeAlias = str
@@ -73,11 +65,6 @@ RootMulti: TypeAlias = str
 
 
 InlineRoot: TypeAlias = str
-
-
-@dataclass
-class TwoRefs:
-    pass
 
 
 @dataclass

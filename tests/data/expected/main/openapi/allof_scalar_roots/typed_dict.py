@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeAlias, TypedDict
+from typing import Any, Literal, TypeAlias, TypedDict
 
 from typing_extensions import NotRequired
 
@@ -37,8 +37,7 @@ LabelAlias: TypeAlias = Label
 ShortLabel: TypeAlias = str
 
 
-class Anything(TypedDict):
-    pass
+Anything: TypeAlias = Any
 
 
 class Mismatch(TypedDict):

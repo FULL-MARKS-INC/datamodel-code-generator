@@ -4,12 +4,9 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, RootModel, conint, constr
-
-
-class M2(BaseModel):
-    pass
 
 
 class Tags(RootModel[list[str]]):
@@ -29,12 +26,12 @@ class Big(RootModel[conint(ge=3)]):
     root: conint(ge=3)
 
 
-class Arr(BaseModel):
-    pass
+class Arr(RootModel[list[str]]):
+    root: list[str] = Field(..., min_length=1)
 
 
-class ArrRef(BaseModel):
-    pass
+class ArrRef(RootModel[list[str]]):
+    root: list[str] = Field(..., min_length=1)
 
 
 class EnumC(Enum):
@@ -50,20 +47,8 @@ class Pat(BaseModel):
     pass
 
 
-class Untyped(BaseModel):
-    pass
-
-
-class NullableMap(BaseModel):
-    pass
-
-
 class Base(RootModel[str]):
     root: str = Field('base', examples=['bb'], title='BaseT')
-
-
-class TwoRefs(BaseModel):
-    pass
 
 
 class Model(BaseModel):
@@ -73,10 +58,10 @@ class Model(BaseModel):
     d: EnumD | None = None
     v: conint(ge=3, le=5) | None = None
     p: Pat | None = None
-    u: Untyped | None = None
-    two_refs: TwoRefs | None = None
-    m: NullableMap | None = None
-    m2: M2 | None = None
+    u: Any | None = None
+    two_refs: conint(ge=3, le=5) | None = None
+    m: dict[str, Any] | None = None
+    m2: dict[str, Any] | None = None
     path_a: constr(min_length=2) | None = Field(
         'base', description='D', examples=['bb'], title='BaseT'
     )

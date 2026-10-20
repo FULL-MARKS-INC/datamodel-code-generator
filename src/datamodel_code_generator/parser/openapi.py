@@ -791,6 +791,7 @@ class OpenAPIParser(JsonSchemaParser):
         path: list[str],
     ) -> DataType:
         """Parse a JSON schema object into a data type."""
+        obj = self._array_all_of_site_schema(obj)
         if obj.is_array:
             data_type = self.parse_array(name, obj, [*path, name])
         elif obj.allOf:  # pragma: no cover
@@ -923,7 +924,7 @@ class OpenAPIParser(JsonSchemaParser):
                 class_name=name,
             )
             if parameter.schema_:
-                param_schema = parameter.schema_
+                param_schema = self._array_all_of_site_schema(parameter.schema_)
                 if param_schema.has_ref_with_schema_keywords and not param_schema.is_ref_with_nullable_only:
                     param_schema = self._merge_ref_with_schema(param_schema)
                 field_schemas.append((param_schema, [*path, name, parameter_name]))
@@ -963,7 +964,7 @@ class OpenAPIParser(JsonSchemaParser):
                         [*path, name, parameter_name, media_type],
                         from_item_schema=schema_result.from_item_schema,
                     )
-                    object_schema = (
+                    object_schema = self._array_all_of_site_schema(
                         _locate(self._validate_schema_object(schema_result.schema, schema_path), schema_result.location)
                         if isinstance(schema_result.schema, bool)
                         else self.resolve_object(schema_result.schema, JsonSchemaObject)
