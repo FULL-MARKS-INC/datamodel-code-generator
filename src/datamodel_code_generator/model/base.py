@@ -924,6 +924,17 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
             return filtered_imports
         return chain_as_tuple(filtered_imports, missing_imports)
 
+    def _import_state_data_type(self) -> DataType | None:
+        """Return the data type ``imports`` collects from, or None when it collects without a type hint."""
+        return self._import_state_target(
+            needs_annotated=self.use_annotated and self.needs_annotated_import, data_type=self.data_type
+        )
+
+    def _import_state_target(self, *, needs_annotated: bool, data_type: DataType) -> DataType | None:
+        if self._can_collect_imports_without_type_hint(needs_annotated=needs_annotated, data_type=data_type):
+            return None
+        return data_type
+
     def _normalize_data_type_import_state(self, data_type: DataType) -> None:
         """Write the render-time state that the imports read, before the cache lookup."""
         if data_type.reference:
@@ -2562,18 +2573,30 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
             return cached
 
         render_class_name = class_name if class_name is not None or not use_default else "M"
+        self._prepare_dedup_key()
         result = self._render_dedup_key(render_class_name)
         self._dedup_key_cache[cache_key] = result
         return result
+
+    def _prepare_dedup_key(self) -> None:
+        """Write what rendering the dedup key decides, so rendering it writes nothing.
+
+        A root model decides its sequence interface, and every field writes the nullability its type hint renders
+        (``DataModelFieldBase._normalize_data_type_import_state``).
+        """
+        if self.IS_ROOT_MODEL:
+            self.finalize_sequence_interface()
+        for field in self.fields:
+            if (data_type := field._import_state_data_type()) is not None:  # noqa: SLF001
+                field._normalize_data_type_import_state(data_type)  # noqa: SLF001
 
     def _render_dedup_key(self, class_name: str | None) -> tuple[Any, ...]:
         """Render the hashable deduplication key for a class name without caching it.
 
         The key ends with the values as written of the enum or the Literals the model holds only some values of
-        (``GenerationStore.record_values_as_written``), so models stay apart as their schemas were written.
+        (``GenerationStore.record_values_as_written``), so models stay apart as their schemas were written. A root
+        model decides its sequence interface first (``_prepare_dedup_key``).
         """
-        if self.IS_ROOT_MODEL:
-            self.finalize_sequence_interface()
         key = tuple(to_hashable(v) for v in (self.render(class_name=class_name), self.imports))
         return (*key, to_hashable(written)) if (written := self._written_values_by_position()) else key
 

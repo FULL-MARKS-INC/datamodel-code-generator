@@ -167,6 +167,17 @@ from datamodel_code_generator.parser._finality import (
 )
 from datamodel_code_generator.parser._graph_ids import is_root_or_owned
 from datamodel_code_generator.parser._imports_plan import ImportProducer, ModuleImportLedger
+from datamodel_code_generator.parser._model_shapes import (
+    COLLAPSE_REUSE,
+    REUSE_MODEL,
+    SAME_NAME,
+    TREE_SCOPE,
+    ModelShapes,
+    ShapeRow,
+    reuse_candidate_key,
+    skips_root_model,
+    stdout_fingerprint,
+)
 from datamodel_code_generator.parser._passes._keys import (
     _DEFERRED_INHERITED_CLASS_KEY,
     _DEFERRED_INHERITED_FIELD_KEY,
@@ -248,7 +259,7 @@ from datamodel_code_generator.types import (
 from datamodel_code_generator.util import camel_to_snake, record_watch_dependency
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Generator, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Collection, Generator, Hashable, Iterable, Iterator, Mapping, Sequence
 
     from datamodel_code_generator._format_types import Formatter, PythonVersion
     from datamodel_code_generator._requirements import PydanticConstruct, PydanticFloor
@@ -2105,9 +2116,6 @@ def _is_any_variant(data_type: DataType) -> bool:
     )
 
 
-_ModelShape: TypeAlias = tuple[tuple[Any, ...], list[Reference]]
-
-
 def _model_references(model: DataModel) -> list[Reference]:
     """Return the references of a model's data types in render order."""
     return [reference for data_type in model.all_data_types if (reference := data_type.reference)]
@@ -2148,121 +2156,50 @@ def _union_tags(model: DataModel) -> tuple[HashableComparable, ...]:
 
 
 @final
-@dataclass(slots=True)
-class _ModelShapes:
-    """The shapes of models memoized for one comparison pass, and the union tags the pass compares as well.
+@dataclass(frozen=True, slots=True)
+class _ModelShapeSource:
+    """What the dedup and reuse keys of ``parser/_model_shapes.py`` read off the live models.
 
-    Reuse compares the union tags captured before any model is merged, so unions that decode other tags stay
-    apart; merging models of the same name compares rendered models alone.
+    A model writes what its rendering decides before it renders for a key (``DataModel._prepare_dedup_key``), so the
+    rendering writes nothing.
     """
 
-    union_tags: Mapping[DataModel, tuple[HashableComparable, ...]]
-    memo: dict[DataModel, _ModelShape]
     target_python_version: PythonVersion
 
-    def reuse_key(self, model: DataModel) -> tuple[HashableComparable, ...]:
-        """Return the key reuse compares models by: the rendered model and the tags of its discriminated unions."""
-        key = model.get_dedup_key()
-        return (*key, *tags) if (tags := self.union_tags.get(model)) else key
+    def dedup_key(self, model: DataModel, *, own_class_name: bool) -> tuple[HashableComparable, ...]:  # noqa: PLR6301
+        """Return the model's rendered dedup key, as the model cached it."""
+        if own_class_name:
+            return model.get_dedup_key(model.duplicate_class_name, use_default=False)
+        return model.get_dedup_key()
+
+    def forget_dedup_keys(self, model: DataModel) -> None:  # noqa: PLR6301
+        """Drop the dedup keys the model cached."""
+        model._dedup_key_cache.clear()  # noqa: SLF001
+
+    def masked_rendering(self, model: DataModel) -> tuple[type, str, Hashable, tuple[Hashable, ...]]:  # noqa: PLR6301
+        """Return the model's type, its rendering as ``M`` uncached, its imports and its values as written."""
+        model._prepare_dedup_key()  # noqa: SLF001
+        rendered, imports, *written = model._render_dedup_key("M")  # noqa: SLF001
+        return type(model), rendered, imports, tuple(written)
+
+    def mask_pattern(self, text: str) -> re.Pattern[str]:
+        """Return the pattern that finds string literals, field declarations and names as the target names them."""
+        return _string_or_identifier_pattern(text, self.target_python_version)
+
+    def references(self, model: DataModel) -> list[Reference]:  # noqa: PLR6301
+        """Return the references of the model's data types in render order."""
+        return _model_references(model)
+
+    def model_of(self, reference: Reference) -> DataModel | None:  # noqa: PLR6301
+        """Return the model a reference names, or None when it names no model."""
+        return source if isinstance(source := reference.source, DataModel) else None
 
 
-def _model_shape(model: DataModel, shapes: _ModelShapes) -> _ModelShape:
-    """Return a model's dedup key with referenced model names masked, and its references in order.
-
-    The key is rendered afresh, since cached keys keep the names that references had when they were
-    cached, and memoized in shapes for one comparison pass. Names are masked outside string literals and
-    field declarations only, so defaults, descriptions and field names that spell a referenced model name
-    still tell models apart. The union tags the pass compares belong to the key, as they do to the reuse key.
-    """
-    if (shape := shapes.memo.get(model)) is not None:
-        return shape
-    references = _model_references(model)
-    masks: dict[str, str] = {}
-    for reference in references:
-        masks.setdefault(reference.short_name, f"<{len(masks)}>")
-    rendered, imports, *written = model._render_dedup_key("M")  # noqa: SLF001
-    masked = _string_or_identifier_pattern(rendered, shapes.target_python_version).sub(
-        lambda match: masks.get(name, name) if (name := match[1]) else match[0], rendered
-    )
-    key = (type(model), masked, imports, len(references), *written)
-    shapes.memo[model] = shape = ((*key, *tags) if (tags := shapes.union_tags.get(model)) else key), references
-    return shape
-
-
-def _referenced_models_match(left: DataModel, right: DataModel, shapes: _ModelShapes) -> bool:
-    """Return whether equally rendered models also reference models of the same shape.
-
-    Type hints carry only reference names, and references from different sources can share a
-    name until module-level renaming, so equal render output does not prove equal field types.
-    Referenced models are compared pairwise with the names of their own references masked, so
-    models that differ only in how deeper references are named still match. Reference pairs
-    already under comparison are assumed to match, which keeps recursive models finite, and models
-    that reference the very same models match without rendering them again.
-    """
-    left_references, right_references = _model_references(left), _model_references(right)
-    if len(left_references) == len(right_references) and all(map(operator.is_, left_references, right_references)):
-        return True
-    pending: list[tuple[object, object]] = [(left, right)]
-    assumed_pairs: set[tuple[str, str]] = set()
-    while pending:
-        left_model, right_model = pending.pop()
-        if not (
-            isinstance(left_model, DataModel)
-            and isinstance(right_model, DataModel)
-            and (left_shape := _model_shape(left_model, shapes))[0]
-            == (right_shape := _model_shape(right_model, shapes))[0]
-        ):
-            return False
-        for left_reference, right_reference in zip(left_shape[1], right_shape[1], strict=True):
-            pair = (left_reference.path, right_reference.path)
-            if left_reference is right_reference or pair in assumed_pairs:
-                continue
-            assumed_pairs.add(pair)
-            pending.append((left_reference.source, right_reference.source))
-    return True
-
-
-def _referenced_shapes(model: DataModel, shapes: _ModelShapes) -> tuple[object, ...]:
-    """Return the shapes of the models a model references in order, which models that match share.
-
-    A reference to anything other than a model matches only itself, so it stands for itself.
-    """
-    return tuple(
-        _model_shape(source, shapes)[0] if isinstance(source := reference.source, DataModel) else id(reference)
-        for reference in _model_references(model)
-    )
-
-
-def _iter_matching_duplicates(
-    models: Iterable[DataModel],
-    shapes: _ModelShapes,
-    key_fn: Callable[[DataModel], tuple[HashableComparable, ...]] | None = None,
-) -> Iterator[tuple[DataModel, DataModel]]:
-    """Pair each model with the earlier model of the same key whose content and references both match.
-
-    Earlier unmatched models of a key never match each other, so at most one matches. A model that
-    references the very same models as one of them is paired at once. Otherwise it is compared in full
-    only with those whose referenced models render alike, so many equally rendered models with different
-    references are not compared pairwise. Referenced models are rendered only for keys with a model that
-    is not paired at once.
-    """
-    by_references: dict[tuple[object, ...], DataModel] = {}
-    by_shapes: defaultdict[tuple[object, ...], list[DataModel]] = defaultdict(list)
-    unshaped: dict[tuple[HashableComparable, ...] | None, list[DataModel]] = {}
-    for model in models:
-        key = key_fn(model) if key_fn else None
-        references = (key, *map(id, _model_references(model)))
-        if (canonical := by_references.get(references)) is None and (pending := unshaped.get(key)) is not None:
-            for candidate in pending:
-                by_shapes[key, _referenced_shapes(candidate, shapes)].append(candidate)
-            pending.clear()
-            candidates = by_shapes[key, _referenced_shapes(model, shapes)]
-            canonical = next((c for c in candidates if _referenced_models_match(c, model, shapes)), None)
-        if canonical is None:
-            unshaped.setdefault(key, []).append(model)
-            by_references[references] = model
-            continue
-        yield canonical, model
+def _distinct_bases(row: ShapeRow, bases: Iterable[BaseClassDataType]) -> Iterable[BaseClassDataType]:
+    """Return the bases of a merged model's child once each, told apart as the user of the row tells them."""
+    if row.base_dedup == "by-type-hint":
+        return {f"{base.module_name}.{base.type_hint}": base for base in bases}.values()
+    return {id(base.reference): base for base in bases}.values()
 
 
 def _get_schema_path(model: DataModel | Reference) -> str:
@@ -4134,17 +4071,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return None
         return root_reference
 
-    def __renders_as_duplicate(self, model: DataModel, original_model: DataModel, shapes: _ModelShapes) -> bool:
+    def _model_shapes(self, row: ShapeRow) -> ModelShapes[DataModel, Reference]:
+        """Return the keys of one comparison pass of the dedup or reuse user of a row."""
+        return ModelShapes(row, _ModelShapeSource(self.target_python_version), self._reuse_union_tags)
+
+    def __renders_as_duplicate(
+        self, model: DataModel, original_model: DataModel, shapes: ModelShapes[DataModel, Reference]
+    ) -> bool:
         """Return whether a model renders like the first model of its class name.
 
         A copy of a schema merged from another document compares with referenced names masked, since the
         nested models it names only become the shared ones as they collapse in the same pass.
         """
-        return model.get_dedup_key(model.duplicate_class_name, use_default=False) == original_model.get_dedup_key(
-            original_model.duplicate_class_name, use_default=False
-        ) or (
+        return shapes.key(model) == shapes.key(original_model) or (
             not self._merged_copies.isdisjoint((model, original_model))
-            and _model_shape(model, shapes)[0] == _model_shape(original_model, shapes)[0]
+            and shapes.shape(model)[0] == shapes.shape(original_model)[0]
         )
 
     def __delete_duplicate_models(self, models: list[DataModel]) -> None:  # noqa: PLR0912
@@ -4152,7 +4093,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return
 
         model_class_names: dict[str, DataModel] = {}
-        shapes = _ModelShapes({}, {}, self.target_python_version)
+        shapes = self._model_shapes(SAME_NAME)
         model_to_duplicate_models: defaultdict[DataModel, list[DataModel]] = defaultdict(list)
         # Use set for O(1) membership checks and collect removals for batch processing
         models_set = set(models)
@@ -4195,7 +4136,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 and self._reuse_optimization_context.allows_model(original_model)
                 and self.__renders_as_duplicate(model, original_model, shapes)
             ):
-                if _referenced_models_match(original_model, model, shapes):
+                if shapes.references_match(original_model, model):
                     model_to_duplicate_models[original_model].append(model)
                 continue
             model_class_names[class_name] = model
@@ -4206,13 +4147,13 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 for child in duplicate_model.reference.iter_data_model_children():
                     self.generation_store.set_base_classes(
                         child,
-                        {f"{c.module_name}.{c.type_hint}": c for c in child.base_classes}.values(),
+                        _distinct_bases(shapes.row, child.base_classes),
                     )
                 models_to_remove.add(duplicate_model)
 
         if self.reuse_model and self.collapse_reuse_models:
             max_iterations, iteration = len(models), 0
-            shapes = _ModelShapes(self._reuse_union_tags, {}, self.target_python_version)
+            shapes = self._model_shapes(COLLAPSE_REUSE)
             while True:
                 iteration += 1
                 if iteration > max_iterations:  # pragma: no cover
@@ -4222,17 +4163,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 shapes.memo.clear()
                 content_key_to_models: dict[tuple[Any, ...], list[DataModel]] = defaultdict(list)
                 for model in self._reuse_optimization_context.eligible_models(models):
-                    if model in models_to_remove or self._is_root_model(model):
+                    if model in models_to_remove or (
+                        skips_root_model(shapes.row, collapse_root_models=self.collapse_root_models)
+                        and self._is_root_model(model)
+                    ):
                         continue
-                    model._dedup_key_cache.clear()  # noqa: SLF001
-                    content_key_to_models[shapes.reuse_key(model)].append(model)
+                    content_key_to_models[shapes.key(model)].append(model)
 
                 if not (
                     duplicates := [
                         (canonical, dup)
                         for group in content_key_to_models.values()
                         if len(group) > 1
-                        for canonical, dup in _iter_matching_duplicates(self._typed_map_values_last(group), shapes)
+                        for canonical, dup in shapes.iter_matching_duplicates(
+                            self._typed_map_values_last(group), keyed=False
+                        )
                         if dup not in models_to_remove
                     ]
                 ):
@@ -4249,7 +4194,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     for child in duplicate.reference.iter_data_model_children():
                         self.generation_store.set_base_classes(
                             child,
-                            {id(c.reference): c for c in child.base_classes}.values(),
+                            _distinct_bases(shapes.row, child.base_classes),
                         )
                     models_to_remove.add(duplicate)
 
@@ -5233,12 +5178,15 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         reuse_candidates = (
             model
             for model in self._reuse_optimization_context.eligible_models(models.copy())
-            if not (self.collapse_root_models and self._is_root_model(model))
+            if not (
+                skips_root_model(REUSE_MODEL, collapse_root_models=self.collapse_root_models)
+                and self._is_root_model(model)
+            )
         )
         typed_map_values = self._typed_map_value_reference_ids
         canonical_models: dict[int, DataModel] = {}
-        shapes = _ModelShapes(self._reuse_union_tags, {}, self.target_python_version)
-        for first_model, duplicate_model in _iter_matching_duplicates(reuse_candidates, shapes, shapes.reuse_key):
+        shapes = self._model_shapes(REUSE_MODEL)
+        for first_model, duplicate_model in shapes.iter_matching_duplicates(reuse_candidates, keyed=True):
             cached_model = canonical_models.get(id(first_model), first_model)
             model = duplicate_model
             if id(cached_model.reference) in typed_map_values and id(model.reference) not in typed_map_values:
@@ -5293,11 +5241,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             for module, models in module_models
             for model in self._reuse_optimization_context.eligible_models(models)
         }
-        shapes = _ModelShapes(self._reuse_union_tags, {}, self.target_python_version)
+        shapes = self._model_shapes(TREE_SCOPE)
         return [
             (model_modules[model], model, model_modules[canonical], canonical)
-            for canonical, model in _iter_matching_duplicates(
-                self._typed_map_values_last(list(model_modules)), shapes, shapes.reuse_key
+            for canonical, model in shapes.iter_matching_duplicates(
+                self._typed_map_values_last(list(model_modules)), keyed=True
             )
         ]
 
@@ -8059,20 +8007,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     @staticmethod
     def _stdout_model_fingerprint(model: DataModel) -> HashableComparable:
         """Return the final rendered definition without using the pre-processing dedup cache."""
-        import_fingerprint = tuple(
-            sorted({
-                (False, "", import_.import_, "")
-                if "." in import_.import_
-                else (
-                    import_.from_ is not None,
-                    import_.from_ or "",
-                    import_.import_,
-                    "" if not import_.alias or import_.alias == import_.import_ else import_.alias,
-                )
-                for import_ in model.imports
-            })
-        )
-        return model.render(class_name=model.class_name), import_fingerprint
+        return stdout_fingerprint(model.render(class_name=model.class_name), model.imports)
 
     @staticmethod
     def _find_shadowed_stdout_models(
@@ -10253,10 +10188,10 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             firsts: dict[tuple[object, ...], DataModel] = {}
             for model in models:
                 first = firsts.setdefault(
-                    (
+                    reuse_candidate_key(
                         type(model),
-                        tuple(base.reference.path if base.reference else base.type_hint for base in model.base_classes),
-                        tuple(field.name for field in model.fields),
+                        (base.reference.path if base.reference else base.type_hint for base in model.base_classes),
+                        (field.name for field in model.fields),
                     ),
                     model,
                 )
