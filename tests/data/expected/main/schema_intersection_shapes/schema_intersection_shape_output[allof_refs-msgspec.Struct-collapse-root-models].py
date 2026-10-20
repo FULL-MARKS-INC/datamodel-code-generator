@@ -15,6 +15,9 @@ Number5Map: TypeAlias = Annotated[int, Meta(ge=5)]
 NonNegativeMap: TypeAlias = Annotated[float, Meta(ge=0.0)]
 
 
+TwoRefsItem: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
+
+
 TwoRefsMap: TypeAlias = Annotated[int, Meta(ge=3, le=5)]
 
 
@@ -69,14 +72,6 @@ class Level2(IntEnum):
 Number5Item: TypeAlias = Annotated[int, Meta(ge=5)]
 
 
-class TwoRefsProp(Struct):
-    pass
-
-
-class TwoRefsItem(Struct):
-    pass
-
-
 StampLenItem: TypeAlias = Annotated[str, Meta(max_length=40)]
 
 
@@ -105,7 +100,7 @@ class Model(Struct):
     non_negative_items: list[float] | UnsetType = UNSET
     non_negative_map: dict[str, NonNegativeMap] | UnsetType = UNSET
     two_refs: Annotated[int, Meta(ge=3, le=5)] | UnsetType = UNSET
-    two_refs_prop: TwoRefsProp | UnsetType = UNSET
+    two_refs_prop: Annotated[int, Meta(ge=3, le=5)] | UnsetType = UNSET
     two_refs_items: list[TwoRefsItem] | UnsetType = UNSET
     two_refs_map: dict[str, TwoRefsMap] | UnsetType = UNSET
     stamp_len: Annotated[str, Meta(max_length=40)] | UnsetType = UNSET

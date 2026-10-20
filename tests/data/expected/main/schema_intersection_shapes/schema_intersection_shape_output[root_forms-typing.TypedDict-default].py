@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeAlias, TypedDict
+from typing import Any, Literal, TypeAlias, TypedDict
 
 from typing_extensions import NotRequired
 
+TwoRefs: TypeAlias = int
 
-class M2(TypedDict):
-    pass
+
+M2: TypeAlias = dict[str, Any] | None
 
 
 Tags: TypeAlias = list[str]
@@ -24,12 +25,10 @@ Small: TypeAlias = int
 Big: TypeAlias = int
 
 
-class Arr(TypedDict):
-    pass
+Arr: TypeAlias = list[str]
 
 
-class ArrRef(TypedDict):
-    pass
+ArrRef: TypeAlias = list[str]
 
 
 class EnumC(TypedDict):
@@ -46,12 +45,10 @@ class Pat(TypedDict):
     pass
 
 
-class Untyped(TypedDict):
-    pass
+Untyped: TypeAlias = Any
 
 
-class NullableMap(TypedDict):
-    pass
+NullableMap: TypeAlias = dict[str, Any] | None
 
 
 Base: TypeAlias = str
@@ -64,10 +61,6 @@ RootMulti: TypeAlias = str
 
 
 InlineRoot: TypeAlias = str
-
-
-class TwoRefs(TypedDict):
-    pass
 
 
 class Model(TypedDict):

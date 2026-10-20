@@ -60,6 +60,7 @@ EXTRA_RUNS: dict[str, tuple[tuple[DataModelType, tuple[str, ...]], ...]] = {
     "ref_sibling_nullable_oas30": ((DataModelType.PydanticV2BaseModel, ("--strict-nullable",)),),
     "ref_siblings": ((DataModelType.PydanticV2BaseModel, ("--generate-schema-validators",)),),
     "root_members": ((DataModelType.PydanticV2BaseModel, ("--generate-schema-validators",)),),
+    "unsat_root_literals": ((DataModelType.PydanticV2BaseModel, ("--generate-schema-validators",)),),
 }
 VALIDATING_BACKENDS = {
     DataModelType.PydanticV2BaseModel,

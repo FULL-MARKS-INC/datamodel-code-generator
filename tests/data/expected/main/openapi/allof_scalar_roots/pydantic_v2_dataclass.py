@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
@@ -54,9 +54,7 @@ ShortLabel = TypeAliasType(
 )
 
 
-@dataclass
-class Anything:
-    pass
+Anything = TypeAliasType("Anything", Any)
 
 
 @dataclass

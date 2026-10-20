@@ -58,16 +58,16 @@ pydantic_v2.BaseModel default two_refs 3 accepted
 pydantic_v2.BaseModel default two_refs 5 accepted
 pydantic_v2.BaseModel default two_refs 2 rejected
 pydantic_v2.BaseModel default two_refs 6 rejected
-pydantic_v2.BaseModel default two_refs_prop 3 rejected
-pydantic_v2.BaseModel default two_refs_prop 5 rejected
+pydantic_v2.BaseModel default two_refs_prop 3 accepted
+pydantic_v2.BaseModel default two_refs_prop 5 accepted
 pydantic_v2.BaseModel default two_refs_prop 2 rejected
 pydantic_v2.BaseModel default two_refs_prop 6 rejected
-pydantic_v2.BaseModel default two_refs_items [3] rejected
-pydantic_v2.BaseModel default two_refs_items [5] rejected
+pydantic_v2.BaseModel default two_refs_items [3] accepted
+pydantic_v2.BaseModel default two_refs_items [5] accepted
 pydantic_v2.BaseModel default two_refs_items [2] rejected
 pydantic_v2.BaseModel default two_refs_items [6] rejected
-pydantic_v2.BaseModel default two_refs_map {"k": 3} rejected
-pydantic_v2.BaseModel default two_refs_map {"k": 5} rejected
+pydantic_v2.BaseModel default two_refs_map {"k": 3} accepted
+pydantic_v2.BaseModel default two_refs_map {"k": 5} accepted
 pydantic_v2.BaseModel default two_refs_map {"k": 2} rejected
 pydantic_v2.BaseModel default two_refs_map {"k": 6} rejected
 pydantic_v2.BaseModel default stamp_len "2020-01-01T00:00:00Z" accepted
@@ -194,16 +194,16 @@ pydantic_v2.dataclass default two_refs 3 accepted
 pydantic_v2.dataclass default two_refs 5 accepted
 pydantic_v2.dataclass default two_refs 2 rejected
 pydantic_v2.dataclass default two_refs 6 rejected
-pydantic_v2.dataclass default two_refs_prop 3 rejected
-pydantic_v2.dataclass default two_refs_prop 5 rejected
+pydantic_v2.dataclass default two_refs_prop 3 accepted
+pydantic_v2.dataclass default two_refs_prop 5 accepted
 pydantic_v2.dataclass default two_refs_prop 2 rejected
 pydantic_v2.dataclass default two_refs_prop 6 rejected
-pydantic_v2.dataclass default two_refs_items [3] rejected
-pydantic_v2.dataclass default two_refs_items [5] rejected
+pydantic_v2.dataclass default two_refs_items [3] accepted
+pydantic_v2.dataclass default two_refs_items [5] accepted
 pydantic_v2.dataclass default two_refs_items [2] rejected
 pydantic_v2.dataclass default two_refs_items [6] rejected
-pydantic_v2.dataclass default two_refs_map {"k": 3} rejected
-pydantic_v2.dataclass default two_refs_map {"k": 5} rejected
+pydantic_v2.dataclass default two_refs_map {"k": 3} accepted
+pydantic_v2.dataclass default two_refs_map {"k": 5} accepted
 pydantic_v2.dataclass default two_refs_map {"k": 2} rejected
 pydantic_v2.dataclass default two_refs_map {"k": 6} rejected
 pydantic_v2.dataclass default stamp_len "2020-01-01T00:00:00Z" accepted
@@ -330,12 +330,12 @@ msgspec.Struct default two_refs 3 accepted
 msgspec.Struct default two_refs 5 accepted
 msgspec.Struct default two_refs 2 rejected
 msgspec.Struct default two_refs 6 rejected
-msgspec.Struct default two_refs_prop 3 rejected
-msgspec.Struct default two_refs_prop 5 rejected
+msgspec.Struct default two_refs_prop 3 accepted
+msgspec.Struct default two_refs_prop 5 accepted
 msgspec.Struct default two_refs_prop 2 rejected
 msgspec.Struct default two_refs_prop 6 rejected
-msgspec.Struct default two_refs_items [3] rejected
-msgspec.Struct default two_refs_items [5] rejected
+msgspec.Struct default two_refs_items [3] accepted
+msgspec.Struct default two_refs_items [5] accepted
 msgspec.Struct default two_refs_items [2] rejected
 msgspec.Struct default two_refs_items [6] rejected
 msgspec.Struct default two_refs_map {"k": 3} accepted
@@ -466,16 +466,16 @@ pydantic_v2.BaseModel --field-constraints two_refs 3 accepted
 pydantic_v2.BaseModel --field-constraints two_refs 5 accepted
 pydantic_v2.BaseModel --field-constraints two_refs 2 rejected
 pydantic_v2.BaseModel --field-constraints two_refs 6 rejected
-pydantic_v2.BaseModel --field-constraints two_refs_prop 3 rejected
-pydantic_v2.BaseModel --field-constraints two_refs_prop 5 rejected
+pydantic_v2.BaseModel --field-constraints two_refs_prop 3 accepted
+pydantic_v2.BaseModel --field-constraints two_refs_prop 5 accepted
 pydantic_v2.BaseModel --field-constraints two_refs_prop 2 rejected
 pydantic_v2.BaseModel --field-constraints two_refs_prop 6 rejected
-pydantic_v2.BaseModel --field-constraints two_refs_items [3] rejected
-pydantic_v2.BaseModel --field-constraints two_refs_items [5] rejected
+pydantic_v2.BaseModel --field-constraints two_refs_items [3] accepted
+pydantic_v2.BaseModel --field-constraints two_refs_items [5] accepted
 pydantic_v2.BaseModel --field-constraints two_refs_items [2] rejected
 pydantic_v2.BaseModel --field-constraints two_refs_items [6] rejected
-pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 3} rejected
-pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 5} rejected
+pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 3} accepted
+pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 5} accepted
 pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 2} rejected
 pydantic_v2.BaseModel --field-constraints two_refs_map {"k": 6} rejected
 pydantic_v2.BaseModel --field-constraints stamp_len "2020-01-01T00:00:00Z" raised TypeError
@@ -602,12 +602,12 @@ pydantic_v2.BaseModel --use-annotated two_refs 3 accepted
 pydantic_v2.BaseModel --use-annotated two_refs 5 accepted
 pydantic_v2.BaseModel --use-annotated two_refs 2 rejected
 pydantic_v2.BaseModel --use-annotated two_refs 6 rejected
-pydantic_v2.BaseModel --use-annotated two_refs_prop 3 rejected
-pydantic_v2.BaseModel --use-annotated two_refs_prop 5 rejected
+pydantic_v2.BaseModel --use-annotated two_refs_prop 3 accepted
+pydantic_v2.BaseModel --use-annotated two_refs_prop 5 accepted
 pydantic_v2.BaseModel --use-annotated two_refs_prop 2 rejected
 pydantic_v2.BaseModel --use-annotated two_refs_prop 6 rejected
-pydantic_v2.BaseModel --use-annotated two_refs_items [3] rejected
-pydantic_v2.BaseModel --use-annotated two_refs_items [5] rejected
+pydantic_v2.BaseModel --use-annotated two_refs_items [3] accepted
+pydantic_v2.BaseModel --use-annotated two_refs_items [5] accepted
 pydantic_v2.BaseModel --use-annotated two_refs_items [2] rejected
 pydantic_v2.BaseModel --use-annotated two_refs_items [6] rejected
 pydantic_v2.BaseModel --use-annotated two_refs_map {"k": 3} accepted
@@ -738,16 +738,16 @@ pydantic_v2.BaseModel --collapse-root-models two_refs 3 accepted
 pydantic_v2.BaseModel --collapse-root-models two_refs 5 accepted
 pydantic_v2.BaseModel --collapse-root-models two_refs 2 rejected
 pydantic_v2.BaseModel --collapse-root-models two_refs 6 rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_prop 3 rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_prop 5 rejected
+pydantic_v2.BaseModel --collapse-root-models two_refs_prop 3 accepted
+pydantic_v2.BaseModel --collapse-root-models two_refs_prop 5 accepted
 pydantic_v2.BaseModel --collapse-root-models two_refs_prop 2 rejected
 pydantic_v2.BaseModel --collapse-root-models two_refs_prop 6 rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_items [3] rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_items [5] rejected
+pydantic_v2.BaseModel --collapse-root-models two_refs_items [3] accepted
+pydantic_v2.BaseModel --collapse-root-models two_refs_items [5] accepted
 pydantic_v2.BaseModel --collapse-root-models two_refs_items [2] rejected
 pydantic_v2.BaseModel --collapse-root-models two_refs_items [6] rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 3} rejected
-pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 5} rejected
+pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 3} accepted
+pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 5} accepted
 pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 2} rejected
 pydantic_v2.BaseModel --collapse-root-models two_refs_map {"k": 6} rejected
 pydantic_v2.BaseModel --collapse-root-models stamp_len "2020-01-01T00:00:00Z" accepted
@@ -874,12 +874,12 @@ msgspec.Struct --collapse-root-models two_refs 3 accepted
 msgspec.Struct --collapse-root-models two_refs 5 accepted
 msgspec.Struct --collapse-root-models two_refs 2 rejected
 msgspec.Struct --collapse-root-models two_refs 6 rejected
-msgspec.Struct --collapse-root-models two_refs_prop 3 rejected
-msgspec.Struct --collapse-root-models two_refs_prop 5 rejected
+msgspec.Struct --collapse-root-models two_refs_prop 3 accepted
+msgspec.Struct --collapse-root-models two_refs_prop 5 accepted
 msgspec.Struct --collapse-root-models two_refs_prop 2 rejected
 msgspec.Struct --collapse-root-models two_refs_prop 6 rejected
-msgspec.Struct --collapse-root-models two_refs_items [3] rejected
-msgspec.Struct --collapse-root-models two_refs_items [5] rejected
+msgspec.Struct --collapse-root-models two_refs_items [3] accepted
+msgspec.Struct --collapse-root-models two_refs_items [5] accepted
 msgspec.Struct --collapse-root-models two_refs_items [2] rejected
 msgspec.Struct --collapse-root-models two_refs_items [6] rejected
 msgspec.Struct --collapse-root-models two_refs_map {"k": 3} accepted

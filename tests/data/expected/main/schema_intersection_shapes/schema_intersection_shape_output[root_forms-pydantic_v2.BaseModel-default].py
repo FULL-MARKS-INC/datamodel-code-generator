@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, RootModel, conint, constr
 
 
-class M2(BaseModel):
-    pass
+class TwoRefs(RootModel[conint(ge=3, le=5)]):
+    root: conint(ge=3, le=5)
+
+
+class M2(RootModel[dict[str, Any] | None]):
+    root: dict[str, Any] | None
 
 
 class Tags(RootModel[list[str]]):
@@ -29,12 +34,12 @@ class Big(RootModel[conint(ge=3)]):
     root: conint(ge=3)
 
 
-class Arr(BaseModel):
-    pass
+class Arr(RootModel[list[str]]):
+    root: list[str] = Field(..., min_length=1)
 
 
-class ArrRef(BaseModel):
-    pass
+class ArrRef(RootModel[list[str]]):
+    root: list[str] = Field(..., min_length=1)
 
 
 class EnumC(Enum):
@@ -54,12 +59,12 @@ class Pat(BaseModel):
     pass
 
 
-class Untyped(BaseModel):
-    pass
+class Untyped(RootModel[Any]):
+    root: Any
 
 
-class NullableMap(BaseModel):
-    pass
+class NullableMap(RootModel[dict[str, Any] | None]):
+    root: dict[str, Any] | None
 
 
 class Base(RootModel[str]):
@@ -80,10 +85,6 @@ class RootMulti(RootModel[constr(min_length=2)]):
 
 class InlineRoot(RootModel[constr(min_length=2)]):
     root: constr(min_length=2) = Field('zz', description='D', examples=['ab'])
-
-
-class TwoRefs(BaseModel):
-    pass
 
 
 class Model(BaseModel):

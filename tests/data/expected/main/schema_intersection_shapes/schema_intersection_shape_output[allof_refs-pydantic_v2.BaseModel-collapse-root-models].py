@@ -47,18 +47,6 @@ class Level2(IntEnum):
     integer_3 = 3
 
 
-class TwoRefsProp(BaseModel):
-    pass
-
-
-class TwoRefsItem(BaseModel):
-    pass
-
-
-class TwoRefsMap(BaseModel):
-    pass
-
-
 class Model(BaseModel):
     pick2: Pick2 | None = None
     pick2_prop: AB | None = None
@@ -77,9 +65,9 @@ class Model(BaseModel):
     non_negative_items: list[float] | None = None
     non_negative_map: dict[str, float] | None = None
     two_refs: conint(ge=3, le=5) | None = None
-    two_refs_prop: TwoRefsProp | None = None
-    two_refs_items: list[TwoRefsItem] | None = None
-    two_refs_map: dict[str, TwoRefsMap] | None = None
+    two_refs_prop: conint(ge=3, le=5) | None = None
+    two_refs_items: list[conint(ge=3, le=5)] | None = None
+    two_refs_map: dict[str, conint(ge=3, le=5)] | None = None
     stamp_len: AwareDatetime | None = None
     stamp_len_prop: AwareDatetime | None = None
     stamp_len_items: list[AwareDatetime] | None = None

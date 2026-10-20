@@ -8,6 +8,14 @@ from typing import Literal, TypeAlias, TypedDict
 
 from typing_extensions import NotRequired
 
+TwoRefsProp: TypeAlias = int
+
+
+TwoRefsItem: TypeAlias = int
+
+
+TwoRefsMap: TypeAlias = int
+
 
 class NullsibC(TypedDict):
     x: NotRequired[int]
@@ -71,18 +79,6 @@ AllOfRoot: TypeAlias = Quantity
 
 
 AllOfRoot2: TypeAlias = int
-
-
-class TwoRefsProp(TypedDict):
-    pass
-
-
-class TwoRefsItem(TypedDict):
-    pass
-
-
-class TwoRefsMap(TypedDict):
-    pass
 
 
 class Model(TypedDict):

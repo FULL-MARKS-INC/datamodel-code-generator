@@ -5449,5 +5449,430 @@
         ]
       }
     }
+  },
+  "unsat_root_literals": {
+    "model": "M",
+    "fields": {
+      "const_member": {
+        "valid": [],
+        "invalid": [
+          "a",
+          "c",
+          ""
+        ]
+      },
+      "sibling_enum": {
+        "valid": [],
+        "invalid": [
+          "a",
+          "c"
+        ]
+      },
+      "item_enums": {
+        "valid": [
+          []
+        ],
+        "invalid": [
+          [
+            "a"
+          ],
+          [
+            "c"
+          ]
+        ]
+      }
+    }
+  },
+  "root_site_null": {
+    "model": "M",
+    "fields": {
+      "ref_array": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          null,
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "ref_integers": {
+        "valid": [
+          3,
+          5
+        ],
+        "invalid": [
+          null,
+          2,
+          6,
+          "3"
+        ]
+      },
+      "inline_array": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          null,
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "inline_integer": {
+        "valid": [
+          3,
+          5
+        ],
+        "invalid": [
+          null,
+          2,
+          6
+        ]
+      }
+    }
+  },
+  "root_site_null_oas30": {
+    "model": "Model",
+    "dialect": "http://json-schema.org/draft-04/schema#",
+    "fields": {
+      "ref_array": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          null,
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "inline_array": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          null,
+          [],
+          [
+            1
+          ]
+        ]
+      }
+    }
+  },
+  "root_value_keywords": {
+    "model": "M",
+    "fields": {
+      "items_later": {
+        "valid": [
+          [
+            "a"
+          ],
+          []
+        ],
+        "invalid": [
+          [
+            1
+          ],
+          "a"
+        ]
+      },
+      "items_first": {
+        "valid": [
+          [
+            1
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            "a"
+          ]
+        ]
+      },
+      "unevaluated_items": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [
+            1
+          ]
+        ]
+      },
+      "ref_items": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [
+            1
+          ]
+        ]
+      },
+      "ref_bounded": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "ref_no_parts": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [
+            1
+          ],
+          "a"
+        ]
+      }
+    }
+  },
+  "root_value_items_draft07": {
+    "model": "M",
+    "fields": {
+      "tuple_later": {
+        "valid": [
+          [
+            "a"
+          ],
+          []
+        ],
+        "invalid": [
+          [
+            "a",
+            "b"
+          ],
+          [
+            1
+          ]
+        ]
+      },
+      "closing_elsewhere": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [
+            1
+          ]
+        ]
+      },
+      "own_closing": {
+        "valid": [
+          [
+            "a"
+          ],
+          [
+            "a",
+            "b"
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "nullable_tags": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          null,
+          [
+            1
+          ]
+        ]
+      }
+    }
+  },
+  "array_site_all_of": {
+    "model": "M",
+    "fields": {
+      "named": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "inline": {
+        "valid": [
+          [
+            1,
+            2
+          ]
+        ],
+        "invalid": [
+          [
+            1,
+            2,
+            3
+          ],
+          [
+            "a"
+          ]
+        ]
+      },
+      "nested": {
+        "valid": [
+          [
+            [
+              1
+            ]
+          ]
+        ],
+        "invalid": [
+          [
+            [
+              1,
+              2,
+              3
+            ]
+          ]
+        ]
+      },
+      "map": {
+        "valid": [
+          {
+            "k": [
+              1
+            ]
+          }
+        ],
+        "invalid": [
+          {
+            "k": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "any_of": {
+        "valid": [
+          [
+            1
+          ],
+          "s"
+        ],
+        "invalid": [
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      },
+      "null_or_array": {
+        "valid": [
+          null,
+          [
+            1
+          ]
+        ],
+        "invalid": [
+          []
+        ]
+      },
+      "member_items": {
+        "valid": [
+          [
+            1
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            "a"
+          ]
+        ]
+      },
+      "annotation_only": {
+        "valid": [
+          [
+            1
+          ]
+        ],
+        "invalid": [
+          {},
+          [
+            "a"
+          ]
+        ]
+      },
+      "ref_only": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            1
+          ]
+        ]
+      },
+      "ref_more": {
+        "valid": [
+          [
+            "a"
+          ]
+        ],
+        "invalid": [
+          [],
+          [
+            "a",
+            "a",
+            "a",
+            "a"
+          ],
+          [
+            1
+          ]
+        ]
+      }
+    }
   }
 }

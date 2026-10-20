@@ -11,6 +11,14 @@ from pydantic import AwareDatetime, Field, constr
 from pydantic.dataclasses import dataclass
 from typing_extensions import TypeAliasType
 
+TwoRefsProp = TypeAliasType("TwoRefsProp", Annotated[int, Field(ge=3, le=5)])
+
+
+TwoRefsItem = TypeAliasType("TwoRefsItem", Annotated[int, Field(ge=3, le=5)])
+
+
+TwoRefsMap = TypeAliasType("TwoRefsMap", Annotated[int, Field(ge=3, le=5)])
+
 
 @dataclass
 class NullsibC:
@@ -84,21 +92,6 @@ AllOfRoot = TypeAliasType("AllOfRoot", Quantity)
 
 
 AllOfRoot2 = TypeAliasType("AllOfRoot2", Annotated[int, Field(ge=1, le=10)])
-
-
-@dataclass
-class TwoRefsProp:
-    pass
-
-
-@dataclass
-class TwoRefsItem:
-    pass
-
-
-@dataclass
-class TwoRefsMap:
-    pass
 
 
 @dataclass

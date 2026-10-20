@@ -4,14 +4,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 from msgspec import UNSET, Meta, Struct, UnsetType
-
-
-class M2(Struct):
-    pass
-
 
 Tags: TypeAlias = list[str]
 
@@ -27,14 +22,6 @@ Small: TypeAlias = Annotated[int, Meta(le=5)]
 Big: TypeAlias = Annotated[int, Meta(ge=3)]
 
 
-class Arr(Struct):
-    pass
-
-
-class ArrRef(Struct):
-    pass
-
-
 class EnumC(Enum):
     a = 'a'
     b = 'b'
@@ -47,32 +34,20 @@ class Pat(Struct):
     pass
 
 
-class Untyped(Struct):
-    pass
-
-
-class NullableMap(Struct):
-    pass
-
-
 Base: TypeAlias = Annotated[str, Meta(examples=['bb'], title='BaseT')]
 
 
-class TwoRefs(Struct):
-    pass
-
-
 class Model(Struct):
-    a: Arr | UnsetType = UNSET
-    b: ArrRef | UnsetType = UNSET
+    a: Annotated[list[str], Meta(min_length=1)] | UnsetType = UNSET
+    b: Annotated[list[str], Meta(min_length=1)] | UnsetType = UNSET
     c: EnumC | UnsetType = UNSET
     d: EnumD | UnsetType = UNSET
     v: Annotated[int, Meta(ge=3, le=5)] | UnsetType = UNSET
     p: Pat | UnsetType = UNSET
-    u: Untyped | UnsetType = UNSET
-    two_refs: TwoRefs | UnsetType = UNSET
-    m: NullableMap | UnsetType = UNSET
-    m2: M2 | UnsetType = UNSET
+    u: Any | UnsetType = UNSET
+    two_refs: Annotated[int, Meta(ge=3, le=5)] | UnsetType = UNSET
+    m: dict[str, Any] | None | UnsetType = UNSET
+    m2: dict[str, Any] | None | UnsetType = UNSET
     path_a: (
         Annotated[
             str,

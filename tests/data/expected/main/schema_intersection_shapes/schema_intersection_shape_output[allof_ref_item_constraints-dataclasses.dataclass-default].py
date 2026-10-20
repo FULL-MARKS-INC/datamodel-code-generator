@@ -6,6 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
+TwoItem: TypeAlias = int
+
+
+TwoMap: TypeAlias = int
+
+
 FalseItem: TypeAlias = Any
 
 
@@ -27,16 +33,6 @@ Big: TypeAlias = int
 @dataclass
 class Point:
     x: int | None = None
-
-
-@dataclass
-class TwoItem:
-    pass
-
-
-@dataclass
-class TwoMap:
-    pass
 
 
 @dataclass

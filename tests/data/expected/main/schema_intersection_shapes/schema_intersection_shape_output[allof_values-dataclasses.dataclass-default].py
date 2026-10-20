@@ -59,9 +59,7 @@ class Pat:
     pass
 
 
-@dataclass
-class Untyped:
-    pass
+Untyped: TypeAlias = Any
 
 
 @dataclass

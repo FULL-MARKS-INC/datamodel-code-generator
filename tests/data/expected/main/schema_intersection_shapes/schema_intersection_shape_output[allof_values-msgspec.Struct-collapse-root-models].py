@@ -26,10 +26,6 @@ class Pat(Struct):
     pass
 
 
-class Untyped(Struct):
-    pass
-
-
 class Model(Struct):
     level: Annotated[int, Meta(ge=0, le=10)] | UnsetType = UNSET
     level_prop: Annotated[int, Meta(ge=0, le=10)] | UnsetType = UNSET
@@ -43,7 +39,7 @@ class Model(Struct):
     pat_prop: str | UnsetType = UNSET
     pat_items: list[str] | UnsetType = UNSET
     pat_map: dict[str, PatMap] | UnsetType = UNSET
-    untyped: Untyped | UnsetType = UNSET
+    untyped: Any | UnsetType = UNSET
     untyped_prop: Any | UnsetType = UNSET
     untyped_items: list[Any] | UnsetType = UNSET
     untyped_map: dict[str, Any] | UnsetType = UNSET

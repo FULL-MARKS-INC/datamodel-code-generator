@@ -107,7 +107,7 @@ pydantic_v2.dataclass default wa_map {"k": "a"} accepted
 pydantic_v2.dataclass default wa_map {"k": "b"} accepted
 pydantic_v2.dataclass default wa_map {"k": "c"} rejected
 pydantic_v2.dataclass default wb "b" accepted
-pydantic_v2.dataclass default wb "a" accepted
+pydantic_v2.dataclass default wb "a" rejected
 pydantic_v2.dataclass default wb "c" rejected
 pydantic_v2.dataclass default wb_prop "b" accepted
 pydantic_v2.dataclass default wb_prop "a" accepted
@@ -203,7 +203,7 @@ msgspec.Struct default wa_map {"k": "a"} accepted
 msgspec.Struct default wa_map {"k": "b"} accepted
 msgspec.Struct default wa_map {"k": "c"} rejected
 msgspec.Struct default wb "b" accepted
-msgspec.Struct default wb "a" accepted
+msgspec.Struct default wb "a" rejected
 msgspec.Struct default wb "c" rejected
 msgspec.Struct default wb_prop "b" accepted
 msgspec.Struct default wb_prop "a" accepted
@@ -587,7 +587,7 @@ msgspec.Struct --collapse-root-models wa_map {"k": "a"} accepted
 msgspec.Struct --collapse-root-models wa_map {"k": "b"} accepted
 msgspec.Struct --collapse-root-models wa_map {"k": "c"} rejected
 msgspec.Struct --collapse-root-models wb "b" accepted
-msgspec.Struct --collapse-root-models wb "a" accepted
+msgspec.Struct --collapse-root-models wb "a" rejected
 msgspec.Struct --collapse-root-models wb "c" rejected
 msgspec.Struct --collapse-root-models wb_prop "b" accepted
 msgspec.Struct --collapse-root-models wb_prop "a" accepted

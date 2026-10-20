@@ -4,16 +4,16 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from typing_extensions import TypeAliasType
 
+TwoRefs = TypeAliasType("TwoRefs", Annotated[int, Field(ge=3, le=5)])
 
-@dataclass
-class M2:
-    pass
+
+M2 = TypeAliasType("M2", dict[str, Any] | None)
 
 
 Tags = TypeAliasType("Tags", list[str])
@@ -30,14 +30,10 @@ Small = TypeAliasType("Small", Annotated[int, Field(le=5)])
 Big = TypeAliasType("Big", Annotated[int, Field(ge=3)])
 
 
-@dataclass
-class Arr:
-    pass
+Arr = TypeAliasType("Arr", Annotated[list[str], Field(..., min_length=1)])
 
 
-@dataclass
-class ArrRef:
-    pass
+ArrRef = TypeAliasType("ArrRef", Annotated[list[str], Field(..., min_length=1)])
 
 
 class EnumC(Enum):
@@ -56,14 +52,10 @@ class Pat:
     pass
 
 
-@dataclass
-class Untyped:
-    pass
+Untyped = TypeAliasType("Untyped", Any)
 
 
-@dataclass
-class NullableMap:
-    pass
+NullableMap = TypeAliasType("NullableMap", dict[str, Any] | None)
 
 
 Base = TypeAliasType("Base", Annotated[str, Field(..., examples=['bb'], title='BaseT')])
@@ -94,11 +86,6 @@ InlineRoot = TypeAliasType(
         Field(..., description='D', examples=['ab']),
     ],
 )
-
-
-@dataclass
-class TwoRefs:
-    pass
 
 
 @dataclass

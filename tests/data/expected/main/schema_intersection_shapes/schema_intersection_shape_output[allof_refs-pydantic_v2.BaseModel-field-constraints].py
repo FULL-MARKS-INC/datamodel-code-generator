@@ -17,6 +17,18 @@ class Number5Map(RootModel[int]):
     root: int = Field(..., ge=5)
 
 
+class TwoRefsProp(RootModel[int]):
+    root: int = Field(..., ge=3, le=5)
+
+
+class TwoRefsItem(RootModel[int]):
+    root: int = Field(..., ge=3, le=5)
+
+
+class TwoRefsMap(RootModel[int]):
+    root: int = Field(..., ge=3, le=5)
+
+
 class QAllofItem(RootModel[int]):
     root: int = Field(..., ge=1, le=10)
 
@@ -109,18 +121,6 @@ class AllOfRoot(RootModel[Quantity]):
 
 class AllOfRoot2(RootModel[int]):
     root: int = Field(..., ge=1, le=10)
-
-
-class TwoRefsProp(BaseModel):
-    pass
-
-
-class TwoRefsItem(BaseModel):
-    pass
-
-
-class TwoRefsMap(BaseModel):
-    pass
 
 
 class StampLenItem(RootModel[Stamp]):

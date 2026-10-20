@@ -59,8 +59,7 @@ class Pat(Struct):
     pass
 
 
-class Untyped(Struct):
-    pass
+Untyped: TypeAlias = Any
 
 
 class Model(Struct):

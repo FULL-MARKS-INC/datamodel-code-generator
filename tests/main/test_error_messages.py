@@ -1131,18 +1131,6 @@ def _object_with_ref(name: str) -> dict[str, YamlValue]:
             id="allof-merged-ref",
         ),
         pytest.param(
-            {
-                "$defs": {
-                    "Base": {"type": "string", "enum": ["a"]},
-                    "Narrowed": {"allOf": [{"$ref": "#/$defs/Base", "enum": ["b"]}]},
-                },
-                **_object_with_ref("Narrowed"),
-            },
-            "#/$defs/Narrowed",
-            "allOf",
-            id="allof-disjoint-literals",
-        ),
-        pytest.param(
             {"type": "object", "properties": {"value": {"anyOf": [False, False]}}},
             "#/properties/value",
             "anyOf",

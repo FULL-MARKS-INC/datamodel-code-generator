@@ -9,6 +9,12 @@ from pydantic import AwareDatetime, Field
 from pydantic.dataclasses import dataclass
 from typing_extensions import TypeAliasType
 
+TwoItem = TypeAliasType("TwoItem", Annotated[int, Field(ge=4, le=5)])
+
+
+TwoMap = TypeAliasType("TwoMap", Annotated[int, Field(ge=4, le=5)])
+
+
 FalseItem = TypeAliasType("FalseItem", Any)
 
 
@@ -30,16 +36,6 @@ Big = TypeAliasType("Big", Annotated[int, Field(ge=3)])
 @dataclass
 class Point:
     x: int | None = None
-
-
-@dataclass
-class TwoItem:
-    pass
-
-
-@dataclass
-class TwoMap:
-    pass
 
 
 @dataclass

@@ -1532,6 +1532,8 @@ openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.P1	paylo
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.P2	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.Q	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.Quantity	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
+openapi/schema_intersection/root_site_null_oas30.yaml::components.schemas.InlineArray	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
+openapi/schema_intersection/root_site_null_oas30.yaml::components.schemas.Tags	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/rw.yaml::components.schemas.Id	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/rw.yaml::components.schemas.Secret	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_location.yaml::components.schemas.Foo/Bar	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
@@ -3143,6 +3145,8 @@ openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.P1	paylo
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.P2	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.Q	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/ref_siblings_oas31.yaml::components.schemas.Quantity	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
+openapi/schema_intersection/root_site_null_oas30.yaml::components.schemas.InlineArray	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
+openapi/schema_intersection/root_site_null_oas30.yaml::components.schemas.Tags	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/rw.yaml::components.schemas.Id	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_intersection/rw.yaml::components.schemas.Secret	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt
 openapi/schema_location.yaml::components.schemas.Foo/Bar	payloads/native_numeric_empty_errors.txt	= main/jsonschema/nested_resources/no_warnings.txt

@@ -22,6 +22,14 @@ class NonNegativeMap(RootModel[float]):
     root: Annotated[float, Field(ge=0.0)]
 
 
+class TwoRefsProp(RootModel[int]):
+    root: Annotated[int, Field(ge=3, le=5)]
+
+
+class TwoRefsItem(RootModel[int]):
+    root: Annotated[int, Field(ge=3, le=5)]
+
+
 class TwoRefsMap(RootModel[int]):
     root: Annotated[int, Field(ge=3, le=5)]
 
@@ -126,14 +134,6 @@ class AllOfRoot(RootModel[Quantity]):
 
 class AllOfRoot2(RootModel[int]):
     root: Annotated[int, Field(ge=1, le=10)]
-
-
-class TwoRefsProp(BaseModel):
-    pass
-
-
-class TwoRefsItem(BaseModel):
-    pass
 
 
 class StampLenItem(RootModel[Stamp]):

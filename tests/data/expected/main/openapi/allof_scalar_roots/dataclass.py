@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 Label: TypeAlias = str
 
@@ -39,9 +39,7 @@ LabelAlias: TypeAlias = Label
 ShortLabel: TypeAlias = str
 
 
-@dataclass
-class Anything:
-    pass
+Anything: TypeAlias = Any
 
 
 @dataclass

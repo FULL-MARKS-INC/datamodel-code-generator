@@ -7,6 +7,12 @@ from typing import Any, TypeAlias, TypedDict
 
 from typing_extensions import NotRequired
 
+TwoItem: TypeAlias = int
+
+
+TwoMap: TypeAlias = int
+
+
 FalseItem: TypeAlias = Any
 
 
@@ -27,14 +33,6 @@ Big: TypeAlias = int
 
 class Point(TypedDict):
     x: NotRequired[int]
-
-
-class TwoItem(TypedDict):
-    pass
-
-
-class TwoMap(TypedDict):
-    pass
 
 
 class Model(TypedDict):

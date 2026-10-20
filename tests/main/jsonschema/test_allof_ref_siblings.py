@@ -164,16 +164,15 @@ def test_allof_ref_siblings(
 
 @pytest.mark.parametrize("case_name", ALLOF_REF_SIBLING_DIAGNOSTICS)
 def test_allof_ref_sibling_empty_intersection(output_file: Path, case_name: str) -> None:
-    """Reject disjoint literal intersections, including JSON booleans versus numbers."""
+    """Write the referenced literals of a disjoint literal intersection with a warning, also booleans versus numbers."""
     schema_path = JSON_SCHEMA_DATA_PATH / "allof_ref_siblings" / f"{case_name}.json"
     schema = json.loads(schema_path.read_text())
     validator = validator_for(schema)(schema)
     for value in ALLOF_REF_SIBLING_DIAGNOSTICS[case_name]:
         with pytest.raises(JsonSchemaValidationError):
             validator.validate(value)
-    run_main_and_assert(input_path=schema_path, output_path=output_file, expected_exit=Exit.ERROR)
-    with pytest.raises(Error, match="unsatisfiable"):
-        generate(schema_path, input_file_type=InputFileType.JsonSchema)
+    with pytest.warns(UserWarning, match="no value satisfies every part of this schema"):
+        run_main_and_assert(input_path=schema_path, output_path=output_file)
 
 
 @pytest.mark.parametrize("entrypoint", ["cli", "api"])

@@ -8,6 +8,14 @@ from decimal import Decimal
 from enum import Enum, IntEnum
 from typing import TypeAlias
 
+TwoRefsProp: TypeAlias = int
+
+
+TwoRefsItem: TypeAlias = int
+
+
+TwoRefsMap: TypeAlias = int
+
 
 @dataclass
 class NullsibC:
@@ -81,21 +89,6 @@ AllOfRoot: TypeAlias = Quantity
 
 
 AllOfRoot2: TypeAlias = int
-
-
-@dataclass
-class TwoRefsProp:
-    pass
-
-
-@dataclass
-class TwoRefsItem:
-    pass
-
-
-@dataclass
-class TwoRefsMap:
-    pass
 
 
 @dataclass

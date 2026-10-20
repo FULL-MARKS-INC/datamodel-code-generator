@@ -9,6 +9,18 @@ from enum import Enum, IntEnum
 from pydantic import AwareDatetime, BaseModel, RootModel, confloat, conint, constr
 
 
+class TwoRefsProp(RootModel[conint(ge=3, le=5)]):
+    root: conint(ge=3, le=5)
+
+
+class TwoRefsItem(RootModel[conint(ge=3, le=5)]):
+    root: conint(ge=3, le=5)
+
+
+class TwoRefsMap(RootModel[conint(ge=3, le=5)]):
+    root: conint(ge=3, le=5)
+
+
 class NullsibC(BaseModel):
     x: int | None = None
 
@@ -93,18 +105,6 @@ class AllOfRoot(RootModel[Quantity]):
 
 class AllOfRoot2(RootModel[conint(ge=1, le=10)]):
     root: conint(ge=1, le=10)
-
-
-class TwoRefsProp(BaseModel):
-    pass
-
-
-class TwoRefsItem(BaseModel):
-    pass
-
-
-class TwoRefsMap(BaseModel):
-    pass
 
 
 class Model(BaseModel):

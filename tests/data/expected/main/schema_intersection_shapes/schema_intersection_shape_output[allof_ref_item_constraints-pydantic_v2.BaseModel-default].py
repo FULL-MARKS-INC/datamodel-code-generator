@@ -8,6 +8,14 @@ from typing import Any
 from pydantic import AwareDatetime, BaseModel, Field, RootModel, conint
 
 
+class TwoItem(RootModel[conint(ge=4, le=5)]):
+    root: conint(ge=4, le=5)
+
+
+class TwoMap(RootModel[conint(ge=4, le=5)]):
+    root: conint(ge=4, le=5)
+
+
 class FalseItem(RootModel[Any]):
     root: Any
 
@@ -34,14 +42,6 @@ class Big(RootModel[conint(ge=3)]):
 
 class Point(BaseModel):
     x: int | None = None
-
-
-class TwoItem(BaseModel):
-    pass
-
-
-class TwoMap(BaseModel):
-    pass
 
 
 class Model(BaseModel):
