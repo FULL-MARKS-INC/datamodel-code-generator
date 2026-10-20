@@ -179,6 +179,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._requirements import PydanticConstruct
     from datamodel_code_generator.enums import StrictTypes
     from datamodel_code_generator.model._decisions.nullability import NullSource
+    from datamodel_code_generator.model._decisions.union_assembly import MemberRole, UnionRow
 
     class DataModelFieldBase(Protocol):
         """Type-checking contract for a field that owns a DataType."""
@@ -518,6 +519,62 @@ def _nullability_core() -> ModuleType:
     from datamodel_code_generator.model._decisions import nullability  # noqa: PLC0415
 
     return nullability
+
+
+@cache
+def _union_core() -> ModuleType:
+    """Return the union assembly decision, imported once; ``model`` imports this module, so not at its top."""
+    from datamodel_code_generator.model._decisions import union_assembly  # noqa: PLC0415
+
+    return union_assembly
+
+
+def build_union(
+    data_type: type[DataType],
+    members: Sequence[DataType],
+    row: UnionRow = "declared",
+    /,
+    *,
+    nullable: bool = False,
+    roles: Sequence[MemberRole] = (),
+    **values: Any,
+) -> DataType:
+    """Build the union of ``members`` that the ``row`` of ``union_assembly.UnionRow`` assembles, with ``data_type``.
+
+    ``nullable`` tells that the builder found that the union admits null, ``roles`` gives each member its role (all
+    plain members when empty), and ``values`` go to the constructor.
+    """
+    union = _union_core()
+    plan = union.assemble_union(
+        tuple(map(union.MemberFacts, roles)) if roles else (union.MEMBER,) * len(members),
+        union.UnionPolicy(row, nullable),
+    )
+    kept = [members[index] for index in plan.members]
+    if plan.one_member_is_type and len(kept) == 1:
+        return kept[0]
+    if plan.nullable:
+        values["is_optional"] = True
+    if plan.preserve_order:
+        values["preserve_union_member_order"] = True
+    return data_type(data_types=kept, **values)
+
+
+def union_members(data_type: DataType) -> Sequence[DataType]:
+    """Return the members of the union a type is at its top level, or nothing when it is no union there.
+
+    A container of several items is no union at its top level: it writes the union of its items inside it.
+    """
+    if len(data_type.data_types) < 2 or any((  # noqa: PLR2004
+        data_type.is_dict,
+        data_type.is_list,
+        data_type.is_set,
+        data_type.is_frozen_set,
+        data_type.is_mapping,
+        data_type.is_sequence,
+        data_type.is_tuple,
+    )):
+        return ()
+    return data_type.data_types
 
 
 def is_data_model_field(obj: object) -> TypeIs[DataModelFieldBase]:
@@ -888,22 +945,18 @@ class DataType(_BaseModel):  # noqa: PLR0904
         if not TYPE_CHECKING:  # pragma: no cover
             super().__init__(**values)
 
-        # Single-pass optimization: detect ANY+optional and non-ANY types together
-        # This is a rare edge case optimization - pragma: no cover
-        any_optional_found = False
-        has_non_any = False
-        for type_ in self.data_types:
-            if type_.type == ANY and type_.is_optional:
-                any_optional_found = True  # pragma: no cover
-            elif type_.type != ANY:
-                has_non_any = True
-            # Early exit if both conditions met
-            if any_optional_found and has_non_any:  # pragma: no cover
-                break
-
-        if any_optional_found and has_non_any:  # pragma: no cover
-            self.is_optional = True
-            self.data_types = [t for t in self.data_types if not (t.type == ANY and t.is_optional)]
+        if len(self.data_types) > 1:
+            union = _union_core()
+            plan = union.assemble_union(
+                tuple(
+                    union.MemberFacts(is_any=(is_any := type_.type == ANY), optional_any=is_any and type_.is_optional)
+                    for type_ in self.data_types
+                ),
+                union.CONSTRUCTED,
+            )
+            if plan.rule == "optional-any-to-null":
+                self.is_optional = True
+                self.data_types = [self.data_types[index] for index in plan.members]
 
         for data_type in self.data_types:
             if data_type.reference or data_type.data_types:
@@ -1000,24 +1053,22 @@ class DataType(_BaseModel):  # noqa: PLR0904
                 wrap_discriminator=wrap_discriminator,
             )
 
-        data_types: list[str] = []
-        for data_type_type in self._iter_union_member_type_hints(use_base_type_hint=use_base_type_hint):
-            if not data_type_type or data_type_type in data_types:
-                continue
-
-            if data_type_type == NONE:
-                self._materialize_render_state("member-null")
-                continue
-
-            non_optional_data_type_type = _remove_none_from_union(
-                data_type_type, use_union_operator=self.use_union_operator
+        union = _union_core()
+        merged = union.merge_members(
+            union.WrittenMember(
+                data_type_type,
+                kept := NONE
+                if (null := data_type_type == NONE)
+                else _remove_none_from_union(data_type_type, use_union_operator=self.use_union_operator),
+                null=null,
+                strips_null=kept != data_type_type,
             )
-
-            if non_optional_data_type_type != data_type_type:
-                self._materialize_render_state("member-null")
-
-            data_types.append(non_optional_data_type_type)
-
+            for data_type_type in self._iter_union_member_type_hints(use_base_type_hint=use_base_type_hint)
+            if data_type_type
+        )
+        if merged.takes_null:
+            self._materialize_render_state("member-null")
+        data_types = merged.kept
         if not data_types:
             type_ = ANY
             self._materialize_render_state("empty-union")
@@ -1039,14 +1090,10 @@ class DataType(_BaseModel):  # noqa: PLR0904
             else:
                 yield data_type_type
 
-    def _join_union_member_type_hints(self, data_types: list[str]) -> str:
+    def _join_union_member_type_hints(self, data_types: tuple[str, ...]) -> str:
         """Join union member hints, remembering them so that an enclosing union can spread this one."""
-        type_ = (
-            UNION_OPERATOR_DELIMITER.join(data_types)
-            if self.use_union_operator
-            else f"{UNION_PREFIX}{UNION_DELIMITER.join(data_types)}]"
-        )
-        self.__dict__[_RENDERED_UNION_MEMBERS_KEY] = (type_, tuple(data_types))
+        type_ = _union_core().join_union(data_types, union_operator=self.use_union_operator)
+        self.__dict__[_RENDERED_UNION_MEMBERS_KEY] = (type_, data_types)
         return type_
 
     def _render_ordered_union_type_hint(
@@ -1055,14 +1102,12 @@ class DataType(_BaseModel):  # noqa: PLR0904
         use_base_type_hint: bool,
         wrap_discriminator: bool,
     ) -> str:
-        data_types: list[str] = []
-        seen_data_types: set[str] = set()
-        for data_type_type in self._iter_union_member_type_hints(use_base_type_hint=use_base_type_hint):
-            if not data_type_type or data_type_type in seen_data_types:
-                continue
-            seen_data_types.add(data_type_type)
-            data_types.append(data_type_type)
-
+        union = _union_core()
+        data_types = union.merge_members(
+            union.WrittenMember(data_type_type, data_type_type)
+            for data_type_type in self._iter_union_member_type_hints(use_base_type_hint=use_base_type_hint)
+            if data_type_type
+        ).kept
         match len(data_types):
             case 0:
                 type_ = ANY

@@ -82,6 +82,7 @@ from datamodel_code_generator._target_naming import TargetNames, path_placeholde
 from datamodel_code_generator.imports import IMPORT_ANY, IMPORT_DECIMAL, Import
 from datamodel_code_generator.model import dataclass as dataclass_model
 from datamodel_code_generator.model import msgspec, pydantic_v2, typed_dict
+from datamodel_code_generator.model._decisions.union_assembly import WrittenMember, merge_members
 from datamodel_code_generator.model.base import UNDEFINED, ConstraintsBase, DataModel, DataModelFieldBase
 from datamodel_code_generator.model.dataclass import DataModelField as DataclassField
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum, get_raw_enum_member_value
@@ -1029,7 +1030,7 @@ def _ordered_union(
     A union the model's annotation discriminates stays one member, as its annotation wraps it.
     """
     flattened = tuple(member for value in members for member in _members(value))
-    unique = tuple(dict.fromkeys(flattened))
+    unique = merge_members(WrittenMember(member, member) for member in flattened).kept
     discriminator = discriminator or next(
         (value.discriminator for value in members if isinstance(value, UnionType) and value.discriminator is not None),
         None,
@@ -1602,10 +1603,11 @@ class _Projector:
         preserve_order = data_type.preserve_union_member_order
         projected = tuple(self._project(child) for child in data_type.data_types)
         flattened = tuple(member for value in projected for member in _members(value))
-        members = (
-            projected if preserve_order else tuple(member for member in flattened if not isinstance(member, NoneType))
+        merged = merge_members(
+            WrittenMember(member, member, null=not preserve_order and isinstance(member, NoneType))
+            for member in (projected if preserve_order else flattened)
         )
-        inferred_optional = not preserve_order and len(members) != len(flattened)
+        members, inferred_optional = merged.kept, merged.takes_null
         union = (
             _ordered_union(
                 members,

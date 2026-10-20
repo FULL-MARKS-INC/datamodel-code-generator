@@ -58,9 +58,11 @@ from datamodel_code_generator.types import (
     DataType,
     _create_context_data_type,
     _is_value_literal,
+    build_union,
     chain_as_tuple,
     merge_normalized_constraint,
     normalize_integer_constraint,
+    union_members,
 )
 
 
@@ -643,13 +645,17 @@ class DataModelField(DataModelFieldBase):
     def _unset_type_data_type(self) -> DataType:
         return self.data_type.__class__.from_import(IMPORT_MSGSPEC_UNSETTYPE)
 
-    def _ordered_union_data_type(self, data_types: list[DataType]) -> DataType:
-        if len(data_types) == 1:
-            return data_types[0]
-        return self.data_type.__class__(
-            data_types=data_types,
+    def _ordered_union_data_type(self, members: list[DataType], *, null: bool, unset: bool) -> DataType:
+        """Return the union a field hint writes: ``members``, then None and the ``UNSET`` sentinel (row ``ordered``)."""
+        data_type_class = self.data_type.__class__
+        none_members = [data_type_class(type=NONE)] if null else []
+        unset_members = [self._unset_type_data_type()] if unset else []
+        return build_union(
+            data_type_class,
+            [*members, *none_members, *unset_members],
+            "ordered",
+            roles=(*("member",) * len(members), *("null",) * len(none_members), *("sentinel",) * len(unset_members)),
             use_union_operator=self._use_union_operator,
-            preserve_union_member_order=True,
         )
 
     def _data_type_has_top_level_none(self, data_type: DataType) -> bool:
@@ -678,8 +684,9 @@ class DataModelField(DataModelFieldBase):
             data_type.is_tuple,
         ))
 
-    def _data_type_is_plain_union(self, data_type: DataType) -> bool:
-        return data_type.is_union and not self._data_type_has_container(data_type)
+    @staticmethod
+    def _data_type_is_plain_union(data_type: DataType) -> bool:
+        return bool(union_members(data_type))
 
     def _copy_data_type(self, data_type: DataType) -> DataType:
         copied = data_type.model_copy()
@@ -706,9 +713,8 @@ class DataModelField(DataModelFieldBase):
         return data_type
 
     def _unset_union_data_type(self) -> DataType:
-        unset_type = self._unset_type_data_type()
         if self._data_type_renders_none(self.data_type):
-            return self._ordered_union_data_type([self.data_type.__class__(type=NONE), unset_type])
+            return self._ordered_union_data_type([], null=True, unset=True)
 
         data_types = []
         has_none = self._field_has_top_level_none()
@@ -725,10 +731,7 @@ class DataModelField(DataModelFieldBase):
                     base_data_type := self._copy_data_type(self.data_type)
                 ) and not self._data_type_renders_none(base_data_type):
                     data_types.append(base_data_type)
-        if has_none:
-            data_types.append(self.data_type.__class__(type=NONE))
-        data_types.append(unset_type)
-        return self._ordered_union_data_type(data_types)
+        return self._ordered_union_data_type(data_types, null=has_none, unset=True)
 
     def _annotated_base_data_type(self) -> DataType:
         if not self._field_has_top_level_none():
@@ -736,18 +739,12 @@ class DataModelField(DataModelFieldBase):
         return self._copy_data_type_without_top_level_none(self.data_type)
 
     def _annotated_union_data_type(self, meta: str, *, include_unset: bool) -> DataType:
-        data_types = [
-            self.data_type.__class__(
-                type=f"Annotated[{(base_data_type := self._annotated_base_data_type()).type_hint}, {meta}]",
-                data_types=[base_data_type],
-                use_union_operator=self.data_type.use_union_operator,
-            )
-        ]
-        if self._field_has_top_level_none():
-            data_types.append(self.data_type.__class__(type=NONE))
-        if include_unset:
-            data_types.append(self._unset_type_data_type())
-        return self._ordered_union_data_type(data_types)
+        annotated = self.data_type.__class__(
+            type=f"Annotated[{(base_data_type := self._annotated_base_data_type()).type_hint}, {meta}]",
+            data_types=[base_data_type],
+            use_union_operator=self.data_type.use_union_operator,
+        )
+        return self._ordered_union_data_type([annotated], null=self._field_has_top_level_none(), unset=include_unset)
 
     def _annotated_type_hint(self, meta: str) -> str:
         return self._annotated_union_data_type(meta, include_unset=False).type_hint

@@ -213,6 +213,7 @@ from datamodel_code_generator.types import (
     Types,
     UnionIntFloat,
     _is_value_literal,
+    build_union,
 )
 from datamodel_code_generator.util import BaseModel, get_yaml_parse_errors
 
@@ -4276,7 +4277,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             )
         data_type = _get_data_type(schema_type, obj.format or "default")
         if self._null_facts(obj, "scalar").admits_null:
-            return self.data_type(data_types=[data_type], is_optional=True)
+            return build_union(self.data_type, [data_type], nullable=True)
         return data_type
 
     def _get_type_array_data_type(self, types: list[str], data_types: list[DataType]) -> DataType:
@@ -4290,7 +4291,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return self.data_type_manager.get_data_type(Types.null)
             case [map_type] if map_type.is_dict and set(types) <= {"object", "null"}:
                 return _with_null(map_type) if "null" in types else map_type
-        return self.data_type(data_types=data_types, is_optional=len(data_types) != len(types))
+        return build_union(self.data_type, data_types, nullable=len(data_types) != len(types))
 
     def _resolve_external_ref_mapping(self, ref: str) -> tuple[str, str] | None:
         """Resolve a ref and return mapped package + fragment if configured."""
@@ -6593,7 +6594,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return self.data_type(literals=literal_values, is_optional=has_null)
             data_types = [self.data_type(literals=literal_values)] if literal_values else []
             data_types.extend(self._get_data_type_from_json_value(value) for value in non_literal_values)
-            return self.data_type(data_types=data_types, is_optional=has_null)
+            return build_union(self.data_type, data_types, nullable=has_null)
 
         if schema.is_array:
             return self._build_lightweight_array_type(schema, depth, visited, max_depth, max_union_elements)
@@ -6630,7 +6631,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return None
             if len(data_types) == 1:  # pragma: no cover
                 return data_types[0]
-            return self.data_type(data_types=data_types)
+            return build_union(self.data_type, data_types)
 
         if isinstance(schema.additionalProperties, JsonSchemaObject):  # pragma: no cover
             value_type = self._build_lightweight_type(
@@ -11330,8 +11331,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             required=required,
         )
         assert all_of_data_type.reference is not None
-        data_type = self.data_type(
-            data_types=[
+        data_type = build_union(
+            self.data_type,
+            [
                 self._parse_all_of_union_model(
                     name,
                     obj,
@@ -11340,7 +11342,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     ignore_duplicate_model=ignore_duplicate_model,
                 )
                 for index, union_model in enumerate(union_models)
-            ]
+            ],
         )
         field = self.get_object_field(
             field_name=None,
@@ -12058,9 +12060,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         else:
             map_type = self.data_type_manager.get_data_type(Types.object)
         if (type_list := _object_map_other_types(obj)) is not None:
-            return self.data_type(
-                data_types=[map_type, *self._iter_non_object_union_types(name, obj, type_list, path)],
-                is_optional=self._object_map_admits_null(obj),
+            return build_union(
+                self.data_type,
+                [map_type, *self._iter_non_object_union_types(name, obj, type_list, path)],
+                nullable=self._object_map_admits_null(obj),
             )
         return _with_null(map_type) if self._object_map_admits_null(obj) else map_type
 
@@ -12199,7 +12202,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 data_types.append(data_type)
         if not data_types or len(data_types) != branch_count:
             return None, False
-        return self.data_type(data_types=data_types), False
+        return build_union(self.data_type, data_types), False
 
     def _parse_property_names_key_type(
         self,
@@ -12490,7 +12493,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if item.is_ref_with_nullable_only and item.ref:
             ref_data_type = self.get_ref_data_type(item.ref)
             if self._null_facts(item, "ref-nullable-only").admits_null:
-                return self.data_type(data_types=[ref_data_type], is_optional=True)
+                return build_union(self.data_type, [ref_data_type], nullable=True)
             return ref_data_type
         if item.has_ref_with_schema_keywords:
             item = self._merge_ref_with_schema(item)
@@ -12524,7 +12527,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 singular_name=singular_name,
             ):
                 return combined_const_enum
-            return self.data_type(data_types=self.parse_any_of(name, item, get_special_path("anyOf", path)))
+            return build_union(self.data_type, self.parse_any_of(name, item, get_special_path("anyOf", path)))
         if item.oneOf:
             if combined_const_enum := self._parse_combined_const_enum(
                 name,
@@ -12534,7 +12537,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 singular_name=singular_name,
             ):
                 return combined_const_enum
-            return self.data_type(data_types=self.parse_one_of(name, item, get_special_path("oneOf", path)))
+            return build_union(self.data_type, self.parse_one_of(name, item, get_special_path("oneOf", path)))
         if item.allOf:
             if self._contains_false_schema(item.allOf):
                 self._raise_unsatisfiable_schema(item, get_special_path("allOf", path), "allOf")
@@ -12583,7 +12586,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         model_type = self.parse_object(name, item, get_special_path("object", path), singular_name=singular_name)
         if not (item.has_multiple_types and isinstance(item.type, list)):
             return model_type
-        return self.data_type(data_types=[model_type, *self._iter_non_object_union_types(name, item, item.type, path)])
+        return build_union(
+            self.data_type, [model_type, *self._iter_non_object_union_types(name, item, item.type, path)]
+        )
 
     def parse_list_item(
         self,
@@ -12659,7 +12664,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             else:
                 data_type = self._parse_array_union_constrained_branch(name, obj, path, type_)
             data_types.append(data_type)
-        return self.data_type(data_types=data_types, is_optional=bool(self._null_facts(obj, "type-union").admits_null))
+        return build_union(self.data_type, data_types, nullable=bool(self._null_facts(obj, "type-union").admits_null))
 
     def _get_array_union_non_array_types(  # noqa: PLR6301
         self,
@@ -12680,12 +12685,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         name: str,
         path: list[str],
         localize_constraints: bool,
-    ) -> None:
-        """Add type-union branches that array parsing does not materialize itself."""
+    ) -> int:
+        """Add the type-union branches that array parsing does not materialize itself, and return how many."""
         if not non_array_types or (obj.enum and not self.ignore_enum_constraints):
-            return
+            return 0
 
-        data_types[:0] = (
+        count = len(data_types)
+        data_types.extend(
             self._parse_array_union_constrained_branch(
                 name,
                 obj,
@@ -12697,6 +12703,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             for type_ in non_array_types
             if type_ != "object" or not obj.is_object
         )
+        return len(data_types) - count
 
     def _should_localize_array_union_constraints(
         self,
@@ -12829,10 +12836,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         else:
             item_data_types = []
 
-        python_type_flags = self._get_python_type_flags(obj)
         container_flags: dict[str, bool] = {}
         if not is_tuple:
-            container_flags = python_type_flags or {"is_list": True}
+            container_flags = self._get_python_type_flags(obj) or {"is_list": True}
 
         non_array_types = self._get_array_union_non_array_types(obj)
         localize_constraints = self._should_localize_array_union_constraints(obj, non_array_types)
@@ -12851,7 +12857,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 fallback_data_type=array_data_type,
             )
         data_types = [array_data_type]
-        self._add_array_union_non_array_types(
+        non_array_count = self._add_array_union_non_array_types(
             data_types,
             obj,
             non_array_types,
@@ -12876,9 +12882,16 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if suppress_item_constraints:
             self._suppress_array_length_constraints(constraints, obj)
         return self.data_model_field_type(
-            data_type=self.data_type(
-                data_types=data_types,
-                is_optional=bool(self._null_facts(obj, "type-union").admits_null),
+            data_type=build_union(
+                self.data_type,
+                data_types,
+                "legacy-non-array-first",
+                nullable=bool(self._null_facts(obj, "type-union").admits_null),
+                roles=(
+                    "member",
+                    *("non-array",) * non_array_count,
+                    *("member",) * (len(data_types) - non_array_count - 1),
+                ),
             ),
             default=obj.default,
             required=required,
@@ -12925,8 +12938,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             # self-reference
             recursive_tuple_item_count = direct_data_types[0].tuple_item_count
             field = self.data_model_field_type(
-                data_type=self.data_type(
-                    data_types=[
+                data_type=build_union(
+                    self.data_type,
+                    [
                         self.data_type(
                             data_types=direct_data_types[1:],
                             is_list=recursive_tuple_item_count is None,
@@ -12934,7 +12948,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                             tuple_item_count=recursive_tuple_item_count,
                         ),
                         *direct_data_types[1:],
-                    ]
+                    ],
                 ),
                 default=field.default,
                 required=field.required,
@@ -13035,7 +13049,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     data_types = self.parse_one_of(name, obj, get_special_path("oneOf", path))
 
                 if len(data_types) > 1:  # pragma: no cover
-                    data_type = self.data_type(data_types=data_types)
+                    data_type = build_union(self.data_type, data_types)
                 elif not data_types:  # pragma: no cover
                     return EmptyDataType()
                 else:  # pragma: no cover
@@ -13245,7 +13259,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             reference=reference,
             fields=[
                 self.data_model_field_type(
-                    data_type=self.data_type(data_types=data_types),
+                    data_type=build_union(self.data_type, data_types),
                     default=obj.default,
                     required=bool(null_facts.required),
                     constraints=constraints,
@@ -13384,10 +13398,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         data_types.extend(self._get_data_type_from_json_value(i) for i in non_literal_values)
         if not data_types:  # pragma: no cover
             data_types.append(self.data_type_manager.get_data_type(Types.null))
-        return self.data_type(
-            data_types=data_types,
-            is_optional=has_null,
-        )
+        return build_union(self.data_type, data_types, nullable=has_null)
 
     def _get_enum_model_class(self, type_: Types | None, enum_values: list[Any]) -> tuple[type[Enum], Types | None]:
         """Return the enum model class and the schema type whose value type it also subclasses, else None.

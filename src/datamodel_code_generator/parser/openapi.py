@@ -43,6 +43,7 @@ from datamodel_code_generator.reference import SCHEMA_LOCATION_KEY, FieldNameRes
 from datamodel_code_generator.types import (
     DataType,
     EmptyDataType,
+    build_union,
 )
 from datamodel_code_generator.util import BaseModel
 
@@ -532,7 +533,7 @@ class OpenAPIParser(JsonSchemaParser):
                     self._normalize_discriminator_mapping_ref(v) for v in mapping.values() if isinstance(v, str)
                 ]
                 if subtypes and ref.partition("#")[0] == current_document:
-                    return self.data_type(data_types=[self._get_discriminator_subtype_data_type(v) for v in subtypes])
+                    return build_union(self.data_type, [self._get_discriminator_subtype_data_type(v) for v in subtypes])
                 subtypes = [self._resolve_inherited_child_ref(v, ref) for v in subtypes]
         if not subtypes:
             return None
@@ -549,7 +550,7 @@ class OpenAPIParser(JsonSchemaParser):
             else:
                 local_ref = f"#{fragment}"
                 data_types.append(self._get_discriminator_subtype_data_type(local_ref))
-        return self.data_type(data_types=data_types)
+        return build_union(self.data_type, data_types)
 
     def get_ref_data_type(self, ref: str) -> DataType:
         """Get data type for a reference, handling discriminator polymorphism."""
@@ -982,7 +983,7 @@ class OpenAPIParser(JsonSchemaParser):
                 if len(data_types) == 1:
                     data_type = data_types[0]
                 else:
-                    data_type = self.data_type(data_types=data_types)
+                    data_type = build_union(self.data_type, data_types)
                     # multiple data_type parse as non-constraints field
                     object_schema = None
                 original_default = object_schema.default if object_schema else None

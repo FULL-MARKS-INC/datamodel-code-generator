@@ -25,6 +25,7 @@ from datamodel_code_generator.enums import AliasGenerator
 from datamodel_code_generator.imports import IMPORT_ANNOTATED, IMPORT_ANY, IMPORT_DICT, IMPORT_UNION, Import
 from datamodel_code_generator.model import _rebuild_model_with_datamodel_namespace
 from datamodel_code_generator.model._decisions.regex_syntax import LOOKAROUND_PATTERN, scan_regex_syntax
+from datamodel_code_generator.model._decisions.union_assembly import join_union
 from datamodel_code_generator.model.base import (
     ALL_MODEL,
     TEMPLATE_DIR,
@@ -843,14 +844,10 @@ class DataModelField(_PydanticBaseDataModelField):
         return self._type_hint_with_missing_sentinel(type_hint)
 
     def _type_hint_with_missing_sentinel(self, type_hint: str) -> str:
-        match (self._use_union_operator, type_hint):
-            case (_, ""):
-                return _MISSING_SENTINEL
-            case (True, _):
-                return f"{type_hint} | {_MISSING_SENTINEL}"
-            case (False, _):
-                return f"Union[{type_hint}, {_MISSING_SENTINEL}]"
-        return type_hint
+        """Write ``MISSING`` after the hint as written, which a union in it keeps (``legacy-missing-appended``)."""
+        if not type_hint:
+            return _MISSING_SENTINEL
+        return join_union((type_hint, _MISSING_SENTINEL), union_operator=self._use_union_operator)
 
     @property
     def is_pydantic_extra_field(self) -> bool:
