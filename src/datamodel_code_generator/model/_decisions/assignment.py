@@ -1,0 +1,278 @@
+"""Field assignments: what the class body writes after a field's annotation and what that gives its constructor.
+
+Every input is an immutable fact of ``AssignmentInputs``, so ``classify_assignment`` reads nothing else. The output
+model names its row (``AssignmentRow``) and the field's backend reports what it writes (``WrittenAssignment``); the
+adapter ``model/base.py:_assignment_inputs`` reads both from the live objects, and
+``model/base.py:DataModel._field_assignment_facts`` is the one entry for the passes that read the result: the L1
+construction key (``DataModel.FIELD_CONSTRUCTION_ORDER_KEY``), L5 ``Parser.__fix_constructor_field_ordering``, L6
+``Parser.__fix_tag_opt_out_field_ordering``, the hidden-type checks and the signature warning. The public hooks
+``FIELD_ASSIGNMENT_CHECKER``, ``FIELD_DEFAULT_CLASSIFIER``, ``FIELD_PARTICIPATES_IN_CONSTRUCTOR``,
+``FIELD_CONSTRUCTION_ORDER_KEY`` and ``DataModel.field_binds_class_attribute`` of the built-in outputs are views of
+the same rows.
+
+The facts are classified when a pass reads them, as the written assignment can change between passes (forced
+assignments, keyword-only fixes, type overrides). The written assignment is read as the field renders it at that
+point, nested-model default factories included, before L6 records the recursive paths that drop them
+(``_set_nested_model_default_factory_metadata``): reading the facts of a recursive nested model's fields under
+``--use-default-factory-for-optional-nested-models --strip-default-none`` recurses (``RecursionError``), and the
+import snapshot taken at the same point keeps ``field`` where msgspec then writes ``UNSET`` (``NameError``). Moving
+that metadata before the reads fixes both (row ``legacy-nested-factory-at-read``, kept in the adapter).
+
+The rows named ``legacy-*`` (``AssignmentRule``) keep today's output where a row disagrees with what the template
+writes; the fix of each deletes its row.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, TypeAlias, final
+
+from datamodel_code_generator.model._render_plan import AssignmentFacts
+
+if TYPE_CHECKING:
+    from collections.abc import Collection
+
+    from datamodel_code_generator.model._render_plan import AssignmentRule, ConstructorDefault
+
+__all__ = [
+    "AssignmentInputs",
+    "AssignmentRow",
+    "DataclassVisibility",
+    "DataclassWritten",
+    "DefaultState",
+    "ModelWritten",
+    "MsgspecWritten",
+    "PydanticDataclassWritten",
+    "WrittenAssignment",
+    "WrittenData",
+    "classify_assignment",
+    "participates_in_constructor",
+    "struct_assigned",
+    "written_data",
+]
+
+AssignmentRow: TypeAlias = Literal["model", "dataclass", "pydantic-dataclass", "msgspec"]
+"""The output model whose template writes the class body.
+
+* ``model``: Pydantic models, TypedDict and the neutral model: the field's call outside ``Annotated``, or its default
+  unless it is required or strips its ``None``; every field takes part in the constructor.
+* ``dataclass``: stdlib dataclasses: the ``model`` rule (row ``legacy-stdlib-annotated``); an ``init=False`` field
+  takes no part in the constructor.
+* ``pydantic-dataclass``: Pydantic dataclasses: the template keeps a stripped ``None`` default when the rendered type
+  admits None, and a ``ClassVar`` takes no part in the constructor.
+* ``msgspec``: msgspec Structs: a default for every optional field, as a Struct never strips its defaults.
+"""
+
+DefaultState: TypeAlias = Literal["undefined", "none", "value"]
+"""The field's default: none given, ``None``, or another value."""
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class WrittenData:
+    """The ``field()`` arguments a stdlib dataclass or msgspec field writes: any, a default, a default factory."""
+
+    any: bool
+    default: bool
+    factory: bool
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class ModelWritten:
+    """The written assignment of a neutral or Pydantic model field.
+
+    ``text`` tells that the field's call renders (``bool(field.field)``), ``declared_factory`` that the field declares
+    a ``default_factory``.
+    """
+
+    text: bool
+    declared_factory: bool
+    default: DefaultState
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class DataclassWritten:
+    """The written assignment of a stdlib dataclass field: its ``field()`` arguments and a forced ``field()``."""
+
+    data: WrittenData
+    forced: bool
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class PydanticDataclassWritten:
+    """The written assignment of a Pydantic dataclass field: its rendered call and the default factory it writes."""
+
+    text: bool
+    factory: bool
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class MsgspecWritten:
+    """The written assignment of a msgspec Struct field: its ``field()`` arguments."""
+
+    data: WrittenData
+
+
+WrittenAssignment: TypeAlias = ModelWritten | DataclassWritten | PydanticDataclassWritten | MsgspecWritten
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class DataclassVisibility:
+    """What the Pydantic dataclass template needs to see as an assignment.
+
+    ``metadata_assignment`` tells that a field under ``--use-annotated`` has metadata the dataclass must see,
+    ``factory_in_field`` that its ``Field()`` writes a default factory and ``admits_none`` that its rendered type
+    admits None.
+    """
+
+    metadata_assignment: bool
+    factory_in_field: bool
+    admits_none: bool
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class AssignmentInputs:
+    """The facts ``classify_assignment`` reads for one field.
+
+    ``required`` tells that the field is required without ``--use-default-with-required``, ``strips_none`` that
+    ``--strip-default-none`` strips its ``None`` default, ``annotated`` that it is written under ``--use-annotated``,
+    ``init_excluded`` that it declares ``init=False``. ``visibility`` is given for the ``pydantic-dataclass`` row and
+    for a ``PydanticDataclassWritten`` assignment, which read it.
+    """
+
+    row: AssignmentRow
+    written: WrittenAssignment
+    required: bool
+    strips_none: bool
+    annotated: bool
+    class_var: bool = False
+    init_excluded: bool = False
+    visibility: DataclassVisibility | None = None
+
+
+def written_data(keys: Collection[str]) -> WrittenData:
+    """Return what classification reads of the ``field()`` arguments a field writes, from their names."""
+    return WrittenData(any=bool(keys), default="default" in keys, factory="default_factory" in keys)
+
+
+def participates_in_constructor(row: AssignmentRow, *, init_excluded: bool, class_var: bool) -> bool:
+    """Return whether a field takes part in its model's constructor."""
+    if row == "dataclass":
+        return not init_excluded
+    return not class_var if row == "pydantic-dataclass" else True
+
+
+def struct_assigned(*, required: bool) -> bool:
+    """Return whether a msgspec Struct writes an assignment for a field: a default for every optional one.
+
+    The row reads requiredness alone, so the Struct's hooks answer without rendering the field.
+    """
+    return not required
+
+
+def _text(written: WrittenAssignment) -> bool:
+    if isinstance(written, DataclassWritten):
+        return written.data.any or written.forced
+    return written.data.any if isinstance(written, MsgspecWritten) else written.text
+
+
+def _model_assignment(inputs: AssignmentInputs, *, text: bool) -> tuple[bool, AssignmentRule]:
+    if text and not inputs.annotated:
+        return True, "field-call"
+    if not (inputs.required or inputs.strips_none):
+        return True, "default"
+    return False, "unassigned"
+
+
+def _pydantic_dataclass_assignment(
+    inputs: AssignmentInputs, visibility: DataclassVisibility, *, text: bool
+) -> tuple[bool, AssignmentRule]:
+    if visibility.metadata_assignment:
+        return text, "dataclass-visible-metadata"
+    if text and not inputs.annotated:
+        return True, "field-call"
+    if (
+        not inputs.required
+        and not visibility.factory_in_field
+        and not (inputs.strips_none and not visibility.admits_none)
+    ):
+        return True, "default"
+    return False, "unassigned"
+
+
+def _visibility(inputs: AssignmentInputs) -> DataclassVisibility:
+    visibility = inputs.visibility
+    assert visibility is not None, "the pydantic-dataclass row and assignment read DataclassVisibility"
+    return visibility
+
+
+def _constructor_default(inputs: AssignmentInputs, *, text: bool, model_assigned: bool) -> ConstructorDefault:
+    """Return the constructor default the field's written assignment gives it; a required field has none."""
+    if inputs.required:
+        return "none"
+    written = inputs.written
+    if isinstance(written, ModelWritten):
+        return _declared_default(written, strips_none=inputs.strips_none) if model_assigned else "none"
+    if isinstance(written, DataclassWritten):
+        writes = (written.data.any or not written.forced) and (
+            (text and not inputs.annotated) or not inputs.strips_none
+        )
+        return _data_default(written.data) if writes else "none"
+    if isinstance(written, PydanticDataclassWritten):
+        writes = not inputs.class_var and _pydantic_dataclass_assignment(inputs, _visibility(inputs), text=text)[0]
+        return ("factory" if written.factory else "value") if writes else "none"
+    return _data_default(written.data)
+
+
+def _declared_default(written: ModelWritten, *, strips_none: bool) -> ConstructorDefault:
+    if written.declared_factory:
+        return "factory"
+    return "none" if written.default == "undefined" or (written.default == "none" and strips_none) else "value"
+
+
+def _data_default(data: WrittenData) -> ConstructorDefault:
+    if data.factory:
+        return "factory"
+    return "none" if data.any and not data.default else "value"
+
+
+def classify_assignment(inputs: AssignmentInputs) -> AssignmentFacts:
+    """Return what the class body writes for a field and what the field is in its model's constructor.
+
+    The row decides the assignment, the class attribute and the constructor's participants; the field's written
+    assignment decides its constructor default.
+    """
+    text = _text(inputs.written)
+    model_assigned, model_rule = _model_assignment(inputs, text=text)
+    row = inputs.row
+    if row == "pydantic-dataclass":
+        visibility = _visibility(inputs)
+        assigned, rule = _pydantic_dataclass_assignment(inputs, visibility, text=text)
+        construction_assigned = text if visibility.metadata_assignment else model_assigned
+        binds = assigned
+    else:
+        if row == "msgspec":
+            assigned = struct_assigned(required=inputs.required)
+            rule: AssignmentRule = "default" if assigned else "unassigned"
+        else:
+            assigned, rule = model_assigned, model_rule
+            if text and not assigned:
+                rule = "legacy-stdlib-annotated" if row == "dataclass" else "legacy-basemodel-binding"
+        construction_assigned = assigned
+        binds = text or assigned
+    return AssignmentFacts(
+        assigned=assigned,
+        construction_assigned=construction_assigned,
+        binds_class_attribute=binds,
+        constructor_default=_constructor_default(inputs, text=text, model_assigned=model_assigned),
+        participates_in_constructor=participates_in_constructor(
+            row, init_excluded=inputs.init_excluded, class_var=inputs.class_var
+        ),
+        rule=rule,
+    )

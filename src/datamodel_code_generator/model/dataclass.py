@@ -18,6 +18,11 @@ from datamodel_code_generator._format_types import (
 )
 from datamodel_code_generator.model import DataModel, DataModelFieldBase, _rebuild_model_with_datamodel_namespace
 from datamodel_code_generator.model._constraints import Constraints  # noqa: TC001 # needed for pydantic
+from datamodel_code_generator.model._decisions.assignment import (
+    DataclassWritten,
+    participates_in_constructor,
+    written_data,
+)
 from datamodel_code_generator.model.base import (
     UNDEFINED,
     _default_factory_type_name,
@@ -40,6 +45,7 @@ if TYPE_CHECKING:
 
     from datamodel_code_generator.enums import DataclassArguments
     from datamodel_code_generator.imports import Import
+    from datamodel_code_generator.model._decisions.assignment import AssignmentRow
 
 
 def has_field_assignment(field: DataModelFieldBase) -> bool:
@@ -54,7 +60,9 @@ def get_field_default_info(field: DataModelFieldBase) -> tuple[bool, bool]:
 
 def field_participates_in_constructor(field: DataModelFieldBase) -> bool:
     """Return whether a Python dataclass field participates in __init__."""
-    return field.extras.get("init") is not False
+    return participates_in_constructor(
+        "dataclass", init_excluded=field.extras.get("init") is False, class_var=field.is_class_var
+    )
 
 
 def _has_constructor_default(field: DataModelFieldBase) -> bool:
@@ -220,6 +228,7 @@ class DataClass(_DataclassReuseMixin, DataModel):
     FIELD_DEFAULT_CLASSIFIER = staticmethod(get_field_default_info)
     FIELD_PARTICIPATES_IN_CONSTRUCTOR = staticmethod(field_participates_in_constructor)
     FIELD_CONSTRUCTION_ORDER_KEY = staticmethod(_has_field_assignment)
+    _ASSIGNMENT_ROW: ClassVar[AssignmentRow | None] = "dataclass"
     SUPPORTS_TREE_SCOPE_REUSE_MODEL_INHERITANCE: ClassVar[bool] = True
     USES_DATACLASS_ARGUMENTS: ClassVar[bool] = True
     SUPPORTS_REQUIRED_INHERITED_FIELD_ASSIGNMENT: ClassVar[bool] = True
@@ -332,6 +341,8 @@ class DataClass(_DataclassReuseMixin, DataModel):
 class DataModelField(DataModelFieldBase):
     """Field implementation for dataclass models."""
 
+    _FIELD_ASSIGNMENT_ROW: ClassVar[AssignmentRow] = "dataclass"
+
     _FIELD_KEYS: ClassVar[set[str]] = {
         "default_factory",
         "init",
@@ -440,21 +451,9 @@ class DataModelField(DataModelFieldBase):
         return data
 
     @override
-    def _get_constructor_default_info(self) -> tuple[bool, bool]:
-        """Return constructor-default semantics from structured field data."""
-        if self.required and not self.use_default_with_required:
-            return False, False
-        data = self._get_field_data()
-        has_rendered_assignment = bool(data) or self._has_forced_field_assignment
-        if (not data and self._has_forced_field_assignment) or not (
-            (has_rendered_assignment and not self.use_annotated) or not self.should_strip_default_none()
-        ):
-            return False, False
-        if "default_factory" in data:
-            return True, False
-        if data and "default" not in data:
-            return False, False
-        return True, True
+    def _written_assignment(self) -> DataclassWritten:
+        """Return the ``field()`` arguments the field writes and whether it forces a ``field()``."""
+        return DataclassWritten(data=written_data(self._get_field_data()), forced=self._has_forced_field_assignment)
 
     @override
     def __str__(self) -> str:

@@ -137,6 +137,7 @@ _NEUTRAL_MODEL_FILENAMES: Final = frozenset({
     "enum.py",
     "imports.py",
     "output.py",
+    "_render_plan.py",
     "runtime_validation.py",
     "scalar.py",
     "type_alias.py",

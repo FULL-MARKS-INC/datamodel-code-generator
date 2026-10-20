@@ -808,12 +808,6 @@ class _InheritedConstructorInfo(NamedTuple):
     ordering_conflicts: frozenset[str]
 
 
-class _ConstructorFieldPolicy(NamedTuple):
-    has_assignment: Callable[[DataModelFieldBase], bool]
-    classify_default: Callable[[DataModelFieldBase], tuple[bool, bool]]
-    participates: Callable[[DataModelFieldBase], bool]
-
-
 @dataclass(frozen=True, slots=True)
 class ParserRunContext:
     """Immutable parser settings scoped to one facade-managed run."""
@@ -853,6 +847,11 @@ class _ReuseOptimizationContext:
         if not self.type_override_model_names:
             return models
         return (model for model in models if self.allows_model(model))
+
+
+def _assigned_key(model: DataModel) -> Callable[[DataModelFieldBase], bool]:
+    """Return the sort key that puts the fields the model's class body assigns after the others."""
+    return lambda field: model._field_assignment_facts(field).assigned  # noqa: SLF001
 
 
 def _apply_constructor_field_adjustments(
@@ -7066,9 +7065,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             or (
                 (inherited := self.__get_inherited_constructor_info(model)) is not None
                 and self.__get_constructor_field_adjustment(
+                    model,
                     field,
                     inherited,
-                    Parser._get_constructor_field_policy(model),
                     supports_inherited_override=model.SUPPORTS_REQUIRED_INHERITED_FIELD_ASSIGNMENT,
                 )
                 is not None
@@ -7253,9 +7252,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 for field in declaring_model.fields
                 if field.name and not field.is_class_var
             }
-            if cls.__get_constructor_ordering_conflicts(
-                model, effective_fields, cls._get_constructor_field_policy(model), set()
-            ):
+            if cls.__get_constructor_ordering_conflicts(model, effective_fields, set()):
                 model.enable_model_keyword_only()
 
     def __fix_constructor_field_ordering(self, models: list[DataModel]) -> None:
@@ -7268,23 +7265,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 )
 
             if (inherited := self.__get_inherited_constructor_info(model)) is None:
-                field_policy = Parser._get_constructor_field_policy(model)
-                order_key = self.__get_local_constructor_order_key(model, field_policy)
-                if self.__has_local_constructor_ordering_conflict(model, field_policy, order_key):
+                order_key = self.__get_local_constructor_order_key(model)
+                if self.__has_local_constructor_ordering_conflict(model, order_key):
                     model.clear_imports_cache()
                     self.generation_store.set_fields(model, sorted(model.fields, key=order_key))
                 elif restored_inherited_state:  # pragma: no cover - marker requires a generated base
                     model.clear_imports_cache()
                 continue
-            field_policy = Parser._get_constructor_field_policy(model)
             field_adjustments: Iterator[tuple[DataModelFieldBase, _ConstructorFieldAdjustment]] = (
                 (field, adjustment)
                 for field in model.fields
                 if (
                     adjustment := self.__get_constructor_field_adjustment(
+                        model,
                         field,
                         inherited,
-                        field_policy,
                         supports_inherited_override=model.SUPPORTS_REQUIRED_INHERITED_FIELD_ASSIGNMENT,
                     )
                 )
@@ -7297,7 +7292,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             if first_adjustment is None:
                 if restored_inherited_state:
                     model.clear_imports_cache()
-                    self.generation_store.set_fields(model, sorted(model.fields, key=field_policy.has_assignment))
+                    self.generation_store.set_fields(model, sorted(model.fields, key=_assigned_key(model)))
                 continue
 
             _apply_constructor_field_adjustments(
@@ -7306,12 +7301,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 field_adjustments,
             )
             model.clear_imports_cache()
-            self.generation_store.set_fields(model, sorted(model.fields, key=field_policy.has_assignment))
+            self.generation_store.set_fields(model, sorted(model.fields, key=_assigned_key(model)))
 
     def __get_local_constructor_order_key(  # noqa: PLR6301
         self,
         model: DataModel,
-        field_policy: _ConstructorFieldPolicy,
     ) -> Callable[[DataModelFieldBase], tuple[bool, bool]]:
         """Return the positional order key that keeps constructor defaults last.
 
@@ -7320,9 +7314,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         Otherwise only the assignments the output model keeps among the required fields precede them.
         """
         if model.orders_required_assignments_before_defaults():
-            return lambda field: (field_policy.has_assignment(field), field_policy.classify_default(field)[0])
+            return lambda field: ((facts := model._field_assignment_facts(field)).assigned, facts.has_default)  # noqa: SLF001
         return lambda field: (
-            assigned := field_policy.has_assignment(field),
+            assigned := model._field_assignment_facts(field).assigned,  # noqa: SLF001
             assigned and not model.keeps_assignment_with_required_fields(field),
         )
 
@@ -7349,7 +7343,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     @classmethod
     def __has_required_assignment_after_default(cls, model: DataModel) -> bool:
         """Return whether a positional field without a signature default follows one with a default."""
-        field_policy = cls._get_constructor_field_policy(model)
         fields: dict[str, tuple[DataModelFieldBase, DataModel]] = {}
         for declaring_model in (
             *reversed(
@@ -7364,14 +7357,15 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             fields.update((field.name, (field, declaring_model)) for field in declaring_model.fields if field.name)
         seen_default = False
         for field, declaring_model in fields.values():
+            facts = model._field_assignment_facts(field)  # noqa: SLF001
             kw_only = field.constructor_keyword_only
             if (
-                not field_policy.participates(field)
+                not facts.participates_in_constructor
                 or kw_only is True
                 or (kw_only is None and declaring_model.has_keyword_only_definition())
             ):
                 continue
-            has_default = field_policy.classify_default(field)[0]
+            has_default = facts.has_default
             if seen_default and not has_default:
                 return True
             seen_default = seen_default or has_default
@@ -7380,7 +7374,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     def __has_local_constructor_ordering_conflict(  # noqa: PLR6301
         self,
         model: DataModel,
-        field_policy: _ConstructorFieldPolicy,
         order_key: Callable[[DataModelFieldBase], tuple[bool, bool]],
     ) -> bool:
         """Return whether a local required field follows a positional default."""
@@ -7388,7 +7381,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return False
         previous_key = (False, False)
         for field in model.fields:
-            if not field_policy.participates(field):
+            if not model._field_assignment_facts(field).participates_in_constructor:  # noqa: SLF001
                 continue
             kw_only = field.constructor_keyword_only
             if kw_only is True or (kw_only is None and model.has_keyword_only_definition()):
@@ -7406,7 +7399,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         if not model.base_classes:
             return None
 
-        field_policy = cls._get_constructor_field_policy(model)
         inherited_models = linearize_data_models([
             base.reference.source
             for base in model.base_classes
@@ -7425,7 +7417,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     continue
                 has_default: bool | None = None
                 if supports_inherited_override:
-                    has_default, has_value_default = field_policy.classify_default(field)
+                    has_default, has_value_default = model._field_assignment_facts(field).default_info  # noqa: SLF001
                     if has_value_default or (has_default and model.REQUIRES_EXPLICIT_INHERITED_FACTORY_OVERRIDE):
                         required_assignment_names.add(field_name)
                 effective_fields[field_name] = field, inherited_model, has_default
@@ -7434,10 +7426,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 effective_fields[field.name] = field, model, None
 
         ordering_conflicts = cls.__get_constructor_ordering_conflicts(
-            model,
-            effective_fields,
-            field_policy,
-            required_assignment_names,
+            model, effective_fields, required_assignment_names
         )
         return _InheritedConstructorInfo(
             frozenset(required_assignment_names),
@@ -7449,7 +7438,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         cls,
         model: DataModel,
         effective_fields: Mapping[str, tuple[DataModelFieldBase, DataModel, bool | None]],
-        field_policy: _ConstructorFieldPolicy,
         required_assignment_names: set[str],
     ) -> frozenset[str]:
         """Return child positional fields that follow an effective positional default."""
@@ -7457,7 +7445,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         seen_signature_default = False
         ordering_conflicts: set[str] = set()
         for field_name, (field, declaring_model, inherited_has_default) in effective_fields.items():
-            if not field_policy.participates(field):
+            facts = model._field_assignment_facts(field)  # noqa: SLF001
+            if not facts.participates_in_constructor:
                 continue
             kw_only = field.constructor_keyword_only
             if kw_only is True or (kw_only is None and declaring_model.has_keyword_only_definition()):
@@ -7466,14 +7455,12 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 model.REQUIRED_ASSIGNMENT_COUNTS_AS_CONSTRUCTOR_DEFAULT
                 and field.required
                 and not field.use_default_with_required
-                and (field_name in required_assignment_names or field_policy.has_assignment(field))
+                and (field_name in required_assignment_names or facts.assigned)
             )
             field_has_signature_default = (
                 False
                 if required_assignment_is_constructor_default
-                else (
-                    field_policy.classify_default(field)[0] if inherited_has_default is None else inherited_has_default
-                )
+                else (facts.has_default if inherited_has_default is None else inherited_has_default)
             )
             field_has_constructor_default = required_assignment_is_constructor_default or field_has_signature_default
             if declaring_model is model and (
@@ -7485,34 +7472,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             seen_signature_default = seen_signature_default or field_has_signature_default
         return frozenset(ordering_conflicts)
 
-    @staticmethod
-    def _get_field_assignment_checker(model: DataModel) -> Callable[[DataModelFieldBase], bool]:
-        return type(model).FIELD_ASSIGNMENT_CHECKER
-
-    @classmethod
-    def _get_constructor_field_policy(cls, model: DataModel) -> _ConstructorFieldPolicy:
-        """Collect constructor policies owned by the output model."""
-        model_type = type(model)
-        return _ConstructorFieldPolicy(
-            cls._get_field_assignment_checker(model),
-            model_type.FIELD_DEFAULT_CLASSIFIER,
-            model_type.FIELD_PARTICIPATES_IN_CONSTRUCTOR,
-        )
-
     def __get_constructor_field_adjustment(  # noqa: PLR6301
         self,
+        model: DataModel,
         field: DataModelFieldBase,
         inherited: _InheritedConstructorInfo,
-        field_policy: _ConstructorFieldPolicy,
         *,
         supports_inherited_override: bool,
     ) -> _ConstructorFieldAdjustment | None:
         """Return the exact explicit assignment needed for a required child field."""
-        if not field_policy.participates(field):
+        facts = model._field_assignment_facts(field)  # noqa: SLF001
+        if not facts.participates_in_constructor:
             return None
         if field.name in inherited.ordering_conflicts:
             return "keyword_only"
-        if field_policy.has_assignment(field):
+        if facts.assigned:
             return None
         if field.required and supports_inherited_override and field.name in inherited.required_assignment_names:
             return "assignment"

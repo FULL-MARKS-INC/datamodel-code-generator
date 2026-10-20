@@ -874,7 +874,6 @@ LEGACY_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "marker-reason:tests/parser/test_graph.py::test_stable_toposort_cycle_fallback_preserves_duplicate_nodes",
         "marker-reason:tests/parser/test_graph.py::test_stable_toposort_ignores_edges_outside_node_set",
         "marker-reason:tests/parser/test_graph.py::test_stable_toposort_keeps_duplicate_sources_before_destinations",
-        "marker-reason:tests/parser/test_imports.py::test_field_assignment_checker_does_not_load_output_model_generators",
         "marker-reason:tests/parser/test_imports.py::test_generation_import_does_not_load_pydantic_v2_dependency_policy",
         "marker-reason:tests/parser/test_imports.py::test_jsonschema_parser_import_does_not_load_inactive_model_generators",
         "marker-reason:tests/parser/test_imports.py::test_parser_behavior_capabilities_have_no_concrete_helper_dependencies",
