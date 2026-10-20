@@ -12090,6 +12090,17 @@ def test_main_jsonschema_additional_properties_schema_with_allof_ref(output_file
     )
 
 
+def test_main_jsonschema_allof_mapping_every_part_null(output_file: Path) -> None:
+    """Admit null in an allOf map without a type of its own when every typed part lists null."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "allof_mapping_every_part_null.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
+    )
+
+
 def test_main_jsonschema_allof_mapping_object_type_list(output_file: Path) -> None:
     """Merge object-only type lists with inline typed additional properties."""
     run_main_and_assert(
