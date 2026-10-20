@@ -121,7 +121,7 @@ ImportPass: TypeAlias = Literal[
 * ``field-name-bindings``: ``_bind_module_field_names``, aliases of imports that a field name hides.
 * ``reused-variant-literal``: ``__alias_reused_variant_literal``, the alias of ``typing.Literal`` beside a model named
   ``Literal``.
-* ``shadowed-imports``: ``__alias_shadowed_imports`` (L6), aliases of structured imports that a field name hides.
+* ``shadowed-imports``: ``alias_shadowed_imports`` (L6), aliases of structured imports that a field name hides.
 * ``import-overrides``: ``_remap_imports``, ``--import-overrides`` moving names to other modules.
 * ``future-imports``: ``__render_modules`` and ``_get_module_future_imports`` (L7), moving the ``__future__`` imports
   out to write them first.

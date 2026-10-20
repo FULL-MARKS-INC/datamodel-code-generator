@@ -65,11 +65,13 @@ from datamodel_code_generator.parser.base import (
     _restore_inherited_field_names_for_unique_aliases,
     _unwrap_type_alias,
     add_model_path_to_list,
+    alias_shadowed_imports,
     escape_characters,
     exact_import,
     get_module_directory,
     get_most_of_parent,
     is_ancestor_package_reference,
+    override_required_field,
     relative,
     sort_data_models,
     to_hashable,
@@ -134,7 +136,8 @@ def test_parser_aliases_plain_shadowed_imports_without_structured_consumers(pars
     )
     model = BaseModel(reference=_reference("Model"), fields=[field])
 
-    parser_fixture._Parser__alias_shadowed_imports(
+    alias_shadowed_imports(
+        parser_fixture,
         [model],
         {"date"},
         can_retain_cache=True,
@@ -795,7 +798,7 @@ def _create_override_required_models(
 
 
 def _override_required_fields(parser: C, models: list[BaseModel]) -> None:
-    Parser._Parser__override_required_field(parser, models)
+    override_required_field(parser, models)
 
 
 def test_find_field_skips_non_matching_fields() -> None:

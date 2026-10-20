@@ -251,6 +251,47 @@ _requires_literal_validation = 1
 ["src/datamodel_code_generator/model/typed_dict.py"."TypedDict.create_reuse_model"]
 use_total_false_for_typed_dict = "--input tests/data/jsonschema/reuse_model_inline_definitions.json --input-file-type jsonschema --output-model-type typing.TypedDict --reuse-model --target-python-version 3.11 --use-total-false-for-typed-dict"
 
+["src/datamodel_code_generator/parser/_passes/_shared.py"."_alias_additional_imports"]
+'_additional_imports[...]' = 1
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."_alias_base_class_imports"]
+import_ = 1
+type = 1
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."_alias_data_type_structured_imports"]
+import_ = 1
+kwargs = 1
+python_type = 1
+type = 2
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."_alias_field_runtime_expressions"]
+default = 1
+extras = 1
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."_restore_inherited_field_names_for_unique_aliases"]
+alias = 1
+name = 2
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."apply_inherited_field_default"]
+default = 2
+has_default = 1
+use_default_with_required = 1
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."normalize_default_value_constraints"]
+kwargs = 1
+
+["src/datamodel_code_generator/parser/_passes/_shared.py"."override_required_field"]
+alias = 1
+'fields.pop()' = 1
+'fields.reverse()' = 1
+name = 1
+original_name = 1
+required = 1
+serialization_alias = 1
+use_default_with_required = 1
+use_serialization_alias = 1
+validation_aliases = 1
+
 ["src/datamodel_code_generator/parser/avro.py"."AvroParser._finalize_structured_imports"]
 default = 1
 
@@ -299,21 +340,6 @@ enum_member_literals = 1
 ["src/datamodel_code_generator/parser/base.py"."Parser.__init__"]
 results = 1
 
-["src/datamodel_code_generator/parser/base.py"."Parser.__normalize_default_value_constraints"]
-kwargs = 1
-
-["src/datamodel_code_generator/parser/base.py"."Parser.__override_required_field"]
-alias = 1
-'fields.pop()' = 1
-'fields.reverse()' = 1
-name = 1
-original_name = 1
-required = 1
-serialization_alias = 1
-use_default_with_required = 1
-use_serialization_alias = 1
-validation_aliases = 1
-
 ["src/datamodel_code_generator/parser/base.py"."Parser.__replace_unique_list_to_set"]
 default = 1
 
@@ -341,11 +367,6 @@ name = 1
 serialization_alias = 1
 validation_aliases = 1
 
-["src/datamodel_code_generator/parser/base.py"."Parser._apply_inherited_field_default"]
-default = 2
-has_default = 1
-use_default_with_required = 1
-
 ["src/datamodel_code_generator/parser/base.py"."Parser._apply_override_to_data_type"]
 alias = 1
 import_ = 1
@@ -364,23 +385,6 @@ constraints = 1
 
 ["src/datamodel_code_generator/parser/base.py"."Parser._flatten_invalid_modules"]
 '_dedup_key_cache.clear()' = 1
-
-["src/datamodel_code_generator/parser/base.py"."_alias_additional_imports"]
-'_additional_imports[...]' = 1
-
-["src/datamodel_code_generator/parser/base.py"."_alias_base_class_imports"]
-import_ = 1
-type = 1
-
-["src/datamodel_code_generator/parser/base.py"."_alias_data_type_structured_imports"]
-import_ = 1
-kwargs = 1
-python_type = 1
-type = 2
-
-["src/datamodel_code_generator/parser/base.py"."_alias_field_runtime_expressions"]
-default = 1
-extras = 1
 
 ["src/datamodel_code_generator/parser/base.py"."_apply_inherited_field_nullability"]
 is_optional = 1
@@ -449,10 +453,6 @@ name = 1
 
 ["src/datamodel_code_generator/parser/base.py"."_replace_default_enum_list_members"]
 alias = 1
-
-["src/datamodel_code_generator/parser/base.py"."_restore_inherited_field_names_for_unique_aliases"]
-alias = 1
-name = 2
 
 ["src/datamodel_code_generator/parser/graphql.py"."GraphQLParser._resolve_typename_collisions.resolve"]
 alias = 1
