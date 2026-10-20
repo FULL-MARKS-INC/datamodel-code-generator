@@ -130,8 +130,8 @@ _LEAF_LAYER_IMPORTS: Final[dict[str, tuple[frozenset[str], str]]] = {
     ),
 }
 """Leaf layers: the modules (with their submodules) each may import, and the reason shown on a violation."""
-_PARSER_CORE_FILENAMES: Final = frozenset({"_intersection.py"})
-"""Pure parser modules: decisions over dumped schema dicts that the parser adapters call."""
+_PARSER_CORE_FILENAMES: Final = frozenset({"_intersection.py", "_null_facts.py"})
+"""Pure parser modules: decisions over dumped schema dicts or frozen schema facts that the parser adapters call."""
 _NEUTRAL_MODEL_FILENAMES: Final = frozenset({
     "base.py",
     "enum.py",

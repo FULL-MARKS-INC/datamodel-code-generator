@@ -3,6 +3,7 @@ parser/base.py: parser
 parser/_facts.py: facts
 parser/_schema_graph.py: schema-graph
 parser/_intersection.py: parser-core
+parser/_null_facts.py: parser-core
 config.py: config
 input_model.py: input-model
 reference.py: reference

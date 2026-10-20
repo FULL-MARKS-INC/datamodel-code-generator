@@ -13,7 +13,7 @@ import re
 from collections import Counter, defaultdict, deque
 from contextlib import contextmanager, suppress
 from copy import copy, deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property, lru_cache, partial, wraps
 from itertools import chain, compress
 from operator import and_, is_not
@@ -145,6 +145,13 @@ from datamodel_code_generator.parser._intersection import (
     warn_unsatisfiable,
 )
 from datamodel_code_generator.parser._intersection import json_values_equal as _json_literal_values_equal
+from datamodel_code_generator.parser._null_facts import (
+    NullFacts,
+    NullMode,
+    NullSite,
+    NullSources,
+    resolve_null_facts,
+)
 from datamodel_code_generator.parser._pipeline import stacklevel_at_parse_caller
 from datamodel_code_generator.parser._schema_graph import (
     SCHEMA_GRAPH,
@@ -353,6 +360,16 @@ _INHERITED_CONTAINER_TYPE_FIELDS: tuple[tuple[frozenset[str], frozenset[str]], .
 _INHERITED_MATERIALIZED_TYPE_SHAPE_KEY = "_inherited_materialized_type_shape"
 _MERGED_REF_TARGET_KEY = "_merged_ref_target"
 _COPIED_NULLABLE_KEY = "_copied_nullable"
+_NULLABLE_TYPE_LIST_KEY = "_nullable_type_list"
+_RECORDED_TYPE_NULL_SITES: frozenset[NullSite] = frozenset({
+    "object-model",
+    "root-model",
+    "type-union",
+    "multiple-types-root",
+    "combined-branch",
+    "inherited-child",
+})
+"""The sites that read the answer ``JsonSchemaObject.type_has_null`` recorded when it was first asked."""
 _INHERITED_OVERRIDE_KEY = "_inherited_override"
 _REPORTED_VALUE_CONFLICT_KEY = "_reported_value_conflict"
 _VALUE_CONFLICT_KEYWORDS = frozenset({"enum", "const"})
@@ -846,7 +863,7 @@ def _enum_entries_skip_null(obj: JsonSchemaObject) -> bool:
 
     The class of a string or nullable enum leaves out the null the enum lists, and its entries skip it too.
     """
-    return None in obj.enum and (obj.type == "string" or bool(obj.nullable))
+    return resolve_null_facts(_type_null_sources(obj), "enum").rule == "enum-null-as-nullable"
 
 
 def _shifted_enum_entries_message(class_name: str, obj: JsonSchemaObject, named_values: list[Any]) -> str | None:
@@ -1150,6 +1167,47 @@ def _single_value_enum_as_const(
 def _lists_null(type_: str | list[str] | None) -> bool:
     """Return whether a ``type`` keyword is a list that holds null."""
     return isinstance(type_, list) and "null" in type_
+
+
+def _read_type(obj: JsonSchemaObject) -> str | list[str] | None:
+    """Return the ``type`` of a schema object, as a list holding null where OpenAPI reads ``nullable`` so.
+
+    ``JsonSchemaParser._get_data_type`` marks the schema objects whose ``nullable`` it reads as a ``type`` list
+    (``parser/_null_facts.py``, row ``legacy-nullable-as-type-list``).
+    """
+    if obj.__dict__.get(_NULLABLE_TYPE_LIST_KEY) and isinstance(obj.type, str):
+        return [obj.type, "null"]
+    return obj.type
+
+
+def _null_sources(obj: JsonSchemaObject, site: NullSite) -> NullSources:
+    """Return the keywords of a schema object that can admit null, as written (``parser/_null_facts.py``).
+
+    Only the sites that read it ask ``JsonSchemaObject.type_has_null``, which records its first answer.
+    """
+    sources = _type_null_sources(obj)
+    return replace(sources, type_has_null=obj.type_has_null) if site in _RECORDED_TYPE_NULL_SITES else sources
+
+
+def _type_null_sources(obj: JsonSchemaObject) -> NullSources:
+    """Return the null sources of a schema object without the answer ``JsonSchemaObject.type_has_null`` recorded."""
+    type_ = _read_type(obj)
+    is_list = isinstance(type_, list)
+    return NullSources(
+        type_null=type_ == "null",
+        type_list=is_list,
+        type_lists_null=is_list and "null" in type_,
+        type_lists_object=is_list and "object" in type_,
+        typed=type_ is not None,
+        type_string=type_ == "string",
+        member_null=any(
+            isinstance(item, JsonSchemaObject) and (item.type == "null" or _lists_null(item.type))
+            for item in (*obj.oneOf, *obj.anyOf)
+        ),
+        nullable=obj.nullable,
+        copied_nullable=bool(obj.__dict__.get(_COPIED_NULLABLE_KEY)),
+        enum_null=None in obj.enum,
+    )
 
 
 def _non_null_types(type_: str | list[str] | None) -> str | list[str] | None:
@@ -1638,16 +1696,7 @@ class JsonSchemaObject(BaseModel):  # noqa: PLR0904
     @cached_property
     def type_has_null(self) -> bool:
         """Check if the type list or oneOf/anyOf contains null."""
-        if isinstance(self.type, list) and "null" in self.type:
-            return True
-        for item in self.oneOf + self.anyOf:
-            if not isinstance(item, JsonSchemaObject):
-                continue
-            if item.type == "null":
-                return True
-            if isinstance(item.type, list) and "null" in item.type:
-                return True
-        return False
+        return bool(resolve_null_facts(_type_null_sources(self), "schema-type").admits_null)
 
     @cached_property
     def has_multiple_types(self) -> bool:
@@ -3105,19 +3154,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             constraints.pop("maxItems", None)
 
     def _resolve_array_field_required_nullable(self, obj: JsonSchemaObject) -> tuple[bool, bool | None]:
-        if self.force_optional_for_required_fields:
-            return False, None
-
-        required = not obj.has_default
-        if self.strict_nullable:
-            return required, obj.nullable if obj.has_default or required else True
-
-        required = not obj.nullable and required
-        if obj.nullable:
-            return required, True
-        if obj.has_default:
-            return required, False
-        return required, None
+        facts = self._null_facts(obj, "array-field", has_default=obj.has_default)
+        return bool(facts.required), facts.admits_null
 
     def _fallback_array_item_data_types(self) -> list[DataType]:
         return [
@@ -4140,11 +4178,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             constraints = constraints or {}
             constraints.update(array_items_constraints)
         self._suppress_array_length_constraints(constraints, field)
-        nullable = (
-            field.nullable
-            if (self.strict_nullable or self.use_missing_sentinel) and field.nullable is not None
-            else (False if self.strict_nullable and (has_default or required) else None)
-        )
+        nullable = self._null_facts(field, "field", required=required, has_default=has_default).admits_null
         extras = self.get_field_extras(field)
         read_only = self._resolve_field_flag(field, "readOnly")
         write_only = self._resolve_field_flag(field, "writeOnly")
@@ -4210,6 +4244,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     def _get_data_type(self, obj: JsonSchemaObject, *, localize_constraints: bool) -> DataType:
         """Build scalar types while retaining constraints owned by their actual context."""
+        if self._null_facts(obj, "scalar").rule == "legacy-nullable-as-type-list":
+            obj.__dict__[_NULLABLE_TYPE_LIST_KEY] = True
         python_type_override = self._get_python_type_override(obj)
         if python_type_override:  # pragma: no cover
             return python_type_override
@@ -4217,7 +4253,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if "const" in obj.extras:
             return self._get_const_data_type(obj.extras["const"], obj)
 
-        if obj.type is None:
+        if (schema_type := _read_type(obj)) is None:
             return self.data_type_manager.get_data_type(
                 Types.any,
             )
@@ -4234,12 +4270,12 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 **kwargs_to_pass,
             )
 
-        if isinstance(obj.type, list):
+        if isinstance(schema_type, list):
             return self._get_type_array_data_type(
-                obj.type, [_get_data_type(t, obj.format or "default") for t in obj.type if t != "null"]
+                schema_type, [_get_data_type(t, obj.format or "default") for t in schema_type if t != "null"]
             )
-        data_type = _get_data_type(obj.type, obj.format or "default")
-        if self.strict_nullable and obj.nullable:
+        data_type = _get_data_type(schema_type, obj.format or "default")
+        if self._null_facts(obj, "scalar").admits_null:
             return self.data_type(data_types=[data_type], is_optional=True)
         return data_type
 
@@ -4417,14 +4453,42 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         binding_names.add(import_.binding_name)
         return import_
 
+    @cached_property
+    def _null_mode(self) -> NullMode:
+        """The options that change how parse sites read null (``parser/_null_facts.py``)."""
+        return NullMode(
+            strict_nullable=self.strict_nullable,
+            use_missing_sentinel=self.use_missing_sentinel,
+            force_optional=self.force_optional_for_required_fields,
+        )
+
+    def _null_facts(
+        self,
+        obj: JsonSchemaObject,
+        site: NullSite,
+        *,
+        required: bool = False,
+        has_default: bool = False,
+        parts_null: bool = False,
+    ) -> NullFacts:
+        """Return what ``site`` reads from where the null of ``obj`` comes from."""
+        return resolve_null_facts(
+            _null_sources(obj, site),
+            site,
+            self._null_mode,
+            required=required,
+            has_default=has_default,
+            parts_null=parts_null,
+        )
+
     def _object_nullable(self, obj: JsonSchemaObject) -> bool:
         """Return whether an object model's schema admits null, by its types or by nullable under strict nullability."""
-        return obj.type_has_null or (self.strict_nullable and obj.nullable is True)
+        return bool(self._null_facts(obj, "object-model").admits_null)
 
     def _cache_ref_data_type_facts(self, resolved_ref: str, obj: JsonSchemaObject) -> None:
         self._ref_data_type_facts[resolved_ref] = (
             obj.extras.get("x-python-import"),
-            obj.type == "null" or (self.strict_nullable and obj.nullable is True),
+            bool(self._null_facts(obj, "ref-target").admits_null),
         )
         self._false_schema_refs = _update_false_schema_refs(
             self._false_schema_refs,
@@ -4452,7 +4516,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             ref_schema = self._load_ref_schema_object(ref)
             facts = (
                 ref_schema.extras.get("x-python-import"),
-                ref_schema.type == "null" or (self.strict_nullable and ref_schema.nullable is True),
+                bool(self._null_facts(ref_schema, "ref-target").admits_null),
             )
             self._ref_data_type_facts[resolved_ref] = facts
             self._false_schema_refs = _update_false_schema_refs(
@@ -4846,7 +4910,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if (python_type := self._get_x_python_type(obj)) is None:
             return None
 
-        schema_type = obj.type if isinstance(obj.type, str) else None
+        schema_type = type_ if isinstance(type_ := _read_type(obj), str) else None
         if self._is_compatible_python_type(schema_type, python_type):
             return None
 
@@ -7451,9 +7515,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if not effective_refs_resolved:
             self._resolve_schema_refs_in_place(parent_shape, effective_ref)
         child_obj = self.SCHEMA_OBJECT_TYPE.model_validate(child)
-        excludes_null = child_obj.nullable is False or (
-            child_obj.type is not None and not child_obj.type_has_null and child_obj.nullable is not True
-        )
+        excludes_null = self._null_facts(child_obj, "inherited-child").admits_null is False
         if excludes_null:
             parent_types -= {"null"}
         distributed_fields = self._get_inherited_distributed_fields(child_obj)
@@ -7628,7 +7690,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     continue
         return frozenset(deferred_names)
 
-    def _mark_partial_inherited_fields(  # noqa: PLR6301
+    def _mark_partial_inherited_fields(
         self,
         fields: list[DataModelFieldBase],
         deferred_property_names: frozenset[str],
@@ -7643,16 +7705,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             if field_name not in deferred_property_names:
                 continue
             source_property = properties.get(field_name)
-            excludes_null = bool(
+            excludes_null = (
                 isinstance(source_property, JsonSchemaObject)
-                and (
-                    source_property.nullable is False
-                    or (
-                        source_property.type is not None
-                        and not source_property.type_has_null
-                        and source_property.nullable is not True
-                    )
-                )
+                and self._null_facts(source_property, "inherited-child").admits_null is False
             )
             field.__dict__[_DEFERRED_INHERITED_TYPE_KEY] = _get_inherited_type_modifiers(
                 field.data_type,
@@ -8854,7 +8909,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if any(_lists_null(type_) for type_ in typed):
             merged["type"] = (
                 ["object", "null"]
-                if obj.nullable or _lists_null(obj.type) or all(map(_lists_null, typed))
+                if self._null_facts(obj, "all-of-map", parts_null=all(map(_lists_null, typed))).admits_null
                 else "object"
             )
         elif merged.get("type") == ["object"]:
@@ -8998,7 +9053,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         for part in reversed(parts):
             annotations.update(part.model_dump(include=_ALL_OF_MEMBER_ANNOTATIONS, exclude_unset=True, by_alias=True))
         own = obj.model_dump(exclude={"allOf", *_ALL_OF_VALUE_KEYWORDS}, exclude_unset=True, by_alias=True)
-        if value.pop("nullable", False) or obj.nullable or _lists_null(obj.type):
+        if value.pop("nullable", False) or self._null_facts(obj, "all-of-value").admits_null:
             if (type_ := value.get("type")) is None:
                 value["nullable"] = True
             else:
@@ -10910,7 +10965,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             path=self.current_source_path,
             description=description,
             default=default,
-            nullable=obj.type_has_null,
+            nullable=bool(self._null_facts(obj, "root-model").admits_null),
             treat_dot_as_module=self.treat_dot_as_module,
         )
         self._apply_root_model_sequence_interface(data_model_root, fields)
@@ -11739,7 +11794,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             updated_items: list[JsonSchemaObject | bool] = []
             for item in combined_items:
                 updated_items.append(item)
-                if isinstance(item, JsonSchemaObject) and item.nullable and not item.type_has_null:
+                if isinstance(item, JsonSchemaObject) and self._null_facts(item, "combined-branch").admits_null:
                     updated_items.append(self.SCHEMA_OBJECT_TYPE.model_validate({"type": "null"}))
 
             if len(updated_items) != len(combined_items):
@@ -12015,10 +12070,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         ``nullable: true`` counts under ``--strict-nullable``, the rule ``_get_data_type`` applies to other types,
         unless a combined schema copied it into its branch: the union of the branches admits that null.
         """
-        match obj.type:
-            case list() as types:
-                return "object" in types and "null" in types
-        return bool(self.strict_nullable and obj.nullable and not obj.__dict__.get(_COPIED_NULLABLE_KEY))
+        return bool(self._null_facts(obj, "object-map").admits_null)
 
     def _warn_inexact_object_map(
         self, name: str, obj: JsonSchemaObject, pattern_properties: dict[str, JsonSchemaObject | bool]
@@ -12437,7 +12489,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return self._get_dynamic_ref_data_type(item, item.dynamicRef)
         if item.is_ref_with_nullable_only and item.ref:
             ref_data_type = self.get_ref_data_type(item.ref)
-            if self.strict_nullable:
+            if self._null_facts(item, "ref-nullable-only").admits_null:
                 return self.data_type(data_types=[ref_data_type], is_optional=True)
             return ref_data_type
         if item.has_ref_with_schema_keywords:
@@ -12607,7 +12659,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             else:
                 data_type = self._parse_array_union_constrained_branch(name, obj, path, type_)
             data_types.append(data_type)
-        return self.data_type(data_types=data_types, is_optional=obj.type_has_null)
+        return self.data_type(data_types=data_types, is_optional=bool(self._null_facts(obj, "type-union").admits_null))
 
     def _get_array_union_non_array_types(  # noqa: PLR6301
         self,
@@ -12826,7 +12878,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         return self.data_model_field_type(
             data_type=self.data_type(
                 data_types=data_types,
-                is_optional=isinstance(obj.type, list) and obj.type_has_null,
+                is_optional=bool(self._null_facts(obj, "type-union").admits_null),
             ),
             default=obj.default,
             required=required,
@@ -13033,14 +13085,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             )
         selected_root_type = data_model_root_type or self.data_model_root_type
         is_type_alias = selected_root_type.IS_ALIAS
-        if self.force_optional_for_required_fields:
+        if (root_null := self._null_facts(obj, "root-type")).required is False:
             required = False
-            nullable = None
-            has_default_override = True
-            default_value = obj.default if obj.has_default else None
-        elif obj.nullable:
-            required = False
-            nullable = True
+            nullable = root_null.admits_null
             has_default_override = True
             default_value = obj.default if obj.has_default else None
         elif obj.has_default and not is_type_alias:
@@ -13187,7 +13234,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         data_types.extend(self._iter_non_object_union_types(name, obj, type_list, path))
 
-        is_nullable = obj.nullable or obj.type_has_null
+        null_facts = self._null_facts(obj, "multiple-types-root")
         reference = self.model_resolver.add(path, name, loaded=True, class_name=True)
         self._record_schema_object(reference, obj)
 
@@ -13200,9 +13247,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 self.data_model_field_type(
                     data_type=self.data_type(data_types=data_types),
                     default=obj.default,
-                    required=not (self.force_optional_for_required_fields or is_nullable),
+                    required=bool(null_facts.required),
                     constraints=constraints,
-                    nullable=obj.type_has_null if (self.strict_nullable or self.use_missing_sentinel) else None,
+                    nullable=null_facts.admits_null,
                     strip_default_none=self.strip_default_none,
                     extras=self.get_field_extras(obj),
                     use_annotated=self.use_annotated,
@@ -13323,7 +13370,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     def _literal_values_type(self, values: list[Any]) -> DataType:
         """Return the Literal type of enum values, joined with the types of values no Literal holds."""
-        literal_values, non_literal_values, has_null = self._partition_enum_values(values)
+        literal_values, non_literal_values, value_null = self._partition_enum_values(values)
+        has_null = bool(resolve_null_facts(NullSources(enum_null=value_null), "enum-literal").admits_null)
         if not non_literal_values:
             return self.data_type(
                 literals=literal_values,
@@ -13418,10 +13466,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         written_obj, obj = obj, self._literal_view(obj)
         named_values = obj.enum
         msgspec_null_alias = self.use_msgspec_nullable_enum_alias and not self.data_model_type.SUPPORTS_NULL_ENUM_MEMBER
-        if _enum_entries_skip_null(obj):
+        if (enum_null := self._null_facts(obj, "enum")).rule == "enum-null-as-nullable":
             nullable: bool = True
             enum_times = named_values = [e for e in obj.enum if e is not None]
-        elif None in obj.enum and (msgspec_null_alias or self._enum_class_has_value_base(obj)):
+        elif enum_null.rule == "enum-null-member" and (msgspec_null_alias or self._enum_class_has_value_base(obj)):
             enum_times = [e for e in obj.enum if e is not None]
             nullable = msgspec_null_alias or not enum_times
         else:

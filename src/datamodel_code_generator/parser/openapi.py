@@ -10,7 +10,7 @@ import fnmatch
 import re
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from functools import cache, cached_property
 from pathlib import Path
@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._types import OpenAPIParserConfigDict
     from datamodel_code_generator.config import OpenAPIParserConfig
     from datamodel_code_generator.model import DataModel, DataModelFieldBase
+    from datamodel_code_generator.parser._null_facts import NullMode
     from datamodel_code_generator.parser.schema_version import OpenAPISchemaFeatures
     from datamodel_code_generator.reference import SchemaLocation
 
@@ -457,26 +458,24 @@ class OpenAPIParser(JsonSchemaParser):
             root_result.body = self._insert_info_version_constant(root_result.body, self.openapi_info_version)
         return result
 
+    @cached_property
+    @override
+    def _null_mode(self) -> NullMode:
+        """The null mode of JSON Schema, reading ``nullable`` beside a scalar type as a type list holding null."""
+        return replace(super()._null_mode, nullable_as_type_list=True)
+
     def _get_data_type(self, obj: JsonSchemaObject, *, localize_constraints: bool) -> DataType:
-        """Get data type from JSON schema object, handling OpenAPI nullable semantics.
+        """Get data type from JSON schema object, warning on ``nullable`` where the OpenAPI version deprecates it.
 
-        Uses schema_features.nullable_keyword to handle version differences:
-        - OpenAPI 3.0: nullable: true is valid, convert to type array when strict_nullable
-        - OpenAPI 3.1+: nullable is deprecated, use type: ["string", "null"] instead
+        OpenAPI 3.0 writes ``nullable: true``; 3.1 and later write ``type: [..., "null"]`` and still read ``nullable``,
+        with a warning in Strict mode (``schema_features.nullable_keyword``).
         """
-        if obj.nullable:
-            if self.schema_features.nullable_keyword:
-                # OpenAPI 3.0: nullable: true is the standard way
-                if self.strict_nullable and isinstance(obj.type, str):
-                    obj.type = [obj.type, "null"]
-            else:
-                # OpenAPI 3.1+: nullable is deprecated, still process but warn in Strict mode
-                if self.config.schema_version_mode == VersionMode.Strict:
-                    warn_deprecated("schema.openapi-nullable", stacklevel=2)
-                # Still convert to type array for compatibility
-                if self.strict_nullable and isinstance(obj.type, str):
-                    obj.type = [obj.type, "null"]
-
+        if (
+            obj.nullable
+            and not self.schema_features.nullable_keyword
+            and (self.config.schema_version_mode == VersionMode.Strict)
+        ):
+            warn_deprecated("schema.openapi-nullable", stacklevel=2)
         return super()._get_data_type(obj, localize_constraints=localize_constraints)
 
     def _normalize_discriminator_mapping_ref(self, mapping_value: str) -> str:  # noqa: PLR6301
