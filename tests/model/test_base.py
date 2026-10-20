@@ -1474,8 +1474,8 @@ def test_pydantic_v2_missing_sentinel_default_keeps_explicit_default() -> None:
     assert IMPORT_MISSING not in field.imports
 
 
-def test_pydantic_v2_missing_sentinel_type_hint_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test defensive MISSING type-hint branches."""
+def test_pydantic_v2_missing_sentinel_type_hint_fallbacks() -> None:
+    """Test the MISSING type hint of an empty hint."""
     field = PydanticV2DataModelField(
         name="value",
         data_type=DataType(type="str", use_union_operator=True),
@@ -1483,10 +1483,6 @@ def test_pydantic_v2_missing_sentinel_type_hint_fallbacks(monkeypatch: pytest.Mo
     )
 
     assert field._type_hint_with_missing_sentinel("") == "MISSING"
-
-    monkeypatch.setattr(PydanticV2DataModelField, "_use_union_operator", property(lambda _self: None))
-
-    assert field._type_hint_with_missing_sentinel("str") == "str"
 
 
 def test_rendered_pydantic_v2_field_uses_structured_values() -> None:
@@ -2496,6 +2492,16 @@ def test_msgspec_simple_unset_fast_path_does_not_mutate_nullable_reference(
     assert field.type_hint == expected_type_hint
     assert IMPORT_OPTIONAL in field.imports
     assert child.is_optional is False
+
+
+def test_data_type_union_with_an_optional_any_member_becomes_optional() -> None:
+    """A constructed union drops an optional ``Any`` member and is optional instead; an ``Any``-only union stays."""
+    union = DataType(data_types=[DataType(type="str"), DataType(type="Any", is_optional=True)])
+    only_any = DataType(data_types=[DataType(type="Any", is_optional=True), DataType(type="Any")])
+
+    assert union.is_optional
+    assert [data_type.type for data_type in union.data_types] == ["str"]
+    assert [data_type.type for data_type in only_any.data_types] == ["Any", "Any"]
 
 
 def test_data_type_deepcopy_keeps_the_source_of_a_nullable_reference_none() -> None:

@@ -24,6 +24,7 @@ from datamodel_code_generator import (
 from datamodel_code_generator._format_types import DatetimeClassType
 from datamodel_code_generator._requirements import python_target_meets
 from datamodel_code_generator.model._decisions.enum_kind import decide_enum_kind, enum_as_literal
+from datamodel_code_generator.model._decisions.union_assembly import MEMBER, UnionPolicy, assemble_union
 from datamodel_code_generator.model.base import _find_base_classes, get_inherited_fields
 from datamodel_code_generator.model.enum import SUBCLASS_BASE_CLASSES, EnumMemberValue, _enum_class
 from datamodel_code_generator.parser.base import (
@@ -57,6 +58,8 @@ try:  # graphql-core < 3.2.7
     graphql_resolver_kind = graphql.type.introspection.TypeResolvers().kind  # ty: ignore[unresolved-attribute]
 except AttributeError:
     graphql_resolver_kind = graphql.type.introspection.TypeFields.kind
+
+_GRAPHQL_UNION = UnionPolicy("legacy-graphql-template")
 
 
 def _input_field_default(field: graphql.GraphQLInputField) -> Any:
@@ -490,14 +493,16 @@ class GraphQLParser(Parser["GraphQLParserConfig", "JsonSchemaFeatures"]):
         self.parse_object_like(input_graphql_object)
 
     def parse_union(self, union_object: graphql.GraphQLUnionType) -> None:
-        """Parse a GraphQL union type and add it to results."""
+        """Parse a GraphQL union type and add it to results; its template writes the members it holds."""
+        types = union_object.types
+        plan = assemble_union((MEMBER,) * len(types), _GRAPHQL_UNION)
         fields = [
             self.data_model_field_type(
-                name=self.references[type_.name].name,
+                name=self.references[types[index].name].name,
                 data_type=DataType(),
                 **self._data_model_field_common_kwargs(),
             )
-            for type_ in union_object.types
+            for index in plan.members
         ]
         data_model_type = self.data_model_union_type(
             reference=self.references[union_object.name],

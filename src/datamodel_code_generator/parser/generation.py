@@ -52,6 +52,7 @@ from datamodel_code_generator import Error
 from datamodel_code_generator._checks import CheckArea, check_mode
 from datamodel_code_generator._constraint_applicability import VALUES_AS_WRITTEN_KEY
 from datamodel_code_generator._url_redaction import redact_reference
+from datamodel_code_generator.model._decisions.union_assembly import MEMBER, MemberFacts, UnionPolicy, assemble_union
 from datamodel_code_generator.parser._facts import Phase
 from datamodel_code_generator.parser._graph_ids import ModelKey, identity_of, model_key_of
 from datamodel_code_generator.parser._holders import (
@@ -92,6 +93,9 @@ DataTypeId: TypeAlias = int
 DataTypeRole = Literal["field", "base", "nested", "dict_key"]
 DataTypeOccurrence: TypeAlias = tuple[DataType, int | None, DataTypeRole]
 _OrderedSetItem = TypeVar("_OrderedSetItem")
+_REPLACED = MemberFacts("replaced")
+_REPLACEMENT = MemberFacts("replacement")
+_REPLACEMENT_LAST = UnionPolicy("legacy-replacement-last")
 OrderedSet: TypeAlias = dict[_OrderedSetItem, None]
 
 GENERATION_STORE_MUTATION_METHODS: frozenset[str] = frozenset({
@@ -1563,7 +1567,7 @@ class GenerationStore:  # noqa: PLR0904
         old_data_type: DataType,
         new_data_type: DataType,
     ) -> None:
-        """Replace a nested data type with append-position compatibility."""
+        """Replace a nested data type; its replacement goes last (row ``legacy-replacement-last``)."""
         if parent_data_type.dict_key is old_data_type:
             cache_owners = self._cache_owners_for_data_type(parent_data_type)
             old_data_type.parent = None
@@ -1574,11 +1578,15 @@ class GenerationStore:  # noqa: PLR0904
             self._invalidate_after_mutation()
             return
 
-        old_id = id(old_data_type)
-        self.set_nested_data_types(
-            parent_data_type,
-            (data_type for data_type in (*parent_data_type.data_types, new_data_type) if id(data_type) != old_id),
+        members = (*parent_data_type.data_types, new_data_type)
+        plan = assemble_union(
+            (
+                *(_REPLACED if member is old_data_type else MEMBER for member in members[:-1]),
+                _REPLACED if new_data_type is old_data_type else _REPLACEMENT,
+            ),
+            _REPLACEMENT_LAST,
         )
+        self.set_nested_data_types(parent_data_type, (members[index] for index in plan.members))
 
     @staticmethod
     def _root_collapse_supports_incremental_replacement(

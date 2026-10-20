@@ -232,7 +232,6 @@ LEGACY_VIOLATIONS: dict[str, tuple[str, ...]] = {
         "normal-path-mock:tests/model/test_base.py::test_field_import_cache_normalizes_union_on_cache_hit",
         "normal-path-mock:tests/model/test_base.py::test_field_import_fallback_uses_structured_union_requirements",
         "normal-path-mock:tests/model/test_base.py::test_pydantic_v2_leaf_field_imports_skip_discriminator_scan",
-        "normal-path-mock:tests/model/test_base.py::test_pydantic_v2_missing_sentinel_type_hint_fallbacks",
         "normal-path-mock:tests/model/test_compiled_templates.py::test_external_base_model_module_helper_stays_on_jinja",
         "normal-path-mock:tests/model/test_compiled_templates.py::test_module_runtime_validation_helper_uses_generated_or_custom_jinja_renderer",
         "normal-path-mock:tests/parser/test_jsonschema.py::test_builtin_formatter_falls_back_for_custom_class_name_generator",
