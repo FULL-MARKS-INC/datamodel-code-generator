@@ -61998,8 +61998,8 @@ Single-file output has one module, so "per module" then means the whole graph.
 
 | Step | Pass (`parser/base.py`) | Reads | Changes |
 | --- | --- | --- | --- |
-| prepare | `__alias_shadowed_imports` | field names vs imported names | import aliases |
-| prepare | `__override_required_field` | inherited placeholders, base models (any module) | replaces placeholders by copies of inherited fields, required, defaults |
+| prepare | `alias_shadowed_imports` (`parser/_passes/_shared.py`) | field names vs imported names | import aliases |
+| prepare | `override_required_field` (`parser/_passes/_shared.py`) | inherited placeholders, base models (any module) | replaces placeholders by copies of inherited fields, required, defaults |
 | prepare | `__replace_unique_list_to_set` | `uniqueItems`, defaults | list to set (`_create_set_from_list`), set defaults |
 | prepare | `__change_from_import` | references to other modules | module imports, `data_type.alias` |
 | prepare | `__extract_inherited_enum` | field-less models with Enum bases | replaces the model by a new Enum with the same `Reference`, of the class of its first Enum base (`decide_enum_kind`) |
@@ -62258,7 +62258,7 @@ quoting are done) or not yet (its overrides, collapse and reuse have not run).
 
 | Pass | Crosses modules by | Consequence |
 | --- | --- | --- |
-| `__override_required_field` | copying fields of bases in any module | reads base fields at whatever stage that module is in |
+| `override_required_field` | copying fields of bases in any module | reads base fields at whatever stage that module is in |
 | `__reuse_model` | removing duplicates (Enums, `--collapse-reuse-models`) and redirecting their users in every module | earlier modules imported the removed duplicate; repaired by `__import_removed_reuse_canonicals` |
 | `__collapse_root_models` | inlining root models of any module; under the `parent` strategy, giving the inner model of any module the root's class name and path | the root's own module may collapse its members later; earlier modules imported the inner model's old name under its old path, repaired by `__import_renamed_types` |
 | `__change_field_name`, `__rename_fields_hiding_types` | renaming types of any module | earlier modules imported the old name; repaired by `__import_renamed_types` |
@@ -62712,13 +62712,17 @@ paths:
 
 Run `python scripts/check_architecture_boundaries.py` to validate these rules. The checker parses imports and semantic
 backend inspection with the Python AST, including lazy and dynamic imports. Entrypoint, parser, configuration,
-input-model, reference, model-composition, output-model, shared-model, schema graph, requirement-table,
+input-model, reference, model-composition, output-model, shared-model, schema graph, parser pass, requirement-table,
 constraint-table, and debug check flag files are classified explicitly. The composition root may select concrete
 backends, while shared-model modules must remain neutral: they cannot import a concrete backend or resolve one through
 `sys.modules`, including module-name constants and aliases. The requirement table may import only the standard library,
 `typing_extensions` and `enums`, the constraint table only those and the requirement table, `_checks.py`, which every
 layer reads for the debug check flags, only the standard library and `typing_extensions`, and the schema graph
-(`parser/_schema_graph.py`, L0) only those and `reference`: the parsers pass it their rules. This keeps
+(`parser/_schema_graph.py`, L0) only those and `reference`: the parsers pass it their rules. Pass modules
+(`parser/_passes/`) follow the parser rules and import no parser module but the generation store, the import ledger,
+`_python_type_imports` and each other, not even for typing: a helper that passes of more than one layer call is a
+function there (`parser/_passes/_shared.py`) that takes parser state as arguments or through a narrow `Protocol`, so
+it never imports `parser/base.py`. This keeps
 backend-specific lifecycle and cache ownership with the backend or composition root, without blocking neutral module
 registry access such as `sys.modules[model_type.__module__]`. Private parser lifecycle access and reference-owned
 backend policy therefore cannot hide in the shared layer. Its legacy allowlist is keyed by file, enclosing symbol, rule,

@@ -1,5 +1,6 @@
 __init__.py: entrypoint
 parser/base.py: parser
+parser/_passes/_shared.py: parser-passes
 parser/_facts.py: facts
 parser/_schema_graph.py: schema-graph
 parser/_intersection.py: parser-core
