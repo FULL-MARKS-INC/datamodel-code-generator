@@ -961,6 +961,14 @@ class DataModelField(DataModelFieldBase):
             return self._unset_union_data_type().type_hint
         return super().type_hint
 
+    @override
+    def _import_state_data_type(self) -> DataType | None:
+        """Return the field's own data type, or None when ``imports`` collects from a copy of it."""
+        meta = self._get_meta_string() if self.use_annotated else None
+        if (self._not_required and not self.nullable) or (meta is not None and (self.required or self.nullable)):
+            return None
+        return self._import_state_target(needs_annotated=meta is not None, data_type=self.data_type)
+
     @property
     @override
     def imports(self) -> tuple[Import, ...]:

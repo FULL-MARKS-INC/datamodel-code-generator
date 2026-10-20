@@ -481,6 +481,13 @@ class DataModelField(DataModelFieldBase):
             return None
         return f"Annotated[{self.type_hint}, {field}]"
 
+    @override
+    def _import_state_data_type(self) -> DataType | None:
+        return self._import_state_target(
+            needs_annotated=self.use_annotated and not self.is_class_var and self._has_field_statement(),
+            data_type=self.data_type,
+        )
+
     @property
     @override
     def imports(self) -> tuple[Import, ...]:

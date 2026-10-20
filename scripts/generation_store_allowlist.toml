@@ -320,9 +320,6 @@ extras = 1
 alias = 1
 use_union_operator = 1
 
-["src/datamodel_code_generator/parser/base.py"."Parser.__delete_duplicate_models"]
-'_dedup_key_cache.clear()' = 1
-
 ["src/datamodel_code_generator/parser/base.py"."Parser.__deserialize_decimal_default"]
 default = 1
 
@@ -384,6 +381,9 @@ is_set = 1
 constraints = 1
 
 ["src/datamodel_code_generator/parser/base.py"."Parser._flatten_invalid_modules"]
+'_dedup_key_cache.clear()' = 1
+
+["src/datamodel_code_generator/parser/base.py"."_ModelShapeSource.forget_dedup_keys"]
 '_dedup_key_cache.clear()' = 1
 
 ["src/datamodel_code_generator/parser/base.py"."_apply_inherited_field_nullability"]
