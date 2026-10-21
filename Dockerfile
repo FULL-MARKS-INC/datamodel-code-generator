@@ -15,10 +15,13 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 
 LABEL maintainer="Koudai Aono <koxudaxi@gmail.com>"
 
+COPY requirements-pip.txt /tmp/requirements-pip.txt
+
 RUN test -n "${VERSION}" \
     || { echo "The VERSION build arg is required." >&2; exit 1; } \
     && python -m venv "${VIRTUAL_ENV}" \
-    && python -m pip install --no-cache-dir --upgrade 'pip>=26.2.2' \
+    && python -m pip --disable-pip-version-check install --no-cache-dir --no-deps --upgrade \
+        -r /tmp/requirements-pip.txt \
     && python -m pip install --no-cache-dir "datamodel-code-generator[http]==${VERSION}" 'certifi>=2026.10.19'
 
 FROM base
