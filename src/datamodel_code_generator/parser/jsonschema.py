@@ -1242,6 +1242,19 @@ _NAMED_ENTRY_MAP_KEYWORDS = _JSON_SCHEMA_MAP_KEYWORDS | {
 _DocumentEntries = Literal["object", "names", "maps"]
 
 
+def _iter_ref_walk_children(data: dict[str, Any]) -> Iterator[dict[str, Any] | list[Any]]:
+    """Yield the subschemas of a raw schema in keyword order, leaving instance values and metadata out."""
+    for keyword, value in data.items():
+        if keyword in _JSON_SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
+            yield from (schema for schema in value.values() if isinstance(schema, dict))
+        elif (
+            keyword in _JSON_SCHEMA_SINGLE_KEYWORDS
+            or keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS
+            or keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
+        ) and isinstance(value, (dict, list)):
+            yield value
+
+
 def _document_child_entries(
     entries: _DocumentEntries, key: object, named_entry_maps: frozenset[str]
 ) -> _DocumentEntries | None:
@@ -6033,19 +6046,34 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         References inside a schema from another document are rebased to their locations, and a referenced schema
         that is itself a $ref is merged with its own target. The dump depends only on the resolved reference and the
-        current document, so each parse computes it once per pair and hands out copies.
+        current document, so each parse computes it once per pair and hands out copies. A chain of such aliases is
+        loaded first and merged from its far end, so each merge finds the dump of the next alias computed.
         """
         document = self._schema_resource_document(list(self.model_resolver.current_root))
-        if (cached := self._ref_target_dumps.get((resolved_ref, document))) is None:
+        key = resolved_ref, document
+        chain: list[tuple[str, dict[str, Any], JsonSchemaObject | None]] = []
+        while (resolved_ref, document) not in self._ref_target_dumps:
             ref_dict = self._load_ref_schema_object(ref).model_dump(exclude_unset=True, by_alias=True)
-            target_ref = resolved_ref
             if self._schema_location(resolved_ref).partition("#")[0] != document:
                 self._rebase_schema_refs(ref_dict, resolved_ref)
-            if isinstance(ref_dict.get("$ref"), str):
-                target = self._merge_ref_with_schema(self.SCHEMA_OBJECT_TYPE.model_validate(ref_dict))
-                ref_dict = target.model_dump(exclude_unset=True, by_alias=True)
-                target_ref = target.__dict__.get(_MERGED_REF_TARGET_KEY, resolved_ref)
-            cached = self._ref_target_dumps[resolved_ref, document] = ref_dict, target_ref
+            alias = self.SCHEMA_OBJECT_TYPE.model_validate(ref_dict) if isinstance(ref_dict.get("$ref"), str) else None
+            chain.append((resolved_ref, ref_dict, alias))
+            if (
+                alias is None
+                or not alias.ref
+                or self._is_ref_circular(
+                    resolved_ref := self.model_resolver.resolve_ref(ref := self._lenient_ref(alias.ref))
+                )
+            ):
+                break
+        for chain_ref, ref_dict, alias in reversed(chain):
+            dump, target_ref = ref_dict, chain_ref
+            if alias is not None:
+                target = self._merge_ref_with_schema(alias)
+                dump = target.model_dump(exclude_unset=True, by_alias=True)
+                target_ref = target.__dict__.get(_MERGED_REF_TARGET_KEY, chain_ref)
+            self._ref_target_dumps[chain_ref, document] = dump, target_ref
+        cached = self._ref_target_dumps[key]
         return deepcopy(cached[0]), cached[1]
 
     def _intersect_ref_siblings(
@@ -6229,19 +6257,71 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         return anchors
 
     def _is_ref_circular(self, resolved_ref: str) -> bool:
-        """Check if a resolved $ref target contains a circular reference (cached)."""
+        """Check if a resolved $ref target contains a circular reference (cached).
+
+        A target whose references reach a document or pointer that cannot be loaded counts as circular.
+        """
         if resolved_ref in self._circular_ref_cache:
             return self._circular_ref_cache[resolved_ref]
         try:
-            result = self._has_ref_cycle(resolved_ref, resolved_ref, set())
-        except Exception:  # noqa: BLE001  # pragma: no cover
+            result = self._has_ref_cycle(resolved_ref)
+        except (Error, NotImplementedError, OSError, ValueError):
             result = True
         self._circular_ref_cache[resolved_ref] = result
         return result
 
-    def _has_ref_cycle(self, ref_to_check: str, target: str, visited: set[str]) -> bool:
-        """Check if the schema at ref_to_check contains a reference back to target."""
+    def _has_ref_cycle(self, target: str) -> bool:
+        """Check if the schema at target reaches a reference back to target.
+
+        References are followed depth first, each one once, on an explicit stack: a frame per followed reference
+        holds the resolution context of its document and the schemas left to walk there, so any chain length works.
+        Reaching a boolean, number or null schema counts as a cycle, since it has no keywords to merge.
+        """
+        visited: set[str] = set()
+        frames: list[tuple[Generator[object, None, None], list[dict[str, Any] | list[Any]]]] = []
+        try:
+            if self._push_ref_cycle_frame(target, visited, frames):
+                return True
+            while frames:
+                if not (nodes := frames[-1][1]):
+                    frames.pop()[0].close()
+                    continue
+                if isinstance(node := nodes.pop(), list):
+                    nodes.extend(item for item in reversed(node) if isinstance(item, (dict, list)))
+                    continue
+                nodes.extend(reversed(list(_iter_ref_walk_children(node))))
+                if isinstance(ref_value := node.get("$ref"), str):
+                    try:
+                        resolved = self.model_resolver.resolve_ref(ref_value)
+                    except (Error, ValueError):
+                        resolved = ref_value
+                    if resolved == target:
+                        return True
+                    if resolved not in visited and self._push_ref_cycle_frame(resolved, visited, frames):
+                        return True
+        finally:
+            while frames:
+                frames.pop()[0].close()
+        return False
+
+    def _push_ref_cycle_frame(
+        self,
+        ref_to_check: str,
+        visited: set[str],
+        frames: list[tuple[Generator[object, None, None], list[dict[str, Any] | list[Any]]]],
+    ) -> bool:
+        """Enter the resolution context of ref_to_check and push a frame with the schema it names.
+
+        Returns whether that schema is a boolean, number or null, which has no keywords to walk.
+        """
         visited.add(ref_to_check)
+        document = self._ref_cycle_document(ref_to_check)
+        raw_obj = next(document)
+        frames.append((document, [raw_obj] if isinstance(raw_obj, (dict, list)) else []))
+        return not isinstance(raw_obj, (dict, list, str))
+
+    def _ref_cycle_document(self, ref_to_check: str) -> Generator[object, None, None]:
+        """Yield the value ref_to_check names, resolving references relative to its document until closed."""
         file_part, _, fragment = ref_to_check.partition("#")
         if file_part and is_url(file_part):
             base_path = None
@@ -6249,51 +6329,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         else:
             base_path = Path(file_part).parent if file_part else self.model_resolver.current_base_path
             root_path = file_part.split("/") if file_part else self.model_resolver.current_root
-        base_url = file_part or self.model_resolver.base_url
         with (
             self.model_resolver.current_base_path_context(base_path),
-            self.model_resolver.base_url_context(base_url),
+            self.model_resolver.base_url_context(file_part or self.model_resolver.base_url),
             self.model_resolver.current_root_context(root_path),
         ):
             raw_doc = self._get_ref_body(file_part) if file_part else self.raw_obj
-            raw_obj: Any = raw_doc
-            if fragment:
-                pointer = [p for p in fragment.split("/") if p]
-                raw_obj = get_model_by_path(raw_doc, pointer)
-            return self._walk_for_ref(cast("dict[str, Any] | list[Any]", raw_obj), target, visited)
-
-    def _walk_for_ref(self, data: dict[str, Any] | list[Any], target: str, visited: set[str]) -> bool:
-        """Follow references only in schemas, leaving instance values and metadata unvisited."""
-        if isinstance(data, dict):
-            ref_value = data.get("$ref")
-            if isinstance(ref_value, str):
-                try:
-                    resolved = self.model_resolver.resolve_ref(ref_value)
-                except Exception:  # noqa: BLE001
-                    resolved = ref_value
-                if resolved == target:
-                    return True
-                if resolved not in visited and self._has_ref_cycle(resolved, target, visited):
-                    return True
-            for keyword, value in data.items():
-                if keyword in _JSON_SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
-                    if any(
-                        isinstance(schema, dict) and self._walk_for_ref(schema, target, visited)
-                        for schema in value.values()
-                    ):
-                        return True
-                elif (
-                    (
-                        keyword in _JSON_SCHEMA_SINGLE_KEYWORDS
-                        or keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS
-                        or keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
-                    )
-                    and isinstance(value, (dict, list))
-                    and self._walk_for_ref(value, target, visited)
-                ):
-                    return True
-            return False
-        return any(isinstance(item, (dict, list)) and self._walk_for_ref(item, target, visited) for item in data)
+            yield get_model_by_path(raw_doc, [p for p in fragment.split("/") if p]) if fragment else raw_doc
 
     def _merge_primitive_schemas(self, items: list[JsonSchemaObject]) -> JsonSchemaObject:
         """Merge multiple primitive schemas by computing the intersection of their constraints."""

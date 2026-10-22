@@ -9806,12 +9806,21 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         arm_parse_checks(self.generation_store, "Parser.parse")
 
     def __parse_raw(self, run: _SettleRun) -> None:
-        """Run L0 and L1, without repeating warnings on a retry; the HTTP session closes either way."""
+        """Run L0 and L1, without repeating warnings on a retry; the HTTP session closes either way.
+
+        A parse that exceeds the recursion limit on deeply nested schemas stops with an error, not a partial result.
+        """
         try:
             if run.suppress_parse_warnings:
                 self._run_with_suppressed_warnings(self.parse_raw)
             else:
                 self.parse_raw()
+        except RecursionError:
+            msg = (
+                "Schema nesting is too deep to generate: parsing the nested schemas exceeded the Python recursion "
+                f"limit ({sys.getrecursionlimit()})."
+            )
+            raise Error(msg) from None
         finally:
             self._close_http_fetch_session()
 

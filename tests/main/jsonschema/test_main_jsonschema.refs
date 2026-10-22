@@ -7337,6 +7337,8 @@ default	main/jsonschema/literal_constraints_undecided.py
 literal	main/jsonschema/literal_constraints_undecided.py	= main/jsonschema/literal_constraints_undecided~main_literal_constraints_undecided[literal].py
 [test_main_local_directory_path_absolute_root_id_refs]
 	main/jsonschema/path_absolute_root_id_refs//*.py
+[test_main_long_ref_alias_chain]
+	main/jsonschema/long_ref_alias_chain.py
 [test_main_lookaround_anyof_nullable_pydantic_v2]
 	main/jsonschema/lookaround_anyof_nullable_pydantic_v2.py
 [test_main_lookaround_anyof_nullable_pydantic_v2_dataclass]
@@ -7653,6 +7655,8 @@ pydantic_dataclass_option	main/jsonschema/redundant_constraints.py	= main/jsonsc
 strict_option	main/jsonschema/main_jsonschema/main_redundant_constraints[strict_option].rejected.txt	= main/jsonschema/main_jsonschema/main_redundant_constraints[annotated].rejected.txt
 strict_option	main/jsonschema/main_jsonschema/main_redundant_constraints[strict_option].warnings.txt	= main/jsonschema/main_jsonschema/main_redundant_constraints[annotated].warnings.txt
 strict_option	main/jsonschema/redundant_constraints.py	= main/jsonschema/redundant_constraints~main_redundant_constraints[strict_option].py
+[test_main_ref_cycle_unwalkable_targets]
+	main/jsonschema/ref_cycle_unwalkable_targets.py
 [test_main_ref_nullable_import_fast_path]
 	main/jsonschema/ref_nullable_import_fast_path.py
 [test_main_refreshes_modified_custom_template_between_calls]

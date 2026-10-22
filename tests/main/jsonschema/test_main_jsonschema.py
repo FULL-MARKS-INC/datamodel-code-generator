@@ -24912,6 +24912,77 @@ def test_main_circular_ref_ref_with_schema_keywords(output_file: Path) -> None:
     )
 
 
+def test_main_ref_cycle_unwalkable_targets(output_file: Path) -> None:
+    """Keep $ref siblings unmerged when the target reaches a boolean schema or a reference that cannot be loaded."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "schema_reference_cycles" / "unwalkable_targets.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=["--disable-timestamp", "--formatters", "builtin"],
+    )
+
+
+def test_main_long_ref_alias_chain(tmp_path: Path, output_file: Path) -> None:
+    """Merge $ref siblings through a chain of aliases longer than the recursion limit lets a recursive walk follow."""
+    length = 600
+    links: dict[str, Any] = {
+        f"L{index}": {"$ref": f"#/x-links/L{index + 1}", "description": f"link {index}"} for index in range(length)
+    }
+    links[f"L{length}"] = {"type": "object", "properties": {"v": {"type": "integer"}}}
+    (input_path := tmp_path / "alias_chain.json").write_text(
+        json.dumps({
+            "type": "object",
+            "properties": {"p": {"$ref": "#/x-links/L0", "required": ["v"]}},
+            "x-links": links,
+        }),
+        encoding="utf-8",
+    )
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=["--disable-timestamp", "--formatters", "builtin"],
+    )
+
+
+def test_main_ref_sibling_nesting_too_deep(
+    tmp_path: Path, output_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Stop with an error, not a partial result, when merged $ref siblings nest deeper than the parse can follow."""
+    length = 200
+    links: dict[str, Any] = {
+        f"D{index}": {
+            "type": "object",
+            "properties": {
+                "v": {"type": "integer"},
+                "next": {"$ref": f"#/x-links/D{index + 1}", "required": ["v"], "description": f"link {index}"},
+            },
+        }
+        for index in range(length)
+    }
+    links[f"D{length}"] = {"type": "object", "properties": {"v": {"type": "integer"}}}
+    (input_path := tmp_path / "nested_chain.json").write_text(
+        json.dumps({
+            "type": "object",
+            "properties": {"next": {"$ref": "#/x-links/D0", "required": ["v"]}},
+            "x-links": links,
+        }),
+        encoding="utf-8",
+    )
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=["--disable-timestamp", "--formatters", "builtin"],
+        expected_exit=Exit.ERROR,
+        capsys=capsys,
+        expected_stderr_contains="Schema nesting is too deep to generate",
+        output_should_not_exist=True,
+    )
+
+
 def test_main_jsonschema_recursive_ref(output_file: Path) -> None:
     """Test JSON Schema 2019-09 $recursiveRef with $recursiveAnchor."""
     run_main_and_assert(
