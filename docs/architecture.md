@@ -775,8 +775,14 @@ the methods and properties of the classes read inside.
 `GenerationStore` (`parser/generation.py`) owns `Parser.results` and indexes, per model, its reference and paths and,
 per `DataType` occurrence, its owner model, field index and role (field, base, nested, dict key). It also records
 `DataType` objects that occur in more than one place (`shared_data_type_fact_ids`), models by path and by model key,
-and reverse edges from a model key to the users of its reference. Queries refresh the facts when a mutation marked
-them dirty, either incrementally for appended and changed models or with a full rebuild.
+and every reference occurrence of a type tree as a site (`parser/_sites.py:RefSite`): its owner model, field, position
+in the tree, node, target model key, kind (`type`, `base`, `alias_body`) and provenance, keyed by the id of its
+occurrence and listed per target (`sites_by_target`). Queries refresh the facts when a mutation marked them dirty,
+either incrementally for appended and changed models or with a full rebuild. Every store mutation states what it does
+to the sites (`SITE_EFFECTS`, `NO_SITE_EFFECT`): a new site takes the provenance of the mutation that made it
+(`redirected` with the model it named before and the site at its place, `collapsed` with the root model and its site,
+`overridden`, `copied`), the sites of the parsed models are `parsed`, and a site whose occurrence a refresh keeps keeps
+its provenance; renames touch no site, since sites store no names.
 
 A `Reference` takes a `ModelKey` when it is built: `Reference.model_post_init` stores the next value of a process-wide
 counter in its `__dict__`, beside its schema location, and `parser/_graph_ids.py:model_key_of` reads it
@@ -785,7 +791,7 @@ counter in its `__dict__`, beside its schema location, and `parser/_graph_ids.py
 cell takes the model it built when it returns, and a model records the frames open when it is recorded. A read or
 write variant stands for its base model in those frames, so it takes the base's owner; a document parse (`_parse_file`,
 also for a `$ref` target) starts with no frame open, so its models are roots. The store keys `model_by_ref_id`,
-`reverse_edges` and the reference counts of root collapse by it, through
+`sites_by_target` and the reference counts of root collapse by it, through
 `GenerationStore.model_key`, instead of `id(reference)`, which Python reuses once a Reference is freed. Copies of a
 Reference (`deepcopy`, `model_copy`, pickling) keep the key of their original, so the store would take a copy for
 the model it was copied from. `DATAMODEL_CODE_GENERATOR_CHECK_MODEL_GRAPH` reports a Reference object that the store
@@ -873,9 +879,15 @@ the counted ones. When the scan learns to find a write a witness covers, the wit
 
 Current behaviour that a decision reading the index must allow for:
 
-- Only parsers call `register_model`. Models created after parsing (reuse subclasses, the merged inherited Enum, the
-  generated base model) are not registered, and models removed from module lists stay in the store. The index covers
-  the parsed models plus redirected edges, not the module lists that L3–L6 edit.
+- Index queries answer over the parsed universe by default: the models parsers registered (`Parser.results`) plus
+  redirected edges, removed ones included, not the module lists that L3–L6 edit. A model a later pass builds (a reuse
+  subclass, the merged inherited Enum, the generic base class) is registered in the emitted universe only, and
+  `retire_model` (`replace_model` for a model built in another's place) records each model that leaves the output
+  (duplicates, reused and overridden models, unused models leaving their written module list). `universe="emitted"`
+  answers over the models the output writes. Under `DATAMODEL_CODE_GENERATOR_CHECK_MODEL_GRAPH`, the written models
+  must equal the emitted universe after render preparation, and with a report file each root-collapse decision on
+  remaining references records when its answer over the emitted models differs (`kind: universe-differs`), the
+  evidence for switching the default.
 - A store operation called with `refresh="deferred"` notes the models it changes for the next refresh but does not
   mark the facts dirty, so they stay as they were until another mutation. `drop_union_member_constraints` (msgspec
   `unconstrain_union_members`, slice assignment on `data_types`), `swap_data_type` for the nested lists of
