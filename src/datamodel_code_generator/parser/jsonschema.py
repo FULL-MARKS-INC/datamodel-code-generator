@@ -1584,6 +1584,20 @@ class Discriminator(BaseModel):
     mapping: Optional[dict[str, str]] = None  # noqa: UP045
 
 
+_IN_PLACE_APPLICATOR_KEYWORDS: Final = frozenset({
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "dependentSchemas",
+    "dependencies",
+    "$ref",
+    "$dynamicRef",
+    "$recursiveRef",
+})
+
+
 class JsonSchemaObject(BaseModel):  # noqa: PLR0904
     """Represent a JSON Schema object with validation and parsing capabilities."""
 
@@ -1689,6 +1703,19 @@ class JsonSchemaObject(BaseModel):  # noqa: PLR0904
             case False:
                 del values["exclusiveMinimum"]
         return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_unevaluated_properties_as_additional(cls, values: Any) -> Any:
+        """Read a schema-valued ``unevaluatedProperties`` as ``additionalProperties`` when nothing applies in place."""
+        if (
+            not isinstance(values, dict)
+            or not isinstance(values.get("unevaluatedProperties"), dict)
+            or "additionalProperties" in values
+            or not _IN_PLACE_APPLICATOR_KEYWORDS.isdisjoint(values)
+        ):
+            return values
+        return {**values, "additionalProperties": values["unevaluatedProperties"]}
 
     @model_validator(mode="before")
     @classmethod
@@ -8688,7 +8715,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         parent_refs: list[Reference],
         parent_fields: list[DataModelFieldBase],
     ) -> list[DataModelFieldBase]:
-        """Parse one forward schema's own fields in its defining scope."""
+        """Parse one forward schema's own fields in its defining scope, at its own path.
+
+        The inline models the fields name are the ones the schema's own parse builds, under the same names.
+        """
         inherited_properties = self._get_inherited_property_map(parent_refs)
         reference = self._get_inherited_field_owner_reference(reference, schema)
         class_name = reference.name
@@ -8699,6 +8729,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             target_python_version=self.target_python_version,
         )
         fields: list[DataModelFieldBase] = []
+        owner_path = [reference.path]
 
         def parse_inline(source: JsonSchemaObject) -> None:
             if source.properties:
@@ -8714,7 +8745,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 )
                 parsed_fields = self.parse_object_fields(
                     self._get_deferred_inherited_parse_object(source, deferred_names),
-                    [],
+                    owner_path,
                     module_name,
                     class_name=class_name,
                 )
@@ -8742,7 +8773,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 )
                 parsed_fields = self.parse_object_fields(
                     self._get_deferred_inherited_parse_object(schema, deferred_names),
-                    [],
+                    owner_path,
                     module_name,
                     class_name=class_name,
                 )
