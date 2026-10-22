@@ -1453,11 +1453,6 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         return bool(self.annotated)
 
     @property
-    def needs_meta_import(self) -> bool:  # pragma: no cover
-        """Check if this field requires the Meta import (msgspec only)."""
-        return False
-
-    @property
     def has_default_factory(self) -> bool:
         """Check if this field has a default_factory."""
         return "default_factory" in self.extras
@@ -3260,6 +3255,9 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
 
     def _name_final_classes(self) -> None:
         """Render the backend settings that name the classes of additional properties once class names are final."""
+
+    def _decide_config_items(self) -> None:
+        """Decide the config items the class writes, once every fact they read is final; the neutral model has none."""
 
     @classmethod
     def get_native_hash_model_paths(cls, models: list[DataModel]) -> set[str]:  # noqa: ARG003

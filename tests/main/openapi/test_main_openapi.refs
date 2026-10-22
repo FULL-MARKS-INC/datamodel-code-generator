@@ -627,6 +627,9 @@ constraints	main/openapi/main_openapi/allof_required_inherited_options_without_o
 [test_main_openapi_allof_required_inherited_rw_c3]
 all	main/openapi/allof_required_inherited_rw_c3.py
 request-response	main/openapi/allof_required_inherited_rw_c3_request_response.py
+[test_main_openapi_allof_required_inherited_rw_c3_dedupe_variants]
+force-optional	main/openapi/main_openapi/allof_required_inherited_rw_c3_dedupe_variants[force-optional].py
+required	main/openapi/main_openapi/allof_required_inherited_rw_c3_dedupe_variants[required].py
 [test_main_openapi_allof_required_inherited_rw_cycle]
 	main/openapi/allof_required_inherited_rw_cycle.py
 [test_main_openapi_allof_scalar_roots]
@@ -651,7 +654,7 @@ typing.TypedDict	main/openapi/main_openapi/allof_scalar_roots_without_option[typ
 	main/openapi/allof_with_required_inherited_complex_allof.py
 [test_main_openapi_allof_with_required_inherited_comprehensive]
 	main/openapi/allof_with_required_inherited_comprehensive.py	?
-	main/openapi/allof_with_required_inherited_comprehensive_black_lt_24.py	?
+	main/openapi/allof_with_required_inherited_comprehensive_black_lt_24.py	?	= main/openapi/allof_with_required_inherited_comprehensive.py
 [test_main_openapi_allof_with_required_inherited_coverage]
 	main/openapi/allof_with_required_inherited_coverage.py
 [test_main_openapi_allof_with_required_inherited_edge_cases]
