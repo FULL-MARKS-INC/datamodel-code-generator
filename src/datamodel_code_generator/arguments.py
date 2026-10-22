@@ -947,10 +947,16 @@ typing_options.add_argument(
 )
 typing_options.add_argument(
     "--use-typed-nullable-map-values",
-    help="Type the values of nullable maps, schemas whose type array lists object, alone or with null or other "
-    "types, such as [object, null], [object] or [object, string], with additionalProperties, as their schema says, "
-    "with a model for object values. Without it the 0.83.0 form is kept, dict[str, Any] | None, or dict[str, Any] "
-    "without null.",
+    help="Type the values of nullable maps, schemas whose type array lists object alone or with null, such as "
+    "[object, null] or [object], with additionalProperties, as their schema says, with a model for object values. "
+    "Without it the 0.83.0 form is kept, dict[str, Any] | None, or dict[str, Any] without null.",
+    action="store_true",
+    default=None,
+)
+typing_options.add_argument(
+    "--use-typed-map-values-beside-other-types",
+    help="With --use-typed-nullable-map-values, also type the map values of type arrays that list object beside "
+    "other types, such as [object, string], as dict[str, int] | str instead of dict[str, Any] | str",
     action="store_true",
     default=None,
 )
@@ -979,6 +985,14 @@ typing_options.add_argument(
     "--use-specialized-enum",
     help="Use specialized Enum class (StrEnum, IntEnum). Requires --target-python-version 3.11+",
     action=BooleanOptionalAction,
+    default=None,
+)
+typing_options.add_argument(
+    "--keep-enum-member-values",
+    help="Write an enum as a plain Enum where the value base of --use-specialized-enum or --use-subclass-enum "
+    "would change a member value, such as 2.5 in an IntEnum; without it the base follows the schema type, as in "
+    "0.86.0",
+    action="store_true",
     default=None,
 )
 typing_options.add_argument(
