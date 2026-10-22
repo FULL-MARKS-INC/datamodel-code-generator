@@ -368,6 +368,7 @@ CLI_OPTION_META: dict[str, CLIOptionMeta] = {
     "--strip-default-none": CLIOptionMeta(name="--strip-default-none", category=OptionCategory.MODEL),
     "--dataclass-arguments": CLIOptionMeta(name="--dataclass-arguments", category=OptionCategory.MODEL),
     "--use-msgspec-tagged-unions": CLIOptionMeta(name="--use-msgspec-tagged-unions", category=OptionCategory.MODEL),
+    "--tag-msgspec-by-payload-name": CLIOptionMeta(name="--tag-msgspec-by-payload-name", category=OptionCategory.MODEL),
     "--use-msgspec-nullable-enum-alias": CLIOptionMeta(
         name="--use-msgspec-nullable-enum-alias", category=OptionCategory.MODEL
     ),
@@ -478,6 +479,9 @@ CLI_OPTION_META: dict[str, CLIOptionMeta] = {
         name="--no-deserialize-default-values", category=OptionCategory.FIELD
     ),
     "--alias-generator": CLIOptionMeta(name="--alias-generator", category=OptionCategory.MODEL),
+    "--pin-aliases-with-alias-generator": CLIOptionMeta(
+        name="--pin-aliases-with-alias-generator", category=OptionCategory.MODEL
+    ),
     "--no-alias": CLIOptionMeta(name="--no-alias", category=OptionCategory.FIELD),
     "--use-serialization-alias": CLIOptionMeta(name="--use-serialization-alias", category=OptionCategory.FIELD),
     "--use-title-as-name": CLIOptionMeta(name="--use-title-as-name", category=OptionCategory.FIELD),

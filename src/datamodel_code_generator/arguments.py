@@ -551,6 +551,15 @@ model_options.add_argument(
     default=None,
 )
 model_options.add_argument(
+    "--tag-msgspec-by-payload-name",
+    help="msgspec.Struct output only: tag the structs of a discriminated union with the property name the document "
+    "carries (for example 'pet-kind') instead of the Python name that property resolves to (pet_kind), which msgspec "
+    "looks for in the payload. --use-msgspec-tagged-unions already tags by the document's property name. Without "
+    "either option the Python name is kept.",
+    action="store_true",
+    default=None,
+)
+model_options.add_argument(
     "--use-msgspec-nullable-enum-alias",
     help="msgspec.Struct output only: write an enum that lists null as an Enum without the None member plus an "
     "Enum | None type alias, so that msgspec can decode it. Without it a plain Enum keeps the 0.83.0 None member, "
@@ -604,6 +613,15 @@ model_options.add_argument(
     "Matching generated aliases are omitted from individual Field() calls, "
     "except with --target-pydantic-version 2, which writes every alias.",
     choices=[a.value for a in AliasGenerator],
+    default=None,
+)
+model_options.add_argument(
+    "--pin-aliases-with-alias-generator",
+    help="pydantic_v2.dataclass output only: for a --target-pydantic-version older than 2.8, whose alias generators "
+    "can differ from the generated aliases, write the generated alias on every field of a dataclass whose config names "
+    "an alias generator, and read the generator a dataclass inherits from its base. Without it a dataclass field "
+    "keeps the alias it has without the generator, which the config then replaces.",
+    action="store_true",
     default=None,
 )
 model_options.add_argument(

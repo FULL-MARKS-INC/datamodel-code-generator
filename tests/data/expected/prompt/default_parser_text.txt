@@ -129,11 +129,13 @@
 - `--omit-redundant-reference-null`: Do not write None again at a reference to a model that holds null itself.
 - `--output-model-type`: Generate models from GraphQL with different output model types.
 - `--parent-scoped-naming`: Namespace models by their parent scope to avoid naming conflicts.
+- `--pin-aliases-with-alias-generator`: Decide a field's alias by the alias generator its model applies.
 - `--reuse-model`: Reuse identical model definitions instead of generating duplicates.
 - `--reuse-scope`: Scope for model reuse detection (root or tree).
 - `--skip-root-model`: Skip generation of root model when schema contains nested definitions.
 - `--strict-nullable`: Treat default field as a non-nullable field.
 - `--strip-default-none`: Remove fields with None as default value from generated models.
+- `--tag-msgspec-by-payload-name`: Tag the structs of a msgspec discriminated union with the property name of th...
 - `--target-pydantic-version`: Target Pydantic version for generated code compatibility.
 - `--target-python-version`: Target Python version for generated code syntax and imports.
 - `--union-mode`: Union mode for combining anyOf/oneOf schemas (smart or left_to_right).
