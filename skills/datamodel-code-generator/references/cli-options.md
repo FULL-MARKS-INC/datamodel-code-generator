@@ -131,6 +131,8 @@ Generated model class and package behavior.
 - `--use-root-model-sequence-interface`: Make non-null sequence-like Pydantic v2 RootModel classes implement collections.abc.Sequence by adding Sequence[T] inheritance and root-delegating __iter__, __getitem__, and __len__ methods
 - `--enable-faux-immutability`: Enable faux immutability
 - `--keep-model-order`: Keep generated models' order
+- `--order-constructor-fields-by-final-names`: Order the constructor fields of dataclass and msgspec.Struct models after every field has its final name. A field that overrides an inherited field renamed in another module is then matched to it and keeps its place; without it the override reads as a new field after the inherited default and is written keyword-only (kw_only=True).
+- `--order-constructor-fields-by-written-defaults`: Order the fields of msgspec.Struct models by the defaults they write. Under --strip-default-none an optional field whose None default is stripped still writes UNSET and goes after the required fields with the other optional fields; without it the field keeps its schema place among the required fields, and the struct is reordered only when a required field would then follow a default.
 - `--keyword-only`: Defined models as keyword only (for example dataclass(kw_only=True)).
 - `--frozen-dataclasses`: Generate frozen dataclasses (dataclass(frozen=True)). Only applies to dataclass output.
 - `--dataclass-arguments`: Custom dataclass arguments as a JSON dictionary, e.g. '{"frozen": true, "kw_only": true}'. Overrides --frozen-dataclasses and similar flags.
