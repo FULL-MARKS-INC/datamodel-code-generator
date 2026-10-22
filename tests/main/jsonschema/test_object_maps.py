@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import operator
 import sys
+import typing
 from functools import reduce
 from typing import TYPE_CHECKING, Any
 
@@ -73,10 +74,7 @@ OPTION_SETS = {
 
 
 def _verdict(model: Any, output_model_type: str, document: object) -> str:
-    """Return whether a generated model accepts a JSON document, with the first error type where Pydantic rejects it.
-
-    msgspec refuses to decode into a type it cannot express, such as a union of two dicts, with a TypeError.
-    """
+    """Return whether a generated model accepts a JSON document, with the first error type where Pydantic rejects it."""
     text = json.dumps(document)
     try:
         if output_model_type == "msgspec.Struct":
@@ -87,8 +85,6 @@ def _verdict(model: Any, output_model_type: str, document: object) -> str:
         return f"rejected ({error.errors()[0]['type']})"
     except msgspec.ValidationError:
         return "rejected"
-    except TypeError:
-        return "not decodable (TypeError)"
     return "accepted"
 
 
@@ -102,7 +98,8 @@ def test_object_maps(
 
     Without --use-single-dict-for-object-maps the maps are those of 0.86.0: a union of dicts, one per value type of
     the patterns, with the null and the other types of a type array left to the field, while the values typed under
-    --use-typed-nullable-map-values keep the other types of their type array.
+    --use-typed-nullable-map-values keep the other types of their type array. msgspec, which cannot decode a union of
+    several dicts, gets the one dict of the option there.
     """
     input_path = OBJECT_MAPS / f"{name}.json"
     run_main_and_assert(
@@ -125,7 +122,14 @@ def test_object_maps(
 
 
 def _payload_verdicts(output_file: Path, output_model_type: str, payloads: dict[str, Any]) -> str:
-    """Return whether the generated ``Model`` accepts the valid payload and each invalid change of it."""
+    """Return whether the generated ``Model`` accepts the valid payload and each invalid change of it.
+
+    typing caches subscriptions such as ``NotRequired[dict[str, int] | str]`` by equal arguments, and a union equals
+    its members in any order, so the caches are cleared first: Pydantic then tries the union members in the order this
+    output writes them, whatever an earlier test wrote.
+    """
+    for clear_cache in typing._cleanups:
+        clear_cache()
     with _generated_model(output_file, "object_maps_model", "Model") as model:
         verdicts = [f"valid: {_verdict(model, output_model_type, payloads['valid'])}"]
         verdicts.extend(
