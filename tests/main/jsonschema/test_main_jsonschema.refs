@@ -5727,6 +5727,10 @@ stdlib	main/jsonschema/deprecated_dataclass_with_prefixed_decorator.py
 	main/jsonschema/main_jsonschema/main_disable_warnings.py	= main/jsonschema/all_of_with_object.py
 [test_main_disable_warnings_config]
 	main/jsonschema/main_jsonschema/main_disable_warnings_config.py	= main/jsonschema/autodetect.py
+[test_main_discriminator_tag_value_kinds]
+msgspec	main/jsonschema/main_jsonschema/main_discriminator_tag_value_kinds[msgspec].py
+msgspec-tagged-unions	main/jsonschema/main_jsonschema/main_discriminator_tag_value_kinds[msgspec-tagged-unions].py	= main/jsonschema/main_jsonschema/main_discriminator_tag_value_kinds[msgspec].py
+pydantic-v2	main/jsonschema/main_jsonschema/main_discriminator_tag_value_kinds[pydantic-v2].py
 [test_main_duplicate_field_constraints]
 	main/jsonschema/duplicate_field_constraints//*.py
 [test_main_duplicate_field_constraints_msgspec]

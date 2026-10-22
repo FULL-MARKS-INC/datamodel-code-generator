@@ -117,6 +117,7 @@ from datamodel_code_generator.model._decisions.literal_default import decide_lit
 from datamodel_code_generator.model._decisions.tag_value import (
     enum_tag_literal,
     field_tag,
+    is_tag_value,
     mapped_tags,
     mapping_path_keys,
     redeclared_tag_field,
@@ -3313,12 +3314,29 @@ def _msgspec_null_enum_message(model: Enum) -> str | None:
     )
 
 
+def _is_enum_member_tag(
+    model: DataModel, field_name: str, tag_name: str, value: DiscriminatorValue, *, use_field_name: bool
+) -> bool:
+    """Return whether the Enum typing a variant's tag field has a member for ``value``, written as that member."""
+    enum_source = next(
+        (
+            enum_source
+            for field in model.fields
+            if _tag_field_matches(field, "source-name" if use_field_name else "python-or-original-name", tag_name)
+            and (enum_source := field.data_type.find_source(Enum))
+        ),
+        None,
+    ) or _get_enum_from_base(model, field_name, use_field_name=use_field_name)
+    return enum_source is not None and enum_source.find_member(value, coerce_strings=True) is not None
+
+
 def _discriminator_variants_are_valid(
     data_types: Iterable[DataType],
     field_name: str,
     mapping: dict[str, str],
     *,
     original_name: str | None = None,
+    enum_member_tags: bool = False,
 ) -> bool:
     discriminator_value_owners: dict[object, int] = {}
     for data_type, can_update_discriminator, owner in _iter_discriminator_data_types(data_types):
@@ -3341,7 +3359,21 @@ def _discriminator_variants_are_valid(
             require_literal=not can_update_discriminator,
             field_name_mode="source-name" if original_name is not None else "python-or-original-name",
         )
-        if not discriminator_values:
+        if not discriminator_values or not all(
+            is_tag_value(value, bool_literals=discriminator_model.SUPPORTS_BOOLEAN_LITERAL)
+            or (
+                enum_member_tags
+                and not discriminator_model.REQUIRES_TAGGED_UNION_DISCRIMINATOR
+                and _is_enum_member_tag(
+                    discriminator_model,
+                    field_name,
+                    original_name if original_name is not None else field_name,
+                    value,
+                    use_field_name=original_name is not None,
+                )
+            )
+            for value in discriminator_values
+        ):
             return False
         for key in (tag_key(value, "legacy-python-equality") for value in discriminator_values):
             if (previous_owner := discriminator_value_owners.get(key)) is not None and previous_owner != owner:
@@ -5269,6 +5301,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     field_name,
                     mapping,
                     original_name=property_name if field.SUPPORTS_DISCRIMINATOR else None,
+                    enum_member_tags=self.use_enum_values_in_discriminator,
                 ):
                     _remove_discriminator(field)
                     _clear_model_imports_cache_if_retained(model, can_retain_cache=can_retain_cache)
@@ -6069,6 +6102,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                                     copied_data_type.data_types,
                                     field_name,
                                     mapping,
+                                    enum_member_tags=self.use_enum_values_in_discriminator,
                                 ):
                                     copied_data_type.discriminator = field_name
                         replacement_context = generation_store._replace_data_type_and_detach_data_type_ref(  # noqa: SLF001

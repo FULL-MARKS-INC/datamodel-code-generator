@@ -14804,6 +14804,26 @@ def test_main_msgspec_discriminator_wire_name(output_file: Path, extra_args: lis
 
 
 @pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--output-model-type", "pydantic_v2.BaseModel"],
+        ["--output-model-type", "msgspec.Struct"],
+        ["--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions"],
+    ],
+    ids=["pydantic-v2", "msgspec", "msgspec-tagged-unions"],
+)
+def test_main_discriminator_tag_value_kinds(output_file: Path, extra_args: list[str]) -> None:
+    """Leave a union undiscriminated when a variant's tag is a value no Literal of the output holds (#5053)."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "discriminator_tag_value_kinds.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=[*extra_args, "--disable-timestamp", "--disable-warnings"],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.parametrize(
     ("extra_args", "expected_file"),
     [
         pytest.param([], "default.py", id="default"),

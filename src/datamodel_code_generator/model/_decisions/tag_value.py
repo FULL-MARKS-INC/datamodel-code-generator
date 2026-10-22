@@ -11,9 +11,9 @@ passes that apply tags), ``parser/jsonschema.py`` (``_SchemaTagFacts`` behind
 (``Struct._tag_options``, ``Struct.discriminator_tag``).
 
 The rows named ``legacy-*`` keep today's output where passes or backends disagree on a tag; the fix of each deletes
-its row (G05): ``legacy-value-of-any-kind`` (``FieldTagRule``), ``legacy-literal-only`` (``FieldTagSite``),
+its row (G05): ``legacy-literal-only`` (``FieldTagSite``),
 ``legacy-python-equality`` (``TagIdentity``), ``legacy-any-key`` (``MappingPathRule``) and the rows in the docstrings
-of ``redeclared_tag_field``, ``tagged_union_discriminator`` and ``struct_tag_conflicts``.
+of ``redeclared_tag_field`` and ``tagged_union_discriminator``.
 """
 
 from __future__ import annotations
@@ -84,6 +84,7 @@ __all__ = [
     "enum_tag_literal",
     "field_source_name",
     "field_tag",
+    "is_tag_value",
     "mapped_tags",
     "mapping_path_keys",
     "redeclared_tag_field",
@@ -128,14 +129,14 @@ FieldTagSite: TypeAlias = Literal["schema", "variant-field", "legacy-literal-onl
   ``const``, else the one value of its ``enum``, else the schema its ``$ref`` names; a value no ``Literal`` holds is no
   tag, and such a ``const`` ends the search.
 * ``variant-field``: L5, the tag field of a variant (``_get_discriminator_field_value``): its ``const``, its one
-  ``Literal`` or the one member of its Enum, of any kind (``legacy-value-of-any-kind``).
+  ``Literal`` or the one member of its Enum, of any kind (``value-of-another-kind``).
 * ``legacy-literal-only``: L6, a field of a msgspec Struct that redeclares the tag field of a tagged base
   (``_tag_fields_of_tagged_bases``): only its one ``Literal``, so a ``const`` or a one-member Enum there opts the
   Struct out of the inherited tag instead of tagging it.
 """
 
 FieldTagRule: TypeAlias = Literal[
-    "const", "one-literal", "one-member-enum", "referenced-schema", "legacy-value-of-any-kind"
+    "const", "one-literal", "one-member-enum", "referenced-schema", "value-of-another-kind"
 ]
 """The rows of ``field_tag``.
 
@@ -143,9 +144,9 @@ FieldTagRule: TypeAlias = Literal[
 * ``one-literal``: the type is a ``Literal`` of one value.
 * ``one-member-enum``: the type is an Enum of one member, or the ``enum`` holds one value, a value a ``Literal`` holds.
 * ``referenced-schema``: the tag of the schema the ``$ref`` names (``schema`` only).
-* ``legacy-value-of-any-kind``: a ``const`` or one-member Enum value of another kind (a float, an array, an object
-  or null) tags a variant too (``variant-field`` only), which no ``Literal`` and no msgspec tag holds: Pydantic output
-  fails to generate (``const: 1.5``, ``enum: [1.5]``) and msgspec output fails at import (``tag=1.5``).
+* ``value-of-another-kind``: a ``const`` or one-member Enum value of another kind (a float, an array or an object)
+  is the variant's tag too (``variant-field`` only), so no other row tags it; no ``Literal`` holds it
+  (``is_tag_value``), so its union is not discriminated.
 """
 
 VariantTagSource: TypeAlias = Literal["variant", "union", "nested"]
@@ -281,11 +282,11 @@ def field_tag(site: FieldTagSite, facts: FieldTagFacts, /) -> FieldTag | None:
 def _value_tag(site: FieldTagSite, value: Any, rule: Literal["const", "one-member-enum"]) -> FieldTag | None:
     """Return the tag a ``const`` or one-member Enum value gives: the value where a ``Literal`` holds it.
 
-    At a variant's field a value of any other kind tags too (``legacy-value-of-any-kind``).
+    At a variant's field a value of any other kind is its tag too (``value-of-another-kind``).
     """
     if is_literal_kind(literal_value_kind(value)):
         return FieldTag(value, rule)
-    return FieldTag(value, "legacy-value-of-any-kind") if site == "variant-field" else None
+    return FieldTag(value, "value-of-another-kind") if site == "variant-field" else None
 
 
 def variant_tags(source: VariantTagSource, facts: VariantTagFacts, /) -> VariantTags:
@@ -352,6 +353,14 @@ def mapped_tags(mapping: Mapping[str, str], /, *, schema_path: str, base_schema_
     ]
 
 
+def is_tag_value(value: Any, /, *, bool_literals: bool) -> bool:
+    """Return whether a variant's tag is a value its ``Literal`` holds, which a discriminated union needs.
+
+    ``bool_literals`` tells that the output writes bool literals (msgspec does not, and takes no bool tag).
+    """
+    return is_literal_kind(literal_value_kind(value), bool_literals=bool_literals)
+
+
 def enum_tag_literal(value: TagValue, member_value: Any, /) -> TagValue:
     """Return the tag a value naming an Enum member writes: the member's value where a ``Literal`` holds it.
 
@@ -415,11 +424,10 @@ def tagged_union_discriminator(declared: object, /, *, literal_property: str) ->
 def struct_tag_conflicts(value: TagValue | None, mapped: Iterable[str], /) -> bool:
     """Return whether a variant cannot take ``value`` as its msgspec tag: it has none, or a key naming it differs.
 
-    Row ``legacy-raw-mapping-key``: the key is compared as written, so the tag ``1`` that an integer Enum member gives
-    the key ``"1"`` (``enum_tag_literal``) differs from it and the union stays untagged, while Pydantic writes
-    ``Literal[1]``.
+    A mapping key is a string, so it names the tag whose text it is, as ``Enum.find_member`` reads keys: the key
+    ``"1"`` names the tag ``1`` an integer Enum member gives it (``enum_tag_literal``), as for ``Literal[1]``.
     """
-    return value is None or any(key != value for key in mapped)
+    return value is None or any(key != str(value) for key in mapped)
 
 
 def struct_tag_clash(

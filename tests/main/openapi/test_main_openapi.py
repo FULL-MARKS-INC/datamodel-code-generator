@@ -315,6 +315,22 @@ def test_main_openapi_discriminator_enum_use_enum_values(output_file: Path) -> N
 
 
 @pytest.mark.parametrize(
+    "extra_args",
+    [["--output-model-type", "pydantic_v2.BaseModel"], ["--output-model-type", "msgspec.Struct"]],
+    ids=["pydantic-v2", "msgspec"],
+)
+def test_main_openapi_discriminator_float_enum_use_enum_values(output_file: Path, extra_args: list[str]) -> None:
+    """Keep the discriminator of float enum members, which an enum member holds where a Literal holds no float."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "discriminator_enum_float_values.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=[*extra_args, "--use-enum-values-in-discriminator", "--disable-timestamp", "--disable-warnings"],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.parametrize(
     ("split_args", "expected_directory", "validation_module", "validation_data"),
     [
         ([], "enum_use_enum_values_modules", "pets", {"kind": "cat", "purr": "soft"}),
@@ -641,6 +657,17 @@ def test_main_openapi_discriminator_msgspec_inferred_property(output_file: Path,
         output_path=output_file,
         input_file_type="openapi",
         extra_args=["--output-model-type", "msgspec.Struct", "--disable-timestamp", *extra_args],
+        force_exec_validation=True,
+    )
+
+
+def test_main_openapi_discriminator_msgspec_integer_mapping(output_file: Path) -> None:
+    """Tag msgspec variants by integer Enum members that the string mapping keys name."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "discriminator_msgspec_integer_mapping.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=["--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions", "--disable-timestamp"],
         force_exec_validation=True,
     )
 

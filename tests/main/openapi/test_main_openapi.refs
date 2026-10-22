@@ -942,6 +942,9 @@ discriminator_enum_single_value_anyof.yaml-discriminator/enum_single_value_anyof
 discriminator_integer_mapping.yaml-discriminator/integer_mapping_use_enum_force_optional.py	main/openapi/discriminator/integer_mapping_use_enum_force_optional.py
 [test_main_openapi_discriminator_external_mapping]
 	main/openapi/discriminator/external_mapping.py
+[test_main_openapi_discriminator_float_enum_use_enum_values]
+msgspec	main/openapi/main_openapi/discriminator_float_enum_use_enum_values[msgspec].py
+pydantic-v2	main/openapi/main_openapi/discriminator_float_enum_use_enum_values[pydantic-v2].py
 [test_main_openapi_discriminator_float_mapping]
 	main/openapi/discriminator/float_mapping.py
 [test_main_openapi_discriminator_import_override_removes_original]
@@ -980,6 +983,8 @@ shared-variants	main/openapi/discriminator/mapping_msgspec_untagged_default_warn
 [test_main_openapi_discriminator_msgspec_inferred_property]
 default	main/openapi/main_openapi/discriminator_msgspec_inferred_property[default].py
 tagged-unions	main/openapi/main_openapi/discriminator_msgspec_inferred_property[tagged-unions].py	= main/openapi/main_openapi/discriminator_msgspec_inferred_property[default].py
+[test_main_openapi_discriminator_msgspec_integer_mapping]
+	main/openapi/main_openapi/discriminator_msgspec_integer_mapping.py
 [test_main_openapi_discriminator_no_mapping]
 	main/openapi/discriminator/no_mapping.py
 [test_main_openapi_discriminator_no_mapping_no_subtypes]
