@@ -24994,6 +24994,44 @@ def test_main_ref_sibling_nesting_too_deep(
     )
 
 
+def test_main_read_only_write_only_flag_diamonds(tmp_path: Path, output_file: Path) -> None:
+    """Resolve a field's readOnly/writeOnly flag through references that meet again, reading each target once."""
+    depth = 18
+    links: dict[str, Any] = {
+        f"N{index}": {
+            "anyOf": [
+                {"allOf": [{"$ref": f"#/x-links/N{index + 1}"}]},
+                {"allOf": [{"$ref": f"#/x-links/N{index + 1}"}]},
+            ]
+        }
+        for index in range(depth)
+    }
+    links[f"N{depth}"] = {"type": "string"}
+    (input_path := tmp_path / "flag_diamonds.json").write_text(
+        json.dumps({
+            "type": "object",
+            "properties": {"p": {"$ref": "#/x-links/N0"}, "q": {"type": "string", "readOnly": True}},
+            "x-links": links,
+        }),
+        encoding="utf-8",
+    )
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=[
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--read-only-write-only-model-type",
+            "request-response",
+        ],
+    )
+
+
 def test_main_jsonschema_recursive_ref(output_file: Path) -> None:
     """Test JSON Schema 2019-09 $recursiveRef with $recursiveAnchor."""
     run_main_and_assert(
@@ -25403,6 +25441,114 @@ def test_main_jsonschema_dynamic_ref_allof_base_class(output_file: Path) -> None
     assert_warnings_contain(
         warning_records, "allOf base class 'generic.json' cannot follow the $dynamicAnchor bindings"
     )
+
+
+def test_main_jsonschema_dynamic_ref_allof_base_class_request_response(output_file: Path) -> None:
+    """Split request/response variants without reading the references of a schema that declares a flagged field."""
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always", UserWarning)
+        run_main_and_assert(
+            input_path=JSON_SCHEMA_DATA_PATH / "dynamic_ref_allof_base_class" / "holder.json",
+            output_path=output_file,
+            input_file_type="jsonschema",
+            assert_func=assert_file_content,
+            extra_args=[
+                "--output-model-type",
+                "pydantic_v2.BaseModel",
+                "--read-only-write-only-model-type",
+                "request-response",
+            ],
+        )
+    assert_warnings_contain(
+        warning_records, "allOf base class 'generic.json' cannot follow the $dynamicAnchor bindings"
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "extra_args"),
+    [
+        ("read_only_write_only_inline_cycle.json", []),
+        ("read_only_write_only_ref_sibling_chain.json", []),
+        ("oneof_const_enum_nullable.yaml", []),
+        (
+            "discriminator_const_enum_msgspec.json",
+            ["--output-model-type", "msgspec.Struct", "--target-python-version", "3.10"],
+        ),
+    ],
+)
+@pytest.mark.parametrize("read_write_mode", ["request-response", "all"])
+def test_main_read_only_write_only_without_flags(
+    output_file: Path, input_name: str, extra_args: list[str], read_write_mode: str
+) -> None:
+    """Generate the default models when no schema the input reaches declares readOnly or writeOnly."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / input_name,
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=["--disable-timestamp", *extra_args, "--read-only-write-only-model-type", read_write_mode],
+    )
+
+
+def test_main_read_only_write_only_boolean_property(output_file: Path) -> None:
+    """Count a boolean property schema as an unflagged field of an allOf base."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "read_only_write_only_boolean_property.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=[
+            "--disable-timestamp",
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--read-only-write-only-model-type",
+            "all",
+        ],
+    )
+
+
+@pytest.mark.parametrize("flag", ["check", "report"])
+def test_schema_graph_check_of_read_write_splits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    output_file: Path,
+    capsys: pytest.CaptureFixture[str],
+    flag: str,
+) -> None:
+    """Report a model that does not split while the references to it read a request/response variant.
+
+    A reference under patternProperties makes the schema need variants, but no field of its model holds it; the check
+    (`1`) stops at the first such model and `report:<path>` appends each one as an `rw-split` line.
+    """
+    report_path = tmp_path / "checks.jsonl"
+    monkeypatch.setenv(CHECK_SCHEMA_GRAPH_ENV, {"check": "1", "report": f"report:{report_path}"}[flag])
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "read_only_write_only_pattern_properties_base.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=[
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--read-only-write-only-model-type",
+            "request-response",
+        ],
+        expected_exit=Exit.ERROR,
+        capsys=capsys,
+        expected_stderr_contains={
+            "check": "#/$defs/Patterned' does not split into request/response variants, but its references read a",
+            "report": "can not resolve classes",
+        }[flag],
+        output_should_not_exist=True,
+    )
+    if flag == "report":
+        assert_output(
+            "".join(
+                line
+                for line in report_path.read_text(encoding="utf-8").splitlines(keepends=True)
+                if '"rw-split"' in line
+            ),
+            name="report",
+        )
 
 
 def test_main_jsonschema_dynamic_ref_allof_inherited_fields(output_file: Path) -> None:
