@@ -1271,7 +1271,15 @@ def test_main_openapi_enum_const_positions(output_model: str, extra_args: list[s
             input_path=OPEN_API_DATA_PATH / "enum_const_positions.yaml",
             output_path=output_file,
             input_file_type="openapi",
-            extra_args=["--output-model-type", output_model, "--openapi-scopes", "schemas", "paths", *extra_args],
+            extra_args=[
+                "--output-model-type",
+                output_model,
+                "--read-const-beside-enum",
+                "--openapi-scopes",
+                "schemas",
+                "paths",
+                *extra_args,
+            ],
             force_exec_validation=True,
         )
     assert_output(
@@ -1295,7 +1303,13 @@ def test_main_openapi_single_value_enum_as_const_nullable_beside_const(output_mo
             input_path=OPEN_API_DATA_PATH / "enum_const_nullable.yaml",
             output_path=output_file,
             input_file_type="openapi",
-            extra_args=["--output-model-type", output_model, "--use-single-value-enum-as-const", "--strict-nullable"],
+            extra_args=[
+                "--output-model-type",
+                output_model,
+                "--use-single-value-enum-as-const",
+                "--read-const-beside-enum",
+                "--strict-nullable",
+            ],
             force_exec_validation=True,
         )
     assert_output(
@@ -1315,7 +1329,13 @@ def test_main_openapi_enum_const_unsatisfiable(output_file: Path) -> None:
             input_path=OPEN_API_DATA_PATH / "enum_const_unsatisfiable.yaml",
             output_path=output_file,
             input_file_type="openapi",
-            extra_args=["--output-model-type", "pydantic_v2.BaseModel", "--openapi-scopes", "paths"],
+            extra_args=[
+                "--output-model-type",
+                "pydantic_v2.BaseModel",
+                "--read-const-beside-enum",
+                "--openapi-scopes",
+                "paths",
+            ],
             force_exec_validation=True,
         )
     assert_output(
@@ -1324,6 +1344,40 @@ def test_main_openapi_enum_const_unsatisfiable(output_file: Path) -> None:
             for message in dict.fromkeys(str(record.message) for record in recorded if record.category is UserWarning)
         ),
         name="warnings",
+    )
+
+
+@pytest.mark.parametrize("output_model", ["pydantic_v2.BaseModel", "msgspec.Struct"])
+@pytest.mark.parametrize("name", ["enum_const_positions", "enum_const_nullable", "enum_const_unsatisfiable"])
+def test_main_openapi_enum_const_without_option(output_model: str, name: str, output_file: Path) -> None:
+    """Ignore a const beside an enum without --read-const-beside-enum, as 0.86.0 does."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / f"{name}.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=["--output-model-type", output_model, "--openapi-scopes", "schemas", "paths", "--strict-nullable"],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.parametrize("output_model", ["pydantic_v2.BaseModel", "msgspec.Struct"])
+@pytest.mark.parametrize("name", ["enum_const_positions", "enum_const_nullable"])
+def test_main_openapi_enum_const_single_value_without_option(output_model: str, name: str, output_file: Path) -> None:
+    """Read an enum beside a const as written under --use-single-value-enum-as-const alone, as 0.86.0 does."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / f"{name}.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=[
+            "--output-model-type",
+            output_model,
+            "--use-single-value-enum-as-const",
+            "--openapi-scopes",
+            "schemas",
+            "paths",
+            "--strict-nullable",
+        ],
+        force_exec_validation=True,
     )
 
 
@@ -6023,14 +6077,40 @@ def test_main_collapse_root_models_with_references_to_flat_types(output_file: Pa
     )
 
 
+@pytest.mark.cli_doc(
+    options=["--filter-literal-values"],
+    option_description="""Keep only the values of a `const` or an `enum` that meet the constraints beside them.
+
+JSON Schema validates a value against the `enum` and the keywords beside it, so `{"enum": ["hello", "goodbye"],
+"maxLength": 5}` admits `hello` only. With `--filter-literal-values`, the `Literal` or the Enum of a `const` or
+an `enum` holds the values that meet the `minLength`, `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`,
+`exclusiveMaximum`, `multipleOf` and `pattern` keywords beside them, as far as the generator can decide them (a
+`pattern` only where every regular expression engine reads it alike). A schema none of whose values meets them
+admits no value: it stays as written, with a warning. A field that writes a constraint itself, such as
+`Field(min_length=...)`, keeps the values that constraint checks. `--omit-redundant-constraints` includes this
+check. Without the option, every value stays and the keywords are written beside the type.""",
+    input_schema="openapi/max_items_enum.yaml",
+    cli_args=["--filter-literal-values"],
+    golden_output="main/openapi/max_items_enum.py",
+)
 def test_main_openapi_max_items_enum(output_file: Path) -> None:
-    """Test OpenAPI generation with max items enum."""
+    """Keep only the enum values that meet maxLength with --filter-literal-values."""
     run_main_and_assert(
         input_path=OPEN_API_DATA_PATH / "max_items_enum.yaml",
         output_path=output_file,
         input_file_type="openapi",
         assert_func=assert_file_content,
         expected_file="max_items_enum.py",
+        extra_args=["--filter-literal-values"],
+    )
+
+
+def test_main_openapi_max_items_enum_without_option(output_file: Path) -> None:
+    """Keep every enum value without --filter-literal-values, as 0.86.0 does."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "max_items_enum.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
     )
 
 

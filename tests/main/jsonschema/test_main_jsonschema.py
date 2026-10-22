@@ -6836,7 +6836,7 @@ a `Literal` instead of a root model. A `pattern` and a `multipleOf` the check ca
 @pytest.mark.parametrize(
     "extra_args",
     [
-        pytest.param(["--use-annotated"], id="annotated"),
+        pytest.param(["--use-annotated", "--filter-literal-values"], id="annotated"),
         pytest.param(["--use-annotated", "--omit-redundant-constraints"], id="annotated_option"),
         pytest.param(["--field-constraints", "--omit-redundant-constraints"], id="field_constraints_option"),
         pytest.param(
@@ -6955,6 +6955,8 @@ def test_main_literal_constraints(output_file: Path, extra_args: list[str]) -> N
             input_file_type="jsonschema",
             assert_func=assert_file_content,
             extra_args=[
+                "--read-const-beside-enum",
+                "--filter-literal-values",
                 *extra_args,
                 *("--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"),
             ],
@@ -7005,6 +7007,7 @@ def test_main_nullable_enum_literal_length(output_file: Path, extra_args: list[s
             assert_func=assert_file_content,
             extra_args=[
                 *extra_args,
+                "--filter-literal-values",
                 *("--enum-field-as-literal", "all", "--formatters", "builtin", "--disable-timestamp"),
                 *("--target-python-version", "3.10"),
             ],
@@ -7029,6 +7032,56 @@ def test_main_nullable_enum_literal_length(output_file: Path, extra_args: list[s
 
 
 @pytest.mark.parametrize(
+    ("name", "extra_args"),
+    [
+        pytest.param(name, extra_args, id=f"{name}-{args_id}")
+        for name, args in (
+            (
+                "literal_constraints",
+                {
+                    "default": [],
+                    "field_constraints": ["--field-constraints"],
+                    "use_annotated": ["--use-annotated"],
+                    "literal": ["--enum-field-as-literal", "all"],
+                    "literal_field_constraints": ["--enum-field-as-literal", "all", "--field-constraints"],
+                    "pydantic_dataclass": ["--output-model-type", "pydantic_v2.dataclass", "--field-constraints"],
+                    "dataclass": ["--output-model-type", "dataclasses.dataclass"],
+                    "typed_dict": ["--output-model-type", "typing.TypedDict"],
+                    "msgspec": ["--output-model-type", "msgspec.Struct"],
+                },
+            ),
+            ("literal_constraints_undecided", {"default": [], "literal": ["--enum-field-as-literal", "all"]}),
+            ("enum_multiple_of_big_integer", {"default": []}),
+        )
+        for args_id, extra_args in args.items()
+    ],
+)
+def test_main_literal_constraints_without_option(output_file: Path, name: str, extra_args: list[str]) -> None:
+    """Keep every value of a const or an enum without --filter-literal-values, as 0.86.0 does.
+
+    The values that fail the lengths, bounds, ``multipleOf`` and ``pattern`` beside them stay in the ``Literal`` or the
+    enum, and no unsatisfiable warning is made for them.
+    """
+    suffix = "yaml" if name == "literal_constraints_undecided" else "json"
+    with warnings.catch_warnings(record=True) as recorded_warnings:
+        warnings.simplefilter("always")
+        run_main_and_assert(
+            input_path=JSON_SCHEMA_DATA_PATH / f"{name}.{suffix}",
+            output_path=output_file,
+            input_file_type="jsonschema",
+            extra_args=[
+                *extra_args,
+                *("--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"),
+            ],
+            force_exec_validation=True,
+        )
+    assert_output(
+        "".join(f"{warning.message}\n" for warning in recorded_warnings if issubclass(warning.category, UserWarning)),
+        name="warnings",
+    )
+
+
+@pytest.mark.parametrize(
     "extra_args",
     [pytest.param([], id="default"), pytest.param(["--enum-field-as-literal", "all"], id="literal")],
 )
@@ -7042,7 +7095,11 @@ def test_main_literal_constraints_undecided(output_file: Path, extra_args: list[
         output_path=output_file,
         input_file_type="jsonschema",
         assert_func=assert_file_content,
-        extra_args=[*extra_args, "--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"],
+        extra_args=[
+            *extra_args,
+            "--filter-literal-values",
+            *("--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"),
+        ],
         force_exec_validation=True,
     )
 
@@ -7053,7 +7110,10 @@ def test_main_literal_constraints_big_integer(output_file: Path) -> None:
         input_path=JSON_SCHEMA_DATA_PATH / "enum_multiple_of_big_integer.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"],
+        extra_args=[
+            "--filter-literal-values",
+            *("--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"),
+        ],
         force_exec_validation=True,
     )
     assert_generated_model_json_validation(
@@ -7519,6 +7579,25 @@ def test_main_jsonschema_enum_value_base_kinds(output_model: str, extra_args: li
     )
 
 
+@pytest.mark.cli_doc(
+    options=["--read-const-beside-enum"],
+    option_description="""Read a `const` beside an `enum` as JSON Schema does.
+
+A `const` that admits some but not all values of the `enum` beside it narrows the schema to the admitted
+values, while the enum class keeps every value as written. With `--read-const-beside-enum`, a value whose schema
+names such an enum, a property, an item, a map value or key, a union branch or a `$ref` to a definition, is typed
+by the const: `Literal[<Enum>.<member>]` when the members of the enum equal their values (`IntEnum`, `StrEnum`,
+`--use-subclass-enum`), the const's own `Literal`, or `None` for a null const. A plain `Enum`, and any msgspec
+enum, keeps the enum type and warns once per schema location that the other values are accepted. A schema whose
+const is none of its enum values admits no value and is generated as written with a warning. Under
+`--use-single-value-enum-as-const`, an `enum` that admits the `const` beside it, such as
+`{"enum": ["a", "b"], "const": "a"}`, is read as that `const` without the enum class written beside it otherwise,
+except one with `nullable: true` and a const other than `null`. Without the option, a `const` beside an `enum` is
+ignored.""",
+    input_schema="jsonschema/enum_const_positions.json",
+    cli_args=["--read-const-beside-enum"],
+    golden_output="main/jsonschema/main_jsonschema/enum_const_positions[default-pydantic-v2].py",
+)
 @pytest.mark.parametrize(
     ("output_model", "extra_args"),
     [
@@ -7549,6 +7628,8 @@ def test_main_jsonschema_enum_value_base_kinds(output_model: str, extra_args: li
 def test_main_jsonschema_enum_const_positions(output_model: str, extra_args: list[str], output_file: Path) -> None:
     """Type a value by the const that admits some but not all values of the enum beside it.
 
+    This needs --read-const-beside-enum; without it the output is the same as for 0.86.0, which ignores the const.
+
     Every enum class, of a property or a definition, keeps its values as written. A value it types (an item, a map
     value, a union branch, a definition through ``$ref``) is ``Literal[<Enum>.<member>]`` when the members equal their
     values (``IntEnum``, ``StrEnum``, ``--use-subclass-enum``), and None for a null const. A plain ``Enum``, and any
@@ -7563,7 +7644,7 @@ def test_main_jsonschema_enum_const_positions(output_model: str, extra_args: lis
             input_path=JSON_SCHEMA_DATA_PATH / "enum_const_positions.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", output_model, *extra_args],
+            extra_args=["--output-model-type", output_model, "--read-const-beside-enum", *extra_args],
             force_exec_validation=True,
         )
     assert_output(
@@ -7614,7 +7695,14 @@ def test_main_jsonschema_enum_const_forward_positions(
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_forward_positions.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model, "--formatters", "builtin", *extra_args],
+        extra_args=[
+            "--output-model-type",
+            output_model,
+            "--read-const-beside-enum",
+            "--formatters",
+            "builtin",
+            *extra_args,
+        ],
         force_exec_validation=True,
     )
 
@@ -7628,7 +7716,7 @@ def test_main_jsonschema_enum_const_integral_float(output_file: Path) -> None:
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_integral_float.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--target-python-version", "3.11"],
+        extra_args=["--read-const-beside-enum", "--target-python-version", "3.11"],
         force_exec_validation=True,
     )
     assert_generated_model_json_validation(
@@ -7661,7 +7749,7 @@ def test_main_jsonschema_enum_const_integral_float_literal(
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_integral_float_literal.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model, *extra_args],
+        extra_args=["--output-model-type", output_model, "--read-const-beside-enum", *extra_args],
         force_exec_validation=True,
     )
     if output_model != "typing.TypedDict":
@@ -7687,7 +7775,13 @@ def test_main_jsonschema_enum_const_hidden_by_field(output_model: str, strategy:
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_hidden_by_field.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model, "--field-type-collision-strategy", strategy],
+        extra_args=[
+            "--output-model-type",
+            output_model,
+            "--read-const-beside-enum",
+            "--field-type-collision-strategy",
+            strategy,
+        ],
         force_exec_validation=True,
     )
     with _generated_model(output_file, "enum_const_hidden_by_field", "Model") as model:
@@ -7719,7 +7813,7 @@ def test_main_jsonschema_enum_const_type_list(output_model: str, extra_args: lis
             input_path=JSON_SCHEMA_DATA_PATH / "enum_const_type_list.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", output_model, *extra_args],
+            extra_args=["--output-model-type", output_model, "--read-const-beside-enum", *extra_args],
             force_exec_validation=True,
         )
     assert_output(
@@ -7742,7 +7836,7 @@ def test_main_jsonschema_read_as_const_marker_in_document(output_file: Path) -> 
             input_path=JSON_SCHEMA_DATA_PATH / "read_as_const_marker_in_document.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
+            extra_args=["--output-model-type", "pydantic_v2.BaseModel", "--read-const-beside-enum"],
             force_exec_validation=True,
         )
     assert_output(
@@ -7762,7 +7856,7 @@ def test_main_jsonschema_enum_const_discriminator_tag(output_file: Path) -> None
             input_path=JSON_SCHEMA_DATA_PATH / "enum_const_discriminator_tag.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", "msgspec.Struct"],
+            extra_args=["--output-model-type", "msgspec.Struct", "--read-const-beside-enum"],
             force_exec_validation=True,
         )
     assert_output(
@@ -7781,7 +7875,13 @@ def test_main_jsonschema_single_value_enum_as_const_titles(output_model: str, ou
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_titles.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model, "--use-single-value-enum-as-const", "--use-title-as-name"],
+        extra_args=[
+            "--output-model-type",
+            output_model,
+            "--use-single-value-enum-as-const",
+            "--read-const-beside-enum",
+            "--use-title-as-name",
+        ],
         force_exec_validation=True,
     )
 
@@ -7807,7 +7907,7 @@ def test_main_jsonschema_enum_const_non_literal(output_model: str, extra_args: l
             input_path=JSON_SCHEMA_DATA_PATH / "enum_const_non_literal.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", output_model, *extra_args],
+            extra_args=["--output-model-type", output_model, "--read-const-beside-enum", *extra_args],
             force_exec_validation=True,
         )
     assert_output(
@@ -7828,7 +7928,7 @@ def test_main_jsonschema_enum_const_unsatisfiable(output_model: str, output_file
             input_path=JSON_SCHEMA_DATA_PATH / "enum_const_unsatisfiable.json",
             output_path=output_file,
             input_file_type="jsonschema",
-            extra_args=["--output-model-type", output_model],
+            extra_args=["--output-model-type", output_model, "--read-const-beside-enum"],
             force_exec_validation=True,
         )
     assert_output(
@@ -7847,7 +7947,7 @@ def test_main_jsonschema_enum_const_draft_04(output_model: str, output_file: Pat
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_draft_04.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model],
+        extra_args=["--output-model-type", output_model, "--read-const-beside-enum"],
         force_exec_validation=True,
     )
 
@@ -7884,6 +7984,7 @@ def test_main_jsonschema_enum_const_collapsed_root_models(
                 output_model,
                 "--use-subclass-enum",
                 "--collapse-root-models",
+                "--read-const-beside-enum",
                 *extra_args,
             ],
             force_exec_validation=True,
@@ -7915,11 +8016,114 @@ def test_main_jsonschema_enum_const_collapsed_root_modules(output_dir: Path) -> 
         input_path=JSON_SCHEMA_DATA_PATH / "enum_const_collapsed_root_modules",
         output_path=output_dir,
         input_file_type="jsonschema",
-        extra_args=["--use-subclass-enum", "--collapse-root-models"],
+        extra_args=["--use-subclass-enum", "--collapse-root-models", "--read-const-beside-enum"],
         force_exec_validation=True,
         runtime_validation_module="holder",
         runtime_validation_model_name="Holder",
         runtime_validation_data={"u": "b", "m": {"b": 1}},
+    )
+
+
+@pytest.mark.parametrize(
+    ("output_model", "name", "extra_args"),
+    [
+        pytest.param(
+            output_model,
+            name,
+            extra_args,
+            id=f"{case_id}-{output_model}",
+            marks=BLACK_PY314_SKIP if case_id == "forward-positions" else (),
+        )
+        for case_id, name, extra_args in (
+            ("positions", "enum_const_positions", []),
+            ("hidden", "enum_const_hidden_by_field", ["--field-type-collision-strategy", "rename-type"]),
+            ("type-list", "enum_const_type_list", []),
+            ("discriminator-tag", "enum_const_discriminator_tag", []),
+            ("non-literal", "enum_const_non_literal", []),
+            ("unsatisfiable", "enum_const_unsatisfiable", []),
+            ("integral-float", "enum_const_integral_float", ["--target-python-version", "3.11"]),
+            ("draft-04", "enum_const_draft_04", []),
+            ("marker-in-document", "read_as_const_marker_in_document", []),
+            (
+                "forward-positions",
+                "enum_const_forward_positions",
+                ["--target-python-version", "3.14", "--keep-model-order"],
+            ),
+            (
+                "collapsed-root-models",
+                "enum_const_collapsed_root_models",
+                ["--use-subclass-enum", "--collapse-root-models"],
+            ),
+        )
+        for output_model in ("pydantic_v2.BaseModel", "msgspec.Struct")
+        if not (case_id == "non-literal" and output_model == "msgspec.Struct")
+    ],
+)
+def test_main_jsonschema_enum_const_without_option(
+    output_model: str, name: str, extra_args: list[str], output_file: Path
+) -> None:
+    """Ignore a const beside an enum without --read-const-beside-enum, as 0.86.0 does.
+
+    Every enum class keeps its values and every value that names it is typed by the enum, with no warning.
+    """
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / f"{name}.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=["--output-model-type", output_model, *extra_args],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("output_model", "name", "extra_args"),
+    [
+        pytest.param(output_model, name, extra_args, id=f"{case_id}-{output_model}")
+        for case_id, name, extra_args in (
+            ("positions", "enum_const_positions", []),
+            ("type-list", "enum_const_type_list", []),
+            ("non-literal", "enum_const_non_literal", []),
+            ("integral-float-literal", "enum_const_integral_float_literal", []),
+            ("titles", "enum_const_titles", ["--use-title-as-name"]),
+            ("marker-in-document", "read_as_const_marker_in_document", []),
+        )
+        for output_model in ("pydantic_v2.BaseModel", "msgspec.Struct")
+        if not (case_id in {"non-literal", "integral-float-literal"} and output_model == "msgspec.Struct")
+    ],
+)
+def test_main_jsonschema_enum_const_single_value_without_option(
+    output_model: str, name: str, extra_args: list[str], output_file: Path
+) -> None:
+    """Read an enum beside a const as written under --use-single-value-enum-as-const alone, as 0.86.0 does.
+
+    Reading it as the const needs --read-const-beside-enum too.
+    """
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / f"{name}.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=["--output-model-type", output_model, "--use-single-value-enum-as-const", *extra_args],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.parametrize("output_model", ["pydantic_v2.BaseModel", "msgspec.Struct"])
+def test_main_jsonschema_single_value_enum_as_const_reads_const_beside_enum(
+    output_model: str, output_file: Path
+) -> None:
+    """Read an enum that admits the const beside it as that const under --read-const-beside-enum."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "single_value_enum_as_const" / "schema.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=[
+            "--output-model-type",
+            output_model,
+            "--use-single-value-enum-as-const",
+            "--read-const-beside-enum",
+            "--formatters",
+            "builtin",
+        ],
     )
 
 
@@ -10478,9 +10682,7 @@ become one Enum with branch titles as member names when there are two or more an
 of one JSON type; otherwise each branch is typed as written, such as `Literal['a'] | None` for one
 value beside a `null` branch or `Literal['a'] | Literal[1]` for values of different JSON types. A
 schema with one enum value is typed `Literal[...]` instead of a one-member Enum, except one with
-`nullable: true` and a value other than `null`, which keeps its enum and is read as written. An
-`enum` that admits the `const` beside it, such as `{"enum": ["a", "b"], "const": "a"}`, is read as
-that `const` the same way, without the enum class written beside it otherwise. The
+`nullable: true` and a value other than `null`, which keeps its enum and is read as written. The
 option reads `const` branches the same way, which without it merge into one Enum in those cases
 too. Instance data such as `default` and `examples`, extension values (`x-...` except
 `x-propertyNames`), links and servers stay as written, so a schema kept under an extension
@@ -10506,9 +10708,7 @@ def test_main_jsonschema_single_value_enum_as_const(output_file: Path) -> None:
     of one JSON type; otherwise each branch is typed as written, such as `Literal['a'] | None` for one
     value beside a `null` branch or `Literal['a'] | Literal[1]` for values of different JSON types. A
     schema with one enum value is typed `Literal[...]` instead of a one-member Enum, except one with
-    `nullable: true` and a value other than `null`, which keeps its enum and is read as written. An
-    `enum` that admits the `const` beside it, such as `{"enum": ["a", "b"], "const": "a"}`, is read as
-    that `const` the same way, without the enum class written beside it otherwise. The
+    `nullable: true` and a value other than `null`, which keeps its enum and is read as written. The
     option reads `const` branches the same way, which without it merge into one Enum in those cases
     too. Instance data such as `default` and `examples`, extension values (`x-...` except
     `x-propertyNames`), links and servers stay as written, so a schema kept under an extension

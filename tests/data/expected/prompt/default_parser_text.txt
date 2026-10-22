@@ -29,6 +29,7 @@
 - `--disable-future-imports`: Prevent automatic addition of __future__ imports in generated code.
 - `--enum-field-as-literal`: Convert all enum fields to Literal types instead of Enum classes.
 - `--enum-field-as-literal-map`: Override enum/literal generation per-field via JSON mapping.
+- `--filter-literal-values`: Keep only the values of a `const` or an `enum` that meet the constraints beside them.
 - `--ignore-enum-constraints`: Ignore enum constraints and use base string type instead of Enum classes.
 - `--import-overrides`: Override modules for generated imports by symbol name.
 - `--no-use-annotated`
@@ -39,6 +40,7 @@
 - `--no-use-union-operator`: Use Union[X, Y] / Optional[X] instead of X | Y union operator.
 - `--output-date-class`: Specify date class type for date schema fields.
 - `--output-datetime-class`: Specify datetime class type for date-time schema fields.
+- `--read-const-beside-enum`: Read a `const` beside an `enum` as JSON Schema does.
 - `--strict-types`: Enable strict type validation for specified Python types.
 - `--type-mappings`: Override default type mappings for schema formats.
 - `--type-overrides`: Replace schema model types with custom Python types via JSON mapping.

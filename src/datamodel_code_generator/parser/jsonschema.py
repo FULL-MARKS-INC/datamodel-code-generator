@@ -2685,15 +2685,16 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         Const branches that --use-single-value-enum-as-const read merge into one Enum only when there are two or more
         and all hold values of one JSON type; otherwise each branch is typed as written, each const as its Literal and
-        null as None. Without the option, a document's own read-as-const marker reads nothing. The values are those that
-        meet their branch's constraints and the parent's (``_combined_values_admitted``), with all the consts as written
-        when some do not; the parent's field writes its own when ``writes``.
+        null as None. Under --read-const-beside-enum, without the option a document's own read-as-const marker reads
+        nothing; without --read-const-beside-enum it reads, as in 0.86.0. The values are those that meet their branch's
+        constraints and the parent's (``_combined_values_admitted``), with all the consts as written when some do not;
+        the parent's field writes its own when ``writes``.
         """
         enum_values: list[Any] = []
         branches: list[JsonSchemaObject] = []
         nullable = False
         inferred_type: str | None = None
-        read_as_const = self.use_single_value_enum_as_const
+        read_as_const = self.use_single_value_enum_as_const or not self.read_const_beside_enum
 
         for item in items:
             if item is False:
@@ -2759,8 +2760,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         A const is kept when it meets its branch's constraints and those of the parent its field leaves out
         (``_literal_written``); a const that meets its branch's and every one of the parent's is a value the schema
-        admits (``_admitted_or_warn``).
+        admits (``_admitted_or_warn``). None without --filter-literal-values.
         """
+        if not self.checks_literal_values:
+            return None
         keywords: dict[str, None] = {}
         own: list[bool] = []
         for value, branch in zip(values, branches, strict=True):
@@ -2784,6 +2787,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """
         if not (
             writes
+            and self.checks_literal_values
             and self.data_model_field_type.SUPPORTS_FIELD_CONSTRAINTS
             and not self.config.omit_redundant_constraints
             and _literal_constraints(obj)
@@ -2809,6 +2813,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     def _check_literal_const(self, obj: JsonSchemaObject, const: object) -> None:
         """Warn when a const does not meet every constraint beside it that the literal check decides."""
+        if not self.checks_literal_values:
+            return
         decided, met, _ = _literal_met(obj, [const], NO_KEYWORDS)
         self._admitted_or_warn(obj, met, met, ("const", *decided))
 
@@ -2817,8 +2823,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         The values a const beside the enum leaves decide whether the schema admits any value; the schema itself when
         every value meets them or none is admitted (``_admitted_or_warn``). The copy keeps the values as written.
+        Without --filter-literal-values the schema itself.
         """
-        if not _literal_constraints(obj):
+        if not self.checks_literal_values or not _literal_constraints(obj):
             return obj
         decided, met, kept = _literal_met(obj, obj.enum, written)
         if excluded := self._enum_positions_outside_const(obj):
@@ -14253,8 +14260,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         Draft-04 has no const keyword. A const equal to none of the values admits no value: the schema is read as
         written, and a warning says so once per schema location unless the intersection warning already reports it.
+        Without --read-const-beside-enum a const beside an enum excludes no value.
         """
-        if "const" not in obj.extras or not self.schema_features.const_support:
+        if not self.read_const_beside_enum or "const" not in obj.extras or not self.schema_features.const_support:
             return set()
         const = obj.extras["const"]
         excluded = {position for position, value in enumerate(obj.enum) if not _json_literal_values_equal(const, value)}
@@ -14304,13 +14312,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _reads_enum_as_const(self, obj: JsonSchemaObject) -> bool:
         """Return whether --use-single-value-enum-as-const reads an enum that admits the const beside it as that const.
 
-        The option marks each schema holding a const; without it, a document's own marker reads nothing. The enum is
-        read as written beside ``nullable: true`` and a const other than null, as the option keeps such a one-value
-        enum, since a const does not carry nullable, and when the const's type would admit other values
-        (``_const_type_is_exact``).
+        Only with --read-const-beside-enum. The option marks each schema holding a const; without it, a document's own
+        marker reads nothing. The enum is read as written beside ``nullable: true`` and a const other than null, as the
+        option keeps such a one-value enum, since a const does not carry nullable, and when the const's type would admit
+        other values (``_const_type_is_exact``).
         """
         return bool(
-            self.use_single_value_enum_as_const
+            self.read_const_beside_enum
+            and self.use_single_value_enum_as_const
             and obj.read_as_const
             and "const" in obj.extras
             and (exact := self._exact_const_enum_value(obj))

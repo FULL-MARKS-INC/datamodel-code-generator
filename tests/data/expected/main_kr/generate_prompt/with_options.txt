@@ -35,6 +35,7 @@ What other options should I use?
 - `--disable-future-imports`: Prevent automatic addition of __future__ imports in generated code.
 - `--enum-field-as-literal`: Convert all enum fields to Literal types instead of Enum classes.
 - `--enum-field-as-literal-map`: Override enum/literal generation per-field via JSON mapping.
+- `--filter-literal-values`: Keep only the values of a `const` or an `enum` that meet the constraints beside them.
 - `--ignore-enum-constraints`: Ignore enum constraints and use base string type instead of Enum classes.
 - `--import-overrides`: Override modules for generated imports by symbol name.
 - `--no-use-annotated`
@@ -45,6 +46,7 @@ What other options should I use?
 - `--no-use-union-operator`: Use Union[X, Y] / Optional[X] instead of X | Y union operator.
 - `--output-date-class`: Specify date class type for date schema fields.
 - `--output-datetime-class`: Specify datetime class type for date-time schema fields.
+- `--read-const-beside-enum`: Read a `const` beside an `enum` as JSON Schema does.
 - `--strict-types`: Enable strict type validation for specified Python types.
 - `--type-mappings`: Override default type mappings for schema formats.
 - `--type-overrides`: Replace schema model types with custom Python types via JSON mapping.
@@ -452,6 +454,13 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
                         "literal", "priority": "enum"}'. Overrides --enum-
                         field-as-literal for matched fields.
   --field-constraints   Use field constraints and not con* annotations
+  --filter-literal-values
+                        Keep only the values of a `const` or an `enum` that
+                        meet the `minLength`, `maxLength`, `pattern`, bound
+                        and `multipleOf` constraints beside them in its
+                        `Literal` or Enum, as JSON Schema validates them; a
+                        schema none of whose values meets them stays as
+                        written with a warning
   --ignore-enum-constraints
                         Ignore enum constraints and use the base type (e.g.,
                         str, int) instead of generating Enum classes
@@ -466,6 +475,15 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
                         such as NonNegativeInt, and the length and number
                         constraints a const or enum Literal meets by its
                         values
+  --read-const-beside-enum
+                        Read a `const` beside an `enum` as JSON Schema does: a
+                        value whose schema names the enum is typed by the
+                        const that narrows it (`Literal[Enum.member]`, a
+                        Literal or None) instead of the enum class that lists
+                        the values the const excludes, and under --use-single-
+                        value-enum-as-const an `enum` that admits its `const`
+                        is read as that `const` instead of an Enum, except one
+                        with `nullable: true` and a value other than null
   --set-default-enum-member
                         Deprecated: --set-default-enum-member is deprecated.
                         Use --deserialize-default-values enum instead.
@@ -521,15 +539,14 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
                         have subtypes (Pydantic v2 only)
   --use-single-value-enum-as-const
                         Treat `enum` with a single value as `const` with that
-                        value, which JSON Schema defines as equal, and an
-                        `enum` that admits the `const` beside it as that
-                        `const`: oneOf/anyOf branches such as {"type":
-                        "string", "enum": ["low"]} merge into one Enum when
-                        there are two or more and all hold values of one JSON
-                        type, otherwise each branch is typed as written, and
-                        such a schema is typed Literal[...] instead of an
-                        Enum, except one with `nullable: true` and a value
-                        other than null, which is read as written
+                        value, which JSON Schema defines as equal: oneOf/anyOf
+                        branches such as {"type": "string", "enum": ["low"]}
+                        merge into one Enum when there are two or more and all
+                        hold values of one JSON type, otherwise each branch is
+                        typed as written, and a schema with one enum value is
+                        typed Literal[...] instead of a one-member Enum,
+                        except one with `nullable: true` and a value other
+                        than null, which is read as written
   --use-site-models-for-constrained-refs
                         Give an allOf of $ref members whose other parts add
                         constraints, an enum or a type its own model of the

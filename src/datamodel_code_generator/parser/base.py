@@ -3947,6 +3947,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self.deserialize_default_value_types: frozenset[DefaultValueType] = frozenset(config.deserialize_default_values)
         self._decimal_default_warning_count = 0
         self._decimal_default_warning_examples: list[str] | None = None
+        self.checks_literal_values = config.filter_literal_values or config.omit_redundant_constraints
         self._data_model_field_common_kwargs_cache: dict[str, Any] = {
             "use_missing_sentinel": self.use_missing_sentinel,
             "target_python_version": self.target_python_version,
@@ -4124,6 +4125,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self.use_msgspec_nullable_enum_alias = config.use_msgspec_nullable_enum_alias
         self.use_typed_nullable_map_values = config.use_typed_nullable_map_values
         self.use_single_value_enum_as_const = config.use_single_value_enum_as_const
+        self.read_const_beside_enum = config.read_const_beside_enum
         self.known_third_party = config.known_third_party
         self.custom_formatter = config.custom_formatters
         self.custom_formatters_kwargs = config.custom_formatters_kwargs

@@ -162,16 +162,16 @@ classDiagram
 
 | Config model | Field count | Purpose |
 | --- | ---: | --- |
-| `BaseGenerateConfig` | 190 | Shared generation options. |
-| `GenerateConfig` | 205 | Public `generate()` configuration. |
-| `ParserConfig` | 155 | Base parser dependency injection and parser options. |
-| `JSONSchemaParserConfig` | 157 | JSON Schema parser options. |
-| `OpenAPIParserConfig` | 164 | OpenAPI-specific parser options. |
-| `AsyncAPIParserConfig` | 165 | AsyncAPI-specific parser options. |
-| `XMLSchemaParserConfig` | 158 | XML Schema-specific parser options. |
-| `ProtobufParserConfig` | 158 | Protocol Buffers-specific parser options. |
-| `AvroParserConfig` | 157 | Avro-specific parser options. |
-| `GraphQLParserConfig` | 158 | GraphQL-specific parser options. |
+| `BaseGenerateConfig` | 192 | Shared generation options. |
+| `GenerateConfig` | 207 | Public `generate()` configuration. |
+| `ParserConfig` | 157 | Base parser dependency injection and parser options. |
+| `JSONSchemaParserConfig` | 159 | JSON Schema parser options. |
+| `OpenAPIParserConfig` | 166 | OpenAPI-specific parser options. |
+| `AsyncAPIParserConfig` | 167 | AsyncAPI-specific parser options. |
+| `XMLSchemaParserConfig` | 160 | XML Schema-specific parser options. |
+| `ProtobufParserConfig` | 160 | Protocol Buffers-specific parser options. |
+| `AvroParserConfig` | 159 | Avro-specific parser options. |
+| `GraphQLParserConfig` | 160 | GraphQL-specific parser options. |
 
 ### Formatter Names
 
@@ -318,8 +318,8 @@ all values of the `enum` beside it leaves every enum class as written; `parse_en
 builds (`_note_const_narrowing`), the end of L1 marks every value that names that model, and L5
 `__type_const_narrowed_values` types those values. A Literal enum route (`_enum_value_type`), a `propertyNames` key and
 a Literal root type keep only the admitted values (`_const_narrowed_enum`); a const equal to none of the values only
-warns. Under `--use-single-value-enum-as-const` each enum route reads an enum that admits the const beside it as that
-const, without an enum class (`_reads_enum_as_const`); like the L0 rewrite, it keeps an enum beside `nullable: true` and
+warns. Under `--read-const-beside-enum` and `--use-single-value-enum-as-const` each enum route reads an enum that admits
+the const beside it as that const, without an enum class (`_reads_enum_as_const`); like the L0 rewrite, it keeps an enum beside `nullable: true` and
 a const other than null, and a model built for the schema object itself then holds only the admitted values
 (`_definition_enum`). An object map, an object without `properties` whose keys and values `patternProperties`,
 `propertyNames` or `additionalProperties` type, is built by one builder at every position (`_parse_object_map`): one

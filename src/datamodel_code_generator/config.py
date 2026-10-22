@@ -266,6 +266,8 @@ class ParserConfig(BaseModel):
     use_msgspec_nullable_enum_alias: bool = False
     use_typed_nullable_map_values: bool = False
     use_single_value_enum_as_const: bool = False
+    read_const_beside_enum: bool = False
+    filter_literal_values: bool = False
     known_third_party: list[str] | None = None
     custom_formatters: list[str] | None = None
     custom_formatters_kwargs: dict[str, Any] | None = None
