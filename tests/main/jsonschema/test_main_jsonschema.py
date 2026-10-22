@@ -11892,13 +11892,36 @@ def test_main_jsonschema_pattern_properties_boolean(output_file: Path) -> None:
         extra_args=[
             "--output-model-type",
             "pydantic_v2.BaseModel",
+            "--use-single-dict-for-object-maps",
         ],
         force_exec_validation=True,
     )
 
 
+@pytest.mark.cli_doc(
+    options=["--use-single-dict-for-object-maps"],
+    option_description="""Type an object map as one dict instead of a union of dicts.
+
+An object map is an object without `properties` whose keys `patternProperties` or `propertyNames` constrain.
+With `--use-single-dict-for-object-maps` it is one dict whose key pattern joins every pattern and whose value is
+the union of their value types, so an object that mixes the keys of several patterns is accepted; a dict that
+cannot express the object exactly (keys outside the patterns, different value schemas) is named by a warning.
+The null and the other types of a `type` array, such as `[object, string, null]`, join the dict in a union, and its
+property counts stay on the dict. With `--generate-schema-validators`, the dict root of a validated map also takes
+its keys from `propertyNames` and counts the keys its patterns admit, the model of an object without `properties`
+joins the other types of its `type` array, and a pattern checks every declared key whose schema it adds an assertion
+to. Without the option the map is written as in 0.86.0: a union of dicts, one per value type of the patterns, the
+other types of a `type` array left out.""",
+    input_schema="jsonschema/pattern_properties_merge.json",
+    cli_args=["--output-model-type", "pydantic_v2.BaseModel", "--use-single-dict-for-object-maps"],
+    golden_output="jsonschema/pattern_properties_merge.py",
+    comparison_output="jsonschema/main_jsonschema/pattern_properties_merge_without_single_dict.py",
+)
 def test_main_jsonschema_pattern_properties_merge(output_file: Path) -> None:
-    """Test merging multiple patternProperties with same value type into single regex pattern."""
+    """Merge patternProperties into one dict whose value is the union of their value types.
+
+    Under --use-single-dict-for-object-maps the patterns join one key pattern and the value types one union.
+    """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "pattern_properties_merge.json",
         output_path=output_file,
@@ -11908,7 +11931,19 @@ def test_main_jsonschema_pattern_properties_merge(output_file: Path) -> None:
         extra_args=[
             "--output-model-type",
             "pydantic_v2.BaseModel",
+            "--use-single-dict-for-object-maps",
         ],
+        force_exec_validation=True,
+    )
+
+
+def test_main_jsonschema_pattern_properties_merge_without_single_dict(output_file: Path) -> None:
+    """Merge the patternProperties with the same value type into one regex pattern, a union of dicts, as in 0.86.0."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "pattern_properties_merge.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
         force_exec_validation=True,
     )
 
@@ -14561,24 +14596,50 @@ def test_main_jsonschema_prefix_items_no_tuple(min_version: str, output_file: Pa
     )
 
 
+@pytest.mark.cli_doc(
+    options=["--use-tuple-for-closed-arrays"],
+    option_description="""Generate tuple types for positional arrays that no other item can follow.
+
+A `prefixItems` array whose tail is closed by `items: false`, `unevaluatedItems: false`, a `false` position or
+`contains`, and an `items` array closed by `additionalItems: false` or a `false` position, is written as a tuple
+when its length bounds fix its length, so every position keeps its own type. Without the option only equal
+`minItems` and `maxItems` make a tuple, and a closed array is a list with length constraints that accepts items in
+the wrong positions. When bounds other than equal `minItems` and `maxItems` fix the length, the list stays if its
+item schemas (the allowed positions and the `items` schema) accept the same values, compared without annotations
+and `x-` keys, with a `$ref` read as its target and `type: [T]` as `type: T`. `--use-tuple-for-fixed-items` still
+decides whether the `items` array form is read. A tuple cannot hold `uniqueItems`: with `--use-unique-items-as-set`
+it stays a tuple and a warning names the field generated without uniqueness, unless `--generate-schema-validators`
+checks it.""",
+    input_schema="jsonschema/prefix_items_closed_length.json",
+    cli_args=["--use-tuple-for-closed-arrays"],
+    golden_output="main/jsonschema/main_jsonschema/prefix_items_closed_length[pydantic_v2.BaseModel].py",
+    comparison_output="main/jsonschema/main_jsonschema/prefix_items_closed_length[pydantic_v2.BaseModel-default].py",
+)
 @pytest.mark.parametrize(
     ("output_model", "extra_args"),
     [
-        pytest.param("pydantic_v2.BaseModel", [], id="pydantic_v2.BaseModel"),
-        pytest.param("msgspec.Struct", [], id="msgspec.Struct"),
-        pytest.param("pydantic_v2.BaseModel", ["--allof-merge-mode", "none"], id="allof-merge-mode-none"),
+        pytest.param("pydantic_v2.BaseModel", ["--use-tuple-for-closed-arrays"], id="pydantic_v2.BaseModel"),
+        pytest.param("msgspec.Struct", ["--use-tuple-for-closed-arrays"], id="msgspec.Struct"),
+        pytest.param(
+            "pydantic_v2.BaseModel",
+            ["--use-tuple-for-closed-arrays", "--allof-merge-mode", "none"],
+            id="allof-merge-mode-none",
+        ),
+        pytest.param("pydantic_v2.BaseModel", [], id="pydantic_v2.BaseModel-default"),
+        pytest.param("msgspec.Struct", [], id="msgspec.Struct-default"),
+        pytest.param("pydantic_v2.BaseModel", ["--allof-merge-mode", "none"], id="allof-merge-mode-none-default"),
     ],
 )
 def test_main_jsonschema_prefix_items_closed_length(
     output_model: str, extra_args: list[str], output_file: Path
 ) -> None:
-    """Write prefixItems arrays whose closed tail fixes their length as tuples.
+    """Write prefixItems arrays whose closed tail fixes their length as tuples under --use-tuple-for-closed-arrays.
 
-    Up to 0.86.0 only equal ``minItems`` and ``maxItems`` made a tuple. A length fixed by ``items: false``,
-    ``unevaluatedItems: false``, a ``false`` position or ``contains`` gave a list with length constraints, such as
-    ``list[str | int]``, which accepts items in the wrong positions. Such a list stays only where it is exact: its
-    items and every allowed position accept the same values. Under --allof-merge-mode none a child that narrows a
-    position of such a tuple keeps its length and stays a tuple (#4977).
+    Up to 0.86.0, and without the option, only equal ``minItems`` and ``maxItems`` make a tuple. A length fixed by
+    ``items: false``, ``unevaluatedItems: false``, a ``false`` position or ``contains`` gives a list with length
+    constraints, such as ``list[str | int]``, which accepts items in the wrong positions. Such a list stays only where
+    it is exact: its items and every allowed position accept the same values. Under --allof-merge-mode none a child
+    that narrows a position of such a tuple keeps its length and stays a tuple (#4977).
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "prefix_items_closed_length.json",
@@ -14592,21 +14653,29 @@ def test_main_jsonschema_prefix_items_closed_length(
 @pytest.mark.parametrize(
     ("output_model", "extra_args"),
     [
-        pytest.param("pydantic_v2.BaseModel", [], id="pydantic_v2.BaseModel"),
-        pytest.param("msgspec.Struct", [], id="msgspec.Struct"),
+        pytest.param("pydantic_v2.BaseModel", ["--use-tuple-for-closed-arrays"], id="pydantic_v2.BaseModel"),
+        pytest.param("msgspec.Struct", ["--use-tuple-for-closed-arrays"], id="msgspec.Struct"),
+        pytest.param(
+            "pydantic_v2.BaseModel",
+            ["--use-tuple-for-closed-arrays", "--generate-schema-validators", "--formatters", "builtin"],
+            id="schema-validators",
+        ),
+        pytest.param("pydantic_v2.BaseModel", [], id="pydantic_v2.BaseModel-default"),
+        pytest.param("msgspec.Struct", [], id="msgspec.Struct-default"),
         pytest.param(
             "pydantic_v2.BaseModel",
             ["--generate-schema-validators", "--formatters", "builtin"],
-            id="schema-validators",
+            id="schema-validators-default",
         ),
     ],
 )
 def test_main_jsonschema_prefix_items_unique_items(output_model: str, extra_args: list[str], output_file: Path) -> None:
-    """Warn that a uniqueItems tuple is generated without uniqueness under --use-unique-items-as-set.
+    """Warn that a uniqueItems tuple is generated without uniqueness under --use-tuple-for-closed-arrays.
 
-    The option writes a uniqueItems list as a set, which a tuple cannot be without losing its positions, so a closed or
-    explicitly fixed tuple keeps its positions and the warning names it, with its default and the lists at its
-    positions unchanged. Schema validators check uniqueness on the tuple at runtime, so they need no warning.
+    With --use-unique-items-as-set, which writes a uniqueItems list as a set that a tuple cannot be without losing its
+    positions, a closed or explicitly fixed tuple keeps its positions and the warning names it, with its default and
+    the lists at its positions unchanged. Schema validators check uniqueness on the tuple at runtime, so they need no
+    warning. Without --use-tuple-for-closed-arrays the output and the warnings are those of 0.86.0.
     """
     with warnings.catch_warnings(record=True) as recorded_warnings:
         warnings.simplefilter("always")
@@ -14627,20 +14696,30 @@ def test_main_jsonschema_prefix_items_unique_items(output_model: str, extra_args
     )
 
 
-@pytest.mark.parametrize("output_model", ["pydantic_v2.BaseModel", "msgspec.Struct"])
-def test_main_jsonschema_items_array_additional_items_false(output_model: str, output_file: Path) -> None:
-    """Write draft-07 ``items`` lists whose length bounds fix their length as tuples under --use-tuple-for-fixed-items.
+@pytest.mark.parametrize(
+    ("output_model", "extra_args"),
+    [
+        pytest.param("pydantic_v2.BaseModel", ["--use-tuple-for-closed-arrays"], id="pydantic_v2.BaseModel"),
+        pytest.param("msgspec.Struct", ["--use-tuple-for-closed-arrays"], id="msgspec.Struct"),
+        pytest.param("pydantic_v2.BaseModel", [], id="pydantic_v2.BaseModel-default"),
+        pytest.param("msgspec.Struct", [], id="msgspec.Struct-default"),
+    ],
+)
+def test_main_jsonschema_items_array_additional_items_false(
+    output_model: str, extra_args: list[str], output_file: Path
+) -> None:
+    """Write ``items`` lists whose length bounds fix their length as tuples under --use-tuple-for-closed-arrays.
 
-    Up to 0.86.0 only ``minItems`` and ``maxItems`` equal to the number of positions made a tuple, so
-    ``additionalItems: false``, a ``false`` position or bounds above or below the positions gave a list that accepts
-    items in the wrong positions or rejects valid ones. A list stays where its items and every allowed position have
-    one schema.
+    Up to 0.86.0, and without the option, only ``minItems`` and ``maxItems`` equal to the number of positions make a
+    tuple under --use-tuple-for-fixed-items, so ``additionalItems: false``, a ``false`` position or bounds above or
+    below the positions give a list that accepts items in the wrong positions or rejects valid ones. A list stays
+    where its items and every allowed position have one schema.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "items_array_additional_items_false.json",
         output_path=output_file,
         input_file_type="jsonschema",
-        extra_args=["--output-model-type", output_model, "--use-tuple-for-fixed-items"],
+        extra_args=["--output-model-type", output_model, "--use-tuple-for-fixed-items", *extra_args],
         force_exec_validation=True,
     )
 
@@ -14655,11 +14734,7 @@ def test_main_jsonschema_items_array_additional_items_false(output_model: str, o
     option_description="""Generate tuple types for arrays with items array syntax.
 
 When `--use-tuple-for-fixed-items` is enabled and an array has `items` as an array
-whose length its bounds fix, such as `minItems == maxItems == len(items)` or `additionalItems: false`
-with `minItems == len(items)`, generate a tuple type instead of a list. When bounds other than equal
-`minItems` and `maxItems` fix the length, the list stays if its item schemas (the allowed positions
-and the `additionalItems` schema) accept the same values, compared without annotations and `x-` keys,
-with a `$ref` read as its target and `type: [T]` as `type: T`.""",
+with `minItems == maxItems == len(items)`, generate a tuple type instead of a list.""",
     input_schema="jsonschema/items_array_tuple.json",
     cli_args=["--use-tuple-for-fixed-items"],
     golden_output="jsonschema/items_array_tuple.py",
@@ -14668,11 +14743,7 @@ def test_main_jsonschema_items_array_tuple(min_version: str, output_file: Path) 
     """Generate tuple types for arrays with items array syntax.
 
     When `--use-tuple-for-fixed-items` is enabled and an array has `items` as an array
-    whose length its bounds fix, such as `minItems == maxItems == len(items)` or `additionalItems: false`
-    with `minItems == len(items)`, generate a tuple type instead of a list. When bounds other than equal
-    `minItems` and `maxItems` fix the length, the list stays if its item schemas (the allowed positions
-    and the `additionalItems` schema) accept the same values, compared without annotations and `x-` keys,
-    with a `$ref` read as its target and `type: [T]` as `type: T`.
+    with `minItems == maxItems == len(items)`, generate a tuple type instead of a list.
     """
     run_main_and_assert(
         input_path=JSON_SCHEMA_DATA_PATH / "items_array_tuple.json",
@@ -31954,6 +32025,7 @@ def test_type_union_constraints(name: str, constraints: bool, entry: str, output
                 extra_args=[
                     "--custom-file-header",
                     "# Type-specific union constraints",
+                    "--use-single-dict-for-object-maps",
                     *(["--field-constraints"] if constraints else []),
                 ],
                 assert_func=assert_file_content,
@@ -31966,12 +32038,15 @@ def test_type_union_constraints(name: str, constraints: bool, entry: str, output
                 input_file_type=InputFileType.JsonSchema,
                 custom_file_header="# Type-specific union constraints",
                 field_constraints=constraints,
+                use_single_dict_for_object_maps=True,
                 assert_func=assert_file_content,
                 expected_file=expected_file,
             )
         else:
             dynamic_model = generate_dynamic_models(
-                schema, config=GenerateConfig(field_constraints=constraints), cache_size=0
+                schema,
+                config=GenerateConfig(field_constraints=constraints, use_single_dict_for_object_maps=True),
+                cache_size=0,
             )["Root"]
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
@@ -32089,6 +32164,7 @@ def test_type_union_pattern_properties(output_file: Path, entrypoint: str, *, sc
                 extra_args=[
                     "--disable-timestamp",
                     "--field-constraints",
+                    "--use-single-dict-for-object-maps",
                     "--formatters",
                     "builtin",
                     *(["--generate-schema-validators"] if schema_validators else []),
@@ -32103,6 +32179,7 @@ def test_type_union_pattern_properties(output_file: Path, entrypoint: str, *, sc
                 input_file_type=InputFileType.JsonSchema,
                 disable_timestamp=True,
                 field_constraints=True,
+                use_single_dict_for_object_maps=True,
                 generate_schema_validators=schema_validators,
                 formatters=[Formatter.BUILTIN],
                 assert_func=assert_file_content,
@@ -32175,6 +32252,7 @@ def test_pattern_property_intersections(
                 "--disable-timestamp",
                 "--formatters",
                 *formatters,
+                "--use-single-dict-for-object-maps",
                 *(["--generate-schema-validators"] if enabled else []),
                 *(["--custom-template-dir", str(custom_template_dir)] if custom_template_dir else []),
                 *(
@@ -32198,6 +32276,7 @@ def test_pattern_property_intersections(
                 output=output,
                 disable_timestamp=True,
                 generate_schema_validators=enabled,
+                use_single_dict_for_object_maps=True,
                 custom_template_dir=custom_template_dir,
                 base_class=PATTERN_INTERSECTION_CASES[case].get("base_class", ""),
                 formatters=[Formatter(value) for value in formatters],
@@ -32293,6 +32372,7 @@ def test_additional_pattern_intersections(
                 "--disable-timestamp",
                 "--formatters",
                 *formatters,
+                "--use-single-dict-for-object-maps",
                 *(["--generate-schema-validators"] if enabled else []),
                 *(["--field-constraints"] if field_constraints else []),
                 *(["--custom-template-dir", str(template)] if template else []),
@@ -32312,6 +32392,7 @@ def test_additional_pattern_intersections(
                 output_model_type=DataModelType.PydanticV2BaseModel,
                 disable_timestamp=True,
                 generate_schema_validators=enabled,
+                use_single_dict_for_object_maps=True,
                 field_constraints=field_constraints,
                 custom_template_dir=template,
                 formatters=[Formatter(value) for value in formatters],
@@ -32401,6 +32482,7 @@ def test_undeclared_required(
                 "--disable-timestamp",
                 "--formatters",
                 *formatters,
+                "--use-single-dict-for-object-maps",
                 *(["--generate-schema-validators"] if enabled else []),
                 *args,
             ],
@@ -32422,6 +32504,7 @@ def test_undeclared_required(
                 output_model_type=DataModelType.PydanticV2BaseModel,
                 disable_timestamp=True,
                 generate_schema_validators=enabled,
+                use_single_dict_for_object_maps=True,
                 formatters=[Formatter(value) for value in formatters],
                 **options,
             ),
@@ -32562,6 +32645,7 @@ def test_unknown_pattern_root_annotations(
                 "--disable-timestamp",
                 "--formatters",
                 *formatters,
+                "--use-single-dict-for-object-maps",
                 *(["--generate-schema-validators"] if enabled else []),
                 *(["--field-constraints"] if field_constraints else []),
                 *options,
@@ -32578,6 +32662,7 @@ def test_unknown_pattern_root_annotations(
                 output_model_type=DataModelType.PydanticV2BaseModel,
                 disable_timestamp=True,
                 generate_schema_validators=enabled,
+                use_single_dict_for_object_maps=True,
                 field_constraints=field_constraints,
                 formatters=[Formatter(value) for value in formatters],
                 **record["config"],

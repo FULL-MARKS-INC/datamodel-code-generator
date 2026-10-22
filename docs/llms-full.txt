@@ -7517,9 +7517,17 @@ class Person(BaseModel):
 
 JSON Schema's [`prefixItems`](https://json-schema.org/understanding-json-schema/reference/array.html#tuple-validation) syntax lets you describe heterogeneous arrays.
 
-When the length bounds of a `prefixItems` array fix its length, datamodel-code-generator emits precise tuple
-annotations: for example with equal `minItems` and `maxItems`, or with `items: false` (or `unevaluatedItems: false`)
-and a `minItems` equal to the number of prefix entries. Positions beyond the prefix entries take the `items` schema.
+When:
+
+- `prefixItems` is present
+- no `items` are specified
+- `minItems`/`maxItems` match the number of prefix entries
+
+datamodel-code-generator emits precise tuple annotations.
+
+With `--use-tuple-for-closed-arrays`, the length bounds of a `prefixItems` array may also fix its length: for example
+with `items: false` (or `unevaluatedItems: false`) and a `minItems` equal to the number of prefix entries. Positions
+beyond the prefix entries take the `items` schema.
 When bounds other than equal `minItems` and `maxItems` fix the length, the array stays a list with its length
 constraints if the list's item schemas (the allowed positions and the `items` schema) accept the same values; that
 list is exact as well. They are compared without annotations (`title`, `description`, `examples`, `example`,
@@ -22069,7 +22077,7 @@ This documentation is auto-generated from test cases.
 | Category | Options | Description |
 |----------|---------|-------------|
 | 📁 [Base Options](base-options.md) | 13 | Input/output configuration |
-| 🔧 [Typing Customization](typing-customization.md) | 39 | Type annotation and import behavior |
+| 🔧 [Typing Customization](typing-customization.md) | 41 | Type annotation and import behavior |
 | 🏷️ [Field Customization](field-customization.md) | 32 | Field naming and docstring behavior |
 | 🏗️ [Model Customization](model-customization.md) | 53 | Model generation behavior |
 | 🎨 [Template Customization](template-customization.md) | 27 | Output formatting and custom rendering |
@@ -22087,7 +22095,7 @@ Use these pages when you know the workflow area but not the exact option name.
 |-------|---------|--------|
 | [Model Customization](topics/model-customization.md) | 23 | Model Naming, Model Reuse, Model Shape, Root Model |
 | [Template Customization](topics/template-customization.md) | 21 | Custom Templates, Generated Output, Imports, Output Formatting |
-| [Typing Customization](topics/typing-customization.md) | 24 | Imports, Collection Types, Type Alias, Type Mapping, Type Syntax |
+| [Typing Customization](topics/typing-customization.md) | 26 | Imports, Collection Types, Type Alias, Type Mapping, Type Syntax |
 | [OpenAPI](topics/openapi.md) | 9 | OpenAPI Naming, OpenAPI Paths, OpenAPI Scopes, Read Only Write Only |
 
 ## 🔗 Option Relationships
@@ -22437,6 +22445,7 @@ These links are generated from CLI option metadata and summarize options that im
 - [`--use-schema-description`](field-customization.md#use-schema-description)
 - [`--use-serialization-alias`](field-customization.md#use-serialization-alias)
 - [`--use-serialize-as-any`](model-customization.md#use-serialize-as-any)
+- [`--use-single-dict-for-object-maps`](typing-customization.md#use-single-dict-for-object-maps)
 - [`--use-single-line-docstring`](field-customization.md#use-single-line-docstring)
 - [`--use-single-value-enum-as-const`](typing-customization.md#use-single-value-enum-as-const)
 - [`--use-site-models-for-constrained-refs`](field-customization.md#use-site-models-for-constrained-refs)
@@ -22448,6 +22457,7 @@ These links are generated from CLI option metadata and summarize options that im
 - [`--use-tag-as-union-variant-name`](field-customization.md#use-tag-as-union-variant-name)
 - [`--use-title-as-name`](field-customization.md#use-title-as-name)
 - [`--use-total-false-for-typed-dict`](typing-customization.md#use-total-false-for-typed-dict)
+- [`--use-tuple-for-closed-arrays`](typing-customization.md#use-tuple-for-closed-arrays)
 - [`--use-tuple-for-fixed-items`](typing-customization.md#use-tuple-for-fixed-items)
 - [`--use-tuple-for-fixed-length-arrays`](typing-customization.md#use-tuple-for-fixed-length-arrays)
 - [`--use-type-alias`](typing-customization.md#use-type-alias)
@@ -37664,11 +37674,13 @@ Source: https://datamodel-code-generator.koxudaxi.dev/cli-reference/typing-custo
 | [`--use-object-type`](#use-object-type) | Use object instead of Any for unspecified object and array v... |
 | [`--use-pendulum`](#use-pendulum) | Use pendulum types for date, time, and duration fields. |
 | [`--use-root-model-type-alias`](#use-root-model-type-alias) | Generate RootModel as type alias format for better mypy supp... |
+| [`--use-single-dict-for-object-maps`](#use-single-dict-for-object-maps) | Type an object map as one dict instead of a union of dicts. |
 | [`--use-single-value-enum-as-const`](#use-single-value-enum-as-const) | Treat `enum` with a single value as `const` with that value. |
 | [`--use-specialized-enum`](#use-specialized-enum) | Generate StrEnum/IntEnum for string/integer enums (Python 3.... |
 | [`--use-standard-collections`](#use-standard-collections) | Use built-in dict/list instead of typing.Dict/List. |
 | [`--use-standard-primitive-types`](#use-standard-primitive-types) | Use Python standard library types for string formats instead... |
 | [`--use-total-false-for-typed-dict`](#use-total-false-for-typed-dict) | Generate TypedDict declarations with `total=False`. |
+| [`--use-tuple-for-closed-arrays`](#use-tuple-for-closed-arrays) | Generate tuple types for positional arrays that no other ite... |
 | [`--use-tuple-for-fixed-items`](#use-tuple-for-fixed-items) | Generate tuple types for arrays with items array syntax. |
 | [`--use-tuple-for-fixed-length-arrays`](#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-type-alias`](#use-type-alias) | Use TypeAlias instead of root models for type definitions (e... |
@@ -42278,6 +42290,97 @@ instead of class definitions, improving mypy type inference.
 
 ---
 
+## `--use-single-dict-for-object-maps` {#use-single-dict-for-object-maps}
+
+Type an object map as one dict instead of a union of dicts.
+
+An object map is an object without `properties` whose keys `patternProperties` or `propertyNames` constrain.
+With `--use-single-dict-for-object-maps` it is one dict whose key pattern joins every pattern and whose value is
+the union of their value types, so an object that mixes the keys of several patterns is accepted; a dict that
+cannot express the object exactly (keys outside the patterns, different value schemas) is named by a warning.
+The null and the other types of a `type` array, such as `[object, string, null]`, join the dict in a union, and its
+property counts stay on the dict. With `--generate-schema-validators`, the dict root of a validated map also takes
+its keys from `propertyNames` and counts the keys its patterns admit, the model of an object without `properties`
+joins the other types of its `type` array, and a pattern checks every declared key whose schema it adds an assertion
+to. Without the option the map is written as in 0.86.0: a union of dicts, one per value type of the patterns, the
+other types of a `type` array left out.
+
+!!! tip "Usage"
+
+    ```bash
+    datamodel-codegen --input pattern_properties_merge.json --output-model-type pydantic_v2.BaseModel --use-single-dict-for-object-maps # (1)!
+    ```
+
+    1. :material-arrow-left: `--use-single-dict-for-object-maps` - the option documented here
+
+??? example "Examples"
+
+    **Input Schema:**
+
+    ```json
+    {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^i-": {
+          "type": "string"
+        },
+        "^t-": {
+          "type": "string"
+        },
+        "^n-": {
+          "type": "integer"
+        }
+      }
+    }
+    ```
+
+    **Output:**
+
+    === "With Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  pattern_properties_merge.json
+        #   timestamp: 2019-07-26T00:00:00+00:00
+
+        from __future__ import annotations
+
+        from pydantic import RootModel, constr
+
+
+        class Model(RootModel[dict[constr(pattern=r'^i-|^t-|^n-'), str | int]]):
+            root: dict[constr(pattern=r'^i-|^t-|^n-'), str | int]
+        ```
+
+        <!-- fmt: on -->
+
+    === "Without Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  pattern_properties_merge.json
+        #   timestamp: 2019-07-26T00:00:00+00:00
+
+        from __future__ import annotations
+
+        from pydantic import RootModel, constr
+
+
+        class Model(
+            RootModel[dict[constr(pattern=r'^i-|^t-'), str] | dict[constr(pattern=r'^n-'), int]]
+        ):
+            root: dict[constr(pattern=r'^i-|^t-'), str] | dict[constr(pattern=r'^n-'), int]
+        ```
+
+        <!-- fmt: on -->
+
+---
+
 ## `--use-single-value-enum-as-const` {#use-single-value-enum-as-const}
 
 Treat `enum` with a single value as `const` with that value.
@@ -43228,16 +43331,406 @@ are optional.
 
 ---
 
+## `--use-tuple-for-closed-arrays` {#use-tuple-for-closed-arrays}
+
+Generate tuple types for positional arrays that no other item can follow.
+
+A `prefixItems` array whose tail is closed by `items: false`, `unevaluatedItems: false`, a `false` position or
+`contains`, and an `items` array closed by `additionalItems: false` or a `false` position, is written as a tuple
+when its length bounds fix its length, so every position keeps its own type. Without the option only equal
+`minItems` and `maxItems` make a tuple, and a closed array is a list with length constraints that accepts items in
+the wrong positions. When bounds other than equal `minItems` and `maxItems` fix the length, the list stays if its
+item schemas (the allowed positions and the `items` schema) accept the same values, compared without annotations
+and `x-` keys, with a `$ref` read as its target and `type: [T]` as `type: T`. `--use-tuple-for-fixed-items` still
+decides whether the `items` array form is read. A tuple cannot hold `uniqueItems`: with `--use-unique-items-as-set`
+it stays a tuple and a warning names the field generated without uniqueness, unless `--generate-schema-validators`
+checks it.
+
+!!! tip "Usage"
+
+    ```bash
+    datamodel-codegen --input prefix_items_closed_length.json --use-tuple-for-closed-arrays # (1)!
+    ```
+
+    1. :material-arrow-left: `--use-tuple-for-closed-arrays` - the option documented here
+
+??? example "Examples"
+
+    **Input Schema:**
+
+    ```json
+    {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "PrefixItemsClosedLength",
+      "type": "object",
+      "properties": {
+        "closed_by_items_false": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "items": false,
+          "minItems": 2
+        },
+        "closed_by_unevaluated_items_false": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "unevaluatedItems": false,
+          "minItems": 2
+        },
+        "closed_by_false_position": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}, false],
+          "minItems": 2
+        },
+        "closed_below_max_items": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 5
+        },
+        "closed_nullable": {
+          "type": ["array", "null"],
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "items": false,
+          "minItems": 2
+        },
+        "closed_by_contains": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "contains": true,
+          "minContains": 2,
+          "maxContains": 2
+        },
+        "closed_by_contains_beyond_positions": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}],
+          "contains": {},
+          "minContains": 3,
+          "maxContains": 3
+        },
+        "closed_to_one_position": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "contains": {},
+          "maxContains": 1
+        },
+        "closed_before_other_positions": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "string"}, {"type": "integer"}],
+          "items": false,
+          "maxItems": 2,
+          "contains": {},
+          "minContains": 2
+        },
+        "kept_one_schema": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "string"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_one_schema_apart_from_annotations": {
+          "type": "array",
+          "prefixItems": [{"type": "string", "description": "first", "$comment": "first position"}, {"type": "string"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_one_position": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}],
+          "items": false,
+          "minItems": 1
+        },
+        "kept_one_schema_with_tail": {
+          "type": "array",
+          "prefixItems": [{"type": "string", "x-position": "first"}],
+          "items": {"type": "string", "x-position": "first"},
+          "contains": {},
+          "minContains": 3,
+          "maxContains": 3
+        },
+        "kept_variable_length": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "integer"}],
+          "items": false,
+          "minItems": 1
+        },
+        "closed_by_type_list": {
+          "type": "array",
+          "prefixItems": [{"type": ["string", "null"]}, {"type": "string"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_apart_from_extension_keys": {
+          "type": "array",
+          "prefixItems": [{"type": "string", "x-order": 1}, {"type": "string"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_ref_and_equal_inline": {
+          "type": "array",
+          "prefixItems": [{"$ref": "#/$defs/Name"}, {"type": "string", "maxLength": 5}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_type_list_of_one": {
+          "type": "array",
+          "prefixItems": [{"type": ["string"]}, {"type": "string"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_ref_to_root_with_extension_key": {
+          "type": "array",
+          "prefixItems": [{"$ref": "#/$defs/Tagged"}, {"type": "integer"}],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_nested_items": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "array", "items": {"type": "string", "title": "Tag"}},
+            {"type": "array", "items": {"type": "string"}}
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_nested_any_of": {
+          "type": "array",
+          "prefixItems": [
+            {"anyOf": [{"type": "string"}, {"type": "integer", "description": "A count."}]},
+            {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "kept_nested_dependent_schemas": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "object", "dependentSchemas": {"a": {"type": "object", "required": ["b"], "description": "Needs b."}}},
+            {"type": "object", "dependentSchemas": {"a": {"type": "object", "required": ["b"]}}}
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "explicit_one_schema": {
+          "type": "array",
+          "prefixItems": [{"type": "string"}, {"type": "string"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "inherited": {"$ref": "#/$defs/Child"}
+      },
+      "$defs": {
+        "Name": {"type": "string", "maxLength": 5, "description": "A name."},
+        "Tagged": {"type": "integer", "x-kind": "tag"},
+        "Parent": {
+          "type": "object",
+          "properties": {
+            "closed": {
+              "type": "array",
+              "prefixItems": [{"type": "string"}, {"type": "integer"}],
+              "items": false,
+              "minItems": 2
+            }
+          }
+        },
+        "Child": {
+          "allOf": [
+            {"$ref": "#/$defs/Parent"},
+            {"type": "object", "properties": {"closed": {"type": "array", "prefixItems": [{"type": "string", "maxLength": 3}]}}}
+          ]
+        }
+      }
+    }
+    ```
+
+    **Output:**
+
+    === "With Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  prefix_items_closed_length.json
+        #   timestamp: 2019-07-26T00:00:00+00:00
+
+        from __future__ import annotations
+
+        from typing import Any
+
+        from pydantic import BaseModel, Field, RootModel, constr
+
+
+        class KeptRefAndEqualInlineItem(RootModel[constr(max_length=5)]):
+            root: constr(max_length=5)
+
+
+        class Name(RootModel[constr(max_length=5)]):
+            root: constr(max_length=5) = Field(..., description='A name.')
+
+
+        class Tagged(RootModel[int]):
+            root: int
+
+
+        class Parent(BaseModel):
+            closed: tuple[str, int] | None = None
+
+
+        class ClosedItem(RootModel[constr(max_length=3)]):
+            root: constr(max_length=3)
+
+
+        class Child(Parent):
+            closed: tuple[ClosedItem, int] | None = None
+
+
+        class PrefixItemsClosedLength(BaseModel):
+            closed_by_items_false: tuple[str, int] | None = None
+            closed_by_unevaluated_items_false: tuple[str, int] | None = None
+            closed_by_false_position: tuple[str, int] | None = None
+            closed_below_max_items: tuple[str, int] | None = None
+            closed_nullable: tuple[str, int] | None = None
+            closed_by_contains: tuple[str, int] | None = None
+            closed_by_contains_beyond_positions: tuple[str, Any, Any] | None = None
+            closed_to_one_position: tuple[str] | None = None
+            closed_before_other_positions: tuple[str, str] | None = None
+            kept_one_schema: list[str] | None = Field(None, max_length=2, min_length=2)
+            kept_one_schema_apart_from_annotations: list[str] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_one_position: list[str] | None = Field(None, max_length=1, min_length=1)
+            kept_one_schema_with_tail: list[str] | None = Field(
+                None, max_length=3, min_length=3
+            )
+            kept_variable_length: list[str | int] | None = Field(
+                None, max_length=2, min_length=1
+            )
+            closed_by_type_list: tuple[str | None, str] | None = None
+            kept_apart_from_extension_keys: list[str] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_ref_and_equal_inline: list[Name | KeptRefAndEqualInlineItem] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_type_list_of_one: list[str] | None = Field(None, max_length=2, min_length=2)
+            kept_ref_to_root_with_extension_key: list[Tagged | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_nested_items: list[list[str]] | None = Field(None, max_length=2, min_length=2)
+            kept_nested_any_of: list[str | int] | None = Field(None, max_length=2, min_length=2)
+            kept_nested_dependent_schemas: list[dict[str, Any]] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            explicit_one_schema: tuple[str, str] | None = None
+            inherited: Child | None = None
+        ```
+
+        <!-- fmt: on -->
+
+    === "Without Option"
+
+        <!-- fmt: off -->
+
+        ```python
+        # generated by datamodel-codegen:
+        #   filename:  prefix_items_closed_length.json
+        #   timestamp: 2019-07-26T00:00:00+00:00
+
+        from __future__ import annotations
+
+        from typing import Any
+
+        from pydantic import BaseModel, Field, RootModel, constr
+
+
+        class KeptRefAndEqualInlineItem(RootModel[constr(max_length=5)]):
+            root: constr(max_length=5)
+
+
+        class Name(RootModel[constr(max_length=5)]):
+            root: constr(max_length=5) = Field(..., description='A name.')
+
+
+        class Tagged(RootModel[int]):
+            root: int
+
+
+        class Parent(BaseModel):
+            closed: list[str | int] | None = Field(None, max_length=2, min_length=2)
+
+
+        class ClosedItem(RootModel[constr(max_length=3)]):
+            root: constr(max_length=3)
+
+
+        class Child(Parent):
+            closed: list[ClosedItem | int] | None = Field(None, max_length=2, min_length=2)
+
+
+        class PrefixItemsClosedLength(BaseModel):
+            closed_by_items_false: list[str | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            closed_by_unevaluated_items_false: list[str | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            closed_by_false_position: list[str | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            closed_below_max_items: list[str | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            closed_nullable: list[str | int] | None = Field(None, max_length=2, min_length=2)
+            closed_by_contains: list[Any] | None = Field(None, max_length=2, min_length=2)
+            closed_by_contains_beyond_positions: list[Any] | None = Field(
+                None, max_length=3, min_length=3
+            )
+            closed_to_one_position: list[Any] | None = Field(None, max_length=1, min_length=1)
+            closed_before_other_positions: list[str | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_one_schema: list[str] | None = Field(None, max_length=2, min_length=2)
+            kept_one_schema_apart_from_annotations: list[str] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_one_position: list[str] | None = Field(None, max_length=1, min_length=1)
+            kept_one_schema_with_tail: list[str] | None = Field(
+                None, max_length=3, min_length=3
+            )
+            kept_variable_length: list[str | int] | None = Field(
+                None, max_length=2, min_length=1
+            )
+            closed_by_type_list: list[str] | None = Field(None, max_length=2, min_length=2)
+            kept_apart_from_extension_keys: list[str] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_ref_and_equal_inline: list[Name | KeptRefAndEqualInlineItem] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_type_list_of_one: list[str] | None = Field(None, max_length=2, min_length=2)
+            kept_ref_to_root_with_extension_key: list[Tagged | int] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            kept_nested_items: list[list[str]] | None = Field(None, max_length=2, min_length=2)
+            kept_nested_any_of: list[str | int] | None = Field(None, max_length=2, min_length=2)
+            kept_nested_dependent_schemas: list[dict[str, Any]] | None = Field(
+                None, max_length=2, min_length=2
+            )
+            explicit_one_schema: tuple[str, str] | None = None
+            inherited: Child | None = None
+        ```
+
+        <!-- fmt: on -->
+
+---
+
 ## `--use-tuple-for-fixed-items` {#use-tuple-for-fixed-items}
 
 Generate tuple types for arrays with items array syntax.
 
 When `--use-tuple-for-fixed-items` is enabled and an array has `items` as an array
-whose length its bounds fix, such as `minItems == maxItems == len(items)` or `additionalItems: false`
-with `minItems == len(items)`, generate a tuple type instead of a list. When bounds other than equal
-`minItems` and `maxItems` fix the length, the list stays if its item schemas (the allowed positions
-and the `additionalItems` schema) accept the same values, compared without annotations and `x-` keys,
-with a `$ref` read as its target and `type: [T]` as `type: T`.
+with `minItems == maxItems == len(items)`, generate a tuple type instead of a list.
 
 !!! tip "Usage"
 
@@ -44175,9 +44668,7 @@ Generate set types for arrays with uniqueItems constraint.
 
 The `--use-unique-items-as-set` flag generates Python set types instead of
 list types for JSON Schema arrays that have the uniqueItems constraint set
-to true, enforcing uniqueness at the type level. An array written as a tuple
-keeps its positions and stays a tuple; a warning names the field generated
-without uniqueness, unless `--generate-schema-validators` checks it.
+to true, enforcing uniqueness at the type level.
 
 !!! tip "Usage"
 
@@ -61389,9 +61880,9 @@ Options are grouped from shared CLI metadata and link back to their generated re
 | Group | Options | Description |
 |-------|---------|-------------|
 | [Imports](#imports) | 2 | Generated imports and type-checking import behavior. |
-| [Collection Types](#collection-types) | 6 | Collection and tuple/set generation. |
+| [Collection Types](#collection-types) | 7 | Collection and tuple/set generation. |
 | [Type Alias](#type-alias) | 3 | TypeAlias and root-model alias output. |
-| [Type Mapping](#type-mapping) | 10 | Scalar, date/time, and custom type mapping. |
+| [Type Mapping](#type-mapping) | 11 | Scalar, date/time, and custom type mapping. |
 | [Type Syntax](#type-syntax) | 3 | Modern annotation syntax and Annotated usage. |
 
 ## Imports {#imports}
@@ -61412,6 +61903,7 @@ Collection and tuple/set generation.
 | [`--no-use-standard-collections`](../typing-customization.md#no-use-standard-collections) | Use typing.Dict/List instead of built-in dict/list for container types. |
 | [`--use-generic-container-types`](../typing-customization.md#use-generic-container-types) | Use generic container types (Sequence, Mapping) for type hinting. |
 | [`--use-standard-collections`](../typing-customization.md#use-standard-collections) | Use built-in dict/list instead of typing.Dict/List. |
+| [`--use-tuple-for-closed-arrays`](../typing-customization.md#use-tuple-for-closed-arrays) | Generate tuple types for positional arrays that no other item can follow. |
 | [`--use-tuple-for-fixed-items`](../typing-customization.md#use-tuple-for-fixed-items) | Generate tuple types for arrays with items array syntax. |
 | [`--use-tuple-for-fixed-length-arrays`](../typing-customization.md#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-unique-items-as-set`](../typing-customization.md#use-unique-items-as-set) | Generate set types for arrays with uniqueItems constraint. |
@@ -61440,6 +61932,7 @@ Scalar, date/time, and custom type mapping.
 | [`--use-decimal-for-multiple-of`](../typing-customization.md#use-decimal-for-multiple-of) | Generate Decimal types for fields with multipleOf constraint. |
 | [`--use-object-type`](../typing-customization.md#use-object-type) | Use object instead of Any for unspecified object and array values. |
 | [`--use-pendulum`](../typing-customization.md#use-pendulum) | Use pendulum types for date, time, and duration fields. |
+| [`--use-single-dict-for-object-maps`](../typing-customization.md#use-single-dict-for-object-maps) | Type an object map as one dict instead of a union of dicts. |
 | [`--use-standard-primitive-types`](../typing-customization.md#use-standard-primitive-types) | Use Python standard library types for string formats instead of str. |
 | [`--use-typed-nullable-map-values`](../typing-customization.md#use-typed-nullable-map-values) | Type the values of nullable maps as their schemas say instead of Any. |
 
@@ -61576,11 +62069,13 @@ datamodel-codegen [OPTIONS]
 | [`--use-object-type`](typing-customization.md#use-object-type) | Use object instead of Any for unspecified object and array values. |
 | [`--use-pendulum`](typing-customization.md#use-pendulum) | Use pendulum types for date, time, and duration fields. |
 | [`--use-root-model-type-alias`](typing-customization.md#use-root-model-type-alias) | Generate RootModel as type alias format for better mypy support. |
+| [`--use-single-dict-for-object-maps`](typing-customization.md#use-single-dict-for-object-maps) | Type an object map as one dict instead of a union of dicts. |
 | [`--use-single-value-enum-as-const`](typing-customization.md#use-single-value-enum-as-const) | Treat `enum` with a single value as `const` with that value. |
 | [`--use-specialized-enum`](typing-customization.md#use-specialized-enum) | Generate StrEnum/IntEnum for string/integer enums (Python 3.11+). |
 | [`--use-standard-collections`](typing-customization.md#use-standard-collections) | Use built-in dict/list instead of typing.Dict/List. |
 | [`--use-standard-primitive-types`](typing-customization.md#use-standard-primitive-types) | Use Python standard library types for string formats instead of str. |
 | [`--use-total-false-for-typed-dict`](typing-customization.md#use-total-false-for-typed-dict) | Generate TypedDict declarations with `total=False`. |
+| [`--use-tuple-for-closed-arrays`](typing-customization.md#use-tuple-for-closed-arrays) | Generate tuple types for positional arrays that no other item can follow. |
 | [`--use-tuple-for-fixed-items`](typing-customization.md#use-tuple-for-fixed-items) | Generate tuple types for arrays with items array syntax. |
 | [`--use-tuple-for-fixed-length-arrays`](typing-customization.md#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-type-alias`](typing-customization.md#use-type-alias) | Use TypeAlias instead of root models for type definitions (experimental). |
@@ -62038,6 +62533,7 @@ All options sorted alphabetically:
 - [`--use-schema-description`](field-customization.md#use-schema-description) - Use schema description as class docstring.
 - [`--use-serialization-alias`](field-customization.md#use-serialization-alias) - Use serialization_alias instead of alias for field aliasing ...
 - [`--use-serialize-as-any`](model-customization.md#use-serialize-as-any) - Wrap fields with subtypes in Pydantic's SerializeAsAny.
+- [`--use-single-dict-for-object-maps`](typing-customization.md#use-single-dict-for-object-maps) - Type an object map as one dict instead of a union of dicts.
 - [`--use-single-line-docstring`](field-customization.md#use-single-line-docstring) - Emit short docstrings on a single line.
 - [`--use-single-value-enum-as-const`](typing-customization.md#use-single-value-enum-as-const) - Treat `enum` with a single value as `const` with that value.
 - [`--use-site-models-for-constrained-refs`](field-customization.md#use-site-models-for-constrained-refs) - Give an allOf of `$ref` members whose other parts add assert...
@@ -62049,6 +62545,7 @@ All options sorted alphabetically:
 - [`--use-tag-as-union-variant-name`](field-customization.md#use-tag-as-union-variant-name) - Name inline oneOf/anyOf branch models after their tag: what ...
 - [`--use-title-as-name`](field-customization.md#use-title-as-name) - Use schema title as the generated class name.
 - [`--use-total-false-for-typed-dict`](typing-customization.md#use-total-false-for-typed-dict) - Generate TypedDict declarations with `total=False`.
+- [`--use-tuple-for-closed-arrays`](typing-customization.md#use-tuple-for-closed-arrays) - Generate tuple types for positional arrays that no other ite...
 - [`--use-tuple-for-fixed-items`](typing-customization.md#use-tuple-for-fixed-items) - Generate tuple types for arrays with items array syntax.
 - [`--use-tuple-for-fixed-length-arrays`](typing-customization.md#use-tuple-for-fixed-length-arrays) - Generate tuple types for homogeneous fixed-length arrays.
 - [`--use-type-alias`](typing-customization.md#use-type-alias) - Use TypeAlias instead of root models for type definitions (e...
@@ -63957,16 +64454,16 @@ classDiagram
 
 | Config model | Field count | Purpose |
 | --- | ---: | --- |
-| `BaseGenerateConfig` | 195 | Shared generation options. |
-| `GenerateConfig` | 210 | Public `generate()` configuration. |
-| `ParserConfig` | 160 | Base parser dependency injection and parser options. |
-| `JSONSchemaParserConfig` | 162 | JSON Schema parser options. |
-| `OpenAPIParserConfig` | 169 | OpenAPI-specific parser options. |
-| `AsyncAPIParserConfig` | 170 | AsyncAPI-specific parser options. |
-| `XMLSchemaParserConfig` | 163 | XML Schema-specific parser options. |
-| `ProtobufParserConfig` | 163 | Protocol Buffers-specific parser options. |
-| `AvroParserConfig` | 162 | Avro-specific parser options. |
-| `GraphQLParserConfig` | 163 | GraphQL-specific parser options. |
+| `BaseGenerateConfig` | 197 | Shared generation options. |
+| `GenerateConfig` | 212 | Public `generate()` configuration. |
+| `ParserConfig` | 162 | Base parser dependency injection and parser options. |
+| `JSONSchemaParserConfig` | 164 | JSON Schema parser options. |
+| `OpenAPIParserConfig` | 171 | OpenAPI-specific parser options. |
+| `AsyncAPIParserConfig` | 172 | AsyncAPI-specific parser options. |
+| `XMLSchemaParserConfig` | 165 | XML Schema-specific parser options. |
+| `ProtobufParserConfig` | 165 | Protocol Buffers-specific parser options. |
+| `AvroParserConfig` | 164 | Avro-specific parser options. |
+| `GraphQLParserConfig` | 165 | GraphQL-specific parser options. |
 
 ### Formatter Names
 
@@ -64843,8 +65340,11 @@ right one.
   validated pattern maps): `parse_object` built the root field of a dict root model from a copy of the object
   without `patternProperties`, so `_get_property_count_constraints` saw a closed object without patterns
   (`max_length=0`: every non-empty object rejected), and typed its keys `str` although `propertyNames` constrains
-  them. The field now reads every keyword that counts keys from the object itself and takes the builder's key and
-  null rules.
+  them. Under `--use-single-dict-for-object-maps` the field reads every keyword that counts keys from the object
+  itself and takes the builder's key and null rules; without it the 0.86.0 field is kept
+  (`_get_released_additional_properties_root_field`), and so are the object models of the validators, which leave the
+  other types of a type array out, and the 0.86.0 proof of a pattern that checks a declared key
+  (`_pattern_rejects_declared_value`).
 - **[#4835](https://github.com/datamodel-code-generator/datamodel-code-generator/issues/4835)** (keys outside the
   patterns): `parse_pattern_properties` took no `additionalProperties`, so an open pattern map typed only the keys of
   its patterns and rejected every other key, although the schema types them by `additionalProperties`. The builder

@@ -9,9 +9,9 @@ Options are grouped from shared CLI metadata and link back to their generated re
 | Group | Options | Description |
 |-------|---------|-------------|
 | [Imports](#imports) | 2 | Generated imports and type-checking import behavior. |
-| [Collection Types](#collection-types) | 6 | Collection and tuple/set generation. |
+| [Collection Types](#collection-types) | 7 | Collection and tuple/set generation. |
 | [Type Alias](#type-alias) | 3 | TypeAlias and root-model alias output. |
-| [Type Mapping](#type-mapping) | 10 | Scalar, date/time, and custom type mapping. |
+| [Type Mapping](#type-mapping) | 11 | Scalar, date/time, and custom type mapping. |
 | [Type Syntax](#type-syntax) | 3 | Modern annotation syntax and Annotated usage. |
 
 ## Imports {#imports}
@@ -32,6 +32,7 @@ Collection and tuple/set generation.
 | [`--no-use-standard-collections`](../typing-customization.md#no-use-standard-collections) | Use typing.Dict/List instead of built-in dict/list for container types. |
 | [`--use-generic-container-types`](../typing-customization.md#use-generic-container-types) | Use generic container types (Sequence, Mapping) for type hinting. |
 | [`--use-standard-collections`](../typing-customization.md#use-standard-collections) | Use built-in dict/list instead of typing.Dict/List. |
+| [`--use-tuple-for-closed-arrays`](../typing-customization.md#use-tuple-for-closed-arrays) | Generate tuple types for positional arrays that no other item can follow. |
 | [`--use-tuple-for-fixed-items`](../typing-customization.md#use-tuple-for-fixed-items) | Generate tuple types for arrays with items array syntax. |
 | [`--use-tuple-for-fixed-length-arrays`](../typing-customization.md#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-unique-items-as-set`](../typing-customization.md#use-unique-items-as-set) | Generate set types for arrays with uniqueItems constraint. |
@@ -60,6 +61,7 @@ Scalar, date/time, and custom type mapping.
 | [`--use-decimal-for-multiple-of`](../typing-customization.md#use-decimal-for-multiple-of) | Generate Decimal types for fields with multipleOf constraint. |
 | [`--use-object-type`](../typing-customization.md#use-object-type) | Use object instead of Any for unspecified object and array values. |
 | [`--use-pendulum`](../typing-customization.md#use-pendulum) | Use pendulum types for date, time, and duration fields. |
+| [`--use-single-dict-for-object-maps`](../typing-customization.md#use-single-dict-for-object-maps) | Type an object map as one dict instead of a union of dicts. |
 | [`--use-standard-primitive-types`](../typing-customization.md#use-standard-primitive-types) | Use Python standard library types for string formats instead of str. |
 | [`--use-typed-nullable-map-values`](../typing-customization.md#use-typed-nullable-map-values) | Type the values of nullable maps as their schemas say instead of Any. |
 

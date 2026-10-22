@@ -61,11 +61,13 @@ datamodel-codegen [OPTIONS]
 | [`--use-object-type`](typing-customization.md#use-object-type) | Use object instead of Any for unspecified object and array values. |
 | [`--use-pendulum`](typing-customization.md#use-pendulum) | Use pendulum types for date, time, and duration fields. |
 | [`--use-root-model-type-alias`](typing-customization.md#use-root-model-type-alias) | Generate RootModel as type alias format for better mypy support. |
+| [`--use-single-dict-for-object-maps`](typing-customization.md#use-single-dict-for-object-maps) | Type an object map as one dict instead of a union of dicts. |
 | [`--use-single-value-enum-as-const`](typing-customization.md#use-single-value-enum-as-const) | Treat `enum` with a single value as `const` with that value. |
 | [`--use-specialized-enum`](typing-customization.md#use-specialized-enum) | Generate StrEnum/IntEnum for string/integer enums (Python 3.11+). |
 | [`--use-standard-collections`](typing-customization.md#use-standard-collections) | Use built-in dict/list instead of typing.Dict/List. |
 | [`--use-standard-primitive-types`](typing-customization.md#use-standard-primitive-types) | Use Python standard library types for string formats instead of str. |
 | [`--use-total-false-for-typed-dict`](typing-customization.md#use-total-false-for-typed-dict) | Generate TypedDict declarations with `total=False`. |
+| [`--use-tuple-for-closed-arrays`](typing-customization.md#use-tuple-for-closed-arrays) | Generate tuple types for positional arrays that no other item can follow. |
 | [`--use-tuple-for-fixed-items`](typing-customization.md#use-tuple-for-fixed-items) | Generate tuple types for arrays with items array syntax. |
 | [`--use-tuple-for-fixed-length-arrays`](typing-customization.md#use-tuple-for-fixed-length-arrays) | Generate tuple types for homogeneous fixed-length arrays. |
 | [`--use-type-alias`](typing-customization.md#use-type-alias) | Use TypeAlias instead of root models for type definitions (experimental). |
@@ -523,6 +525,7 @@ All options sorted alphabetically:
 - [`--use-schema-description`](field-customization.md#use-schema-description) - Use schema description as class docstring.
 - [`--use-serialization-alias`](field-customization.md#use-serialization-alias) - Use serialization_alias instead of alias for field aliasing ...
 - [`--use-serialize-as-any`](model-customization.md#use-serialize-as-any) - Wrap fields with subtypes in Pydantic's SerializeAsAny.
+- [`--use-single-dict-for-object-maps`](typing-customization.md#use-single-dict-for-object-maps) - Type an object map as one dict instead of a union of dicts.
 - [`--use-single-line-docstring`](field-customization.md#use-single-line-docstring) - Emit short docstrings on a single line.
 - [`--use-single-value-enum-as-const`](typing-customization.md#use-single-value-enum-as-const) - Treat `enum` with a single value as `const` with that value.
 - [`--use-site-models-for-constrained-refs`](field-customization.md#use-site-models-for-constrained-refs) - Give an allOf of `$ref` members whose other parts add assert...
@@ -534,6 +537,7 @@ All options sorted alphabetically:
 - [`--use-tag-as-union-variant-name`](field-customization.md#use-tag-as-union-variant-name) - Name inline oneOf/anyOf branch models after their tag: what ...
 - [`--use-title-as-name`](field-customization.md#use-title-as-name) - Use schema title as the generated class name.
 - [`--use-total-false-for-typed-dict`](typing-customization.md#use-total-false-for-typed-dict) - Generate TypedDict declarations with `total=False`.
+- [`--use-tuple-for-closed-arrays`](typing-customization.md#use-tuple-for-closed-arrays) - Generate tuple types for positional arrays that no other ite...
 - [`--use-tuple-for-fixed-items`](typing-customization.md#use-tuple-for-fixed-items) - Generate tuple types for arrays with items array syntax.
 - [`--use-tuple-for-fixed-length-arrays`](typing-customization.md#use-tuple-for-fixed-length-arrays) - Generate tuple types for homogeneous fixed-length arrays.
 - [`--use-type-alias`](typing-customization.md#use-type-alias) - Use TypeAlias instead of root models for type definitions (e...

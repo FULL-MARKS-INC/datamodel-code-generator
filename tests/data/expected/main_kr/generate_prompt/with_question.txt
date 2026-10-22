@@ -57,11 +57,13 @@ How do I convert enums to Literal types?
 - `--use-object-type`: Use object instead of Any for unspecified object and array values.
 - `--use-pendulum`: Use pendulum types for date, time, and duration fields.
 - `--use-root-model-type-alias`: Generate RootModel as type alias format for better mypy support.
+- `--use-single-dict-for-object-maps`: Type an object map as one dict instead of a union of dicts.
 - `--use-single-value-enum-as-const`: Treat `enum` with a single value as `const` with that value.
 - `--use-specialized-enum`: Generate StrEnum/IntEnum for string/integer enums (Python 3.11+).
 - `--use-standard-collections`: Use built-in dict/list instead of typing.Dict/List.
 - `--use-standard-primitive-types`: Use Python standard library types for string formats instead of str.
 - `--use-total-false-for-typed-dict`: Generate TypedDict declarations with `total=False`.
+- `--use-tuple-for-closed-arrays`: Generate tuple types for positional arrays that no other item can follow.
 - `--use-tuple-for-fixed-items`: Generate tuple types for arrays with items array syntax.
 - `--use-tuple-for-fixed-length-arrays`: Generate tuple types for homogeneous fixed-length arrays.
 - `--use-type-alias`: Use TypeAlias instead of root models for type definitions (experimental).
@@ -548,6 +550,12 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
   --use-serialize-as-any
                         Use pydantic.SerializeAsAny for fields with types that
                         have subtypes (Pydantic v2 only)
+  --use-single-dict-for-object-maps
+                        Type an object map, an object without properties whose
+                        keys patternProperties or propertyNames constrain, as
+                        one dict whose keys are those of every key class and
+                        whose value is the union of their values, beside the
+                        null and the other types of its type array
   --use-single-value-enum-as-const
                         Treat `enum` with a single value as `const` with that
                         value, which JSON Schema defines as equal: oneOf/anyOf
@@ -574,6 +582,12 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
   --use-total-false-for-typed-dict
                         Generate TypedDict with total=False and mark required
                         fields with Required
+  --use-tuple-for-closed-arrays
+                        Generate tuple types for positional arrays that no
+                        other item can follow: a closed prefixItems tail
+                        (items, unevaluatedItems or additionalItems false)
+                        whose length the length keywords fix, so that each
+                        position keeps its own type
   --use-tuple-for-fixed-items
                         Generate tuple types for arrays with items array
                         syntax when minItems equals maxItems equals items

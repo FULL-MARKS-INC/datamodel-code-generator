@@ -3206,22 +3206,23 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             constraints["maxItems"] = 0
         return constraints
 
-    @classmethod
-    def _dropped_property_counts(cls, obj: JsonSchemaObject, data_type: DataType) -> dict[str, int]:
+    def _dropped_property_counts(self, obj: JsonSchemaObject, data_type: DataType) -> dict[str, int]:
         """Return the property counts of ``obj`` that the object map builder leaves out of its type-array union.
 
         A field takes the counts only on a type that is a map itself; they are keyed as the field writes the length
-        of a map, so the dropped-constraint warning names them.
+        of a map, so the dropped-constraint warning names them. Only the builder of
+        ``--use-single-dict-for-object-maps`` joins the map with the other types.
         """
         if (
-            not (obj.patternProperties or obj.propertyNames is not None)
+            not self.use_single_dict_for_object_maps
+            or not (obj.patternProperties or obj.propertyNames is not None)
             or _object_map_other_types(obj) is None
             or not any(member.is_dict or member.is_mapping for member in data_type.data_types)
         ):
             return {}
         return {
             "minLength" if key == "minItems" else "maxLength": value
-            for key, value in cls._get_property_count_constraints(obj).items()
+            for key, value in self._get_property_count_constraints(obj).items()
         }
 
     def _should_parse_empty_object_as_dict(self, obj: JsonSchemaObject) -> bool:  # noqa: PLR6301
@@ -3353,7 +3354,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         length, and the tuple is written only where the list form would lose positions: a list is kept when its items
         and every allowed position accept the same values, so the list and its length constraints are exact.
         ``canonical_ref`` reads the ``$ref`` values of ``obj``; by default they belong to the document being parsed.
+        Without ``--use-tuple-for-closed-arrays`` only equal explicit ``minItems`` and ``maxItems`` make a tuple.
         """
+        if not self.use_tuple_for_closed_arrays:
+            return self._get_explicit_fixed_positional_items(obj)
         if obj.prefixItems is not None:
             positional_key, positions = "prefixItems", obj.prefixItems
             explicit = obj.minItems is not None and obj.minItems == obj.maxItems
@@ -3377,6 +3381,34 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             for schema in [*items, *(self._get_list_item_schemas(obj) or [True])]
         )
         return None if all(other == first for other in others) else items
+
+    def _get_explicit_fixed_positional_items(self, obj: JsonSchemaObject) -> list[JsonSchemaObject | bool] | None:
+        """Return the positions of an array whose explicit ``minItems`` and ``maxItems`` are equal, or None."""
+        if obj.prefixItems is not None:
+            return self._get_fixed_length_prefix_tuple_items(obj)
+        if (
+            self.use_tuple_for_fixed_items
+            and isinstance(obj.items, list)
+            and obj.minItems == obj.maxItems == len(obj.items)
+            and not any(item is False for item in obj.items)
+        ):
+            return [*obj.items]
+        return None
+
+    @classmethod
+    def _get_fixed_length_prefix_tuple_items(cls, obj: JsonSchemaObject) -> list[JsonSchemaObject | bool] | None:
+        """Return positional item schemas for fixed-length prefixItems arrays."""
+        if (tuple_length := obj.minItems) is None or tuple_length != obj.maxItems or tuple_length < 0:
+            return None
+        items = [*(obj.prefixItems or [])[:tuple_length]]
+        if isinstance(obj.items, (JsonSchemaObject, bool)):
+            tail_item: JsonSchemaObject | bool = obj.items
+        elif isinstance(obj.unevaluatedItems, (JsonSchemaObject, bool)):
+            tail_item = obj.unevaluatedItems
+        else:
+            tail_item = True
+        items.extend(tail_item for _ in range(tuple_length - len(items)))
+        return None if any(item is False for item in items) else items
 
     def _get_position_validation_keywords(
         self,
@@ -4704,12 +4736,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return the type of a type array from the types of its members other than null.
 
         The dict of an array of object and null is the type itself, admitting the null, so the property counts of
-        the object stay on it.
+        the object stay on it, under ``--use-single-dict-for-object-maps``.
         """
         match data_types:
             case []:
                 return self.data_type_manager.get_data_type(Types.null)
-            case [map_type] if map_type.is_dict and set(types) <= {"object", "null"}:
+            case [map_type] if (
+                self.use_single_dict_for_object_maps and map_type.is_dict and set(types) <= {"object", "null"}
+            ):
                 return _with_null(map_type) if "null" in types else map_type
         return build_union(self.data_type, data_types, nullable=len(data_types) != len(types))
 
@@ -7640,7 +7674,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if positional_items and schema.minItems == schema.maxItems == len(positional_items):
             shape["minItems"] = schema.minItems
             shape["maxItems"] = schema.maxItems
-        elif (fixed_items := self._get_fixed_positional_items(schema, canonical_ref)) is not None:
+        elif (
+            self.use_tuple_for_closed_arrays
+            and (fixed_items := self._get_fixed_positional_items(schema, canonical_ref)) is not None
+        ):
             shape["minItems"] = shape["maxItems"] = len(fixed_items)
         return shape
 
@@ -11162,19 +11199,75 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         return properties
 
     @classmethod
+    def _declared_pattern_rejects_value(cls, declared: object, pattern: object) -> bool:
+        """Prove a skipped pattern rejects some value accepted by a simple declared field."""
+        declared_type = cls._plain_pattern_value_type(declared)
+        if declared_type is not None:
+            if pattern is False:
+                return True
+            return (
+                declared_type == "integer"
+                and isinstance(pattern, JsonSchemaObject)
+                and pattern.type == "integer"
+                and not pattern.extras
+                and pattern.model_fields_set == {"type", "minimum"}
+                and pattern.minimum is not None
+                and (isinstance(pattern.minimum, int) or math.isfinite(pattern.minimum))
+            )
+        pattern_properties = cls._plain_pattern_object(pattern)
+        if declared is True:
+            return pattern_properties is not None and bool(cast("JsonSchemaObject", pattern).required)
+        declared_properties = cls._plain_pattern_object(declared)
+        return (
+            declared_properties is not None
+            and pattern_properties is not None
+            and bool(
+                set(cast("JsonSchemaObject", pattern).required or ())
+                - set(cast("JsonSchemaObject", declared).required or ())
+            )
+        )
+
+    @classmethod
+    def _pattern_rejects_declared_value(
+        cls, pattern_properties: dict[str, JsonSchemaObject | bool], declared_properties: dict[str, Any]
+    ) -> bool:
+        """Return whether a pattern matches a declared key and rejects a value of its simple declared schema."""
+        for pattern, schema in pattern_properties.items():
+            for name, declared in declared_properties.items():
+                try:
+                    matches = re.search(pattern, name)
+                except re.error:
+                    continue
+                if matches and cls._declared_pattern_rejects_value(declared, schema):
+                    return True
+        return False
+
+    @classmethod
     def _pattern_validation_loses_raw_value(
-        cls, obj: JsonSchemaObject, pattern_value_types: list[tuple[str, DataType]]
-    ) -> Literal["models"] | None:
-        """Limit changed helpers to incompatible model instances."""
+        cls,
+        obj: JsonSchemaObject,
+        pattern_value_types: list[tuple[str, DataType]],
+        *,
+        declared_witness: bool = False,
+    ) -> Literal["declared", "models"] | None:
+        """Limit changed helpers to incompatible model instances, or skipped constraints (``declared_witness``)."""
         if not obj.extras.keys() <= {"title", "description"}:
             return None
-        return cls._pattern_validation_intersection(obj, pattern_value_types)
+        return cls._pattern_validation_intersection(obj, pattern_value_types, declared_witness=declared_witness)
 
     @classmethod
     def _pattern_validation_intersection(
-        cls, obj: JsonSchemaObject, pattern_value_types: list[tuple[str, DataType]]
-    ) -> Literal["models"] | None:
-        """Prove the same bounded intersection after root annotation eligibility."""
+        cls,
+        obj: JsonSchemaObject,
+        pattern_value_types: list[tuple[str, DataType]],
+        *,
+        declared_witness: bool = False,
+    ) -> Literal["declared", "models"] | None:
+        """Prove the same bounded intersection after root annotation eligibility.
+
+        With ``declared_witness``, the check of 0.86.0 without ``--use-single-dict-for-object-maps``, a pattern that
+        matches a declared key and rejects a value of its simple declared schema gives ``declared``.
+        """
         if (
             obj.type != "object"
             or not obj.model_fields_set
@@ -11199,6 +11292,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             for field in declared_properties.values()
         ):
             return None
+        if declared_witness and cls._pattern_rejects_declared_value(obj.patternProperties, declared_properties):
+            return "declared"
         pair_size = 2
         if len(obj.patternProperties) != pair_size or len(pattern_value_types) != pair_size:
             return None
@@ -11232,7 +11327,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     @classmethod
     def _pattern_validation_with_undeclared_required(
-        cls, obj: JsonSchemaObject, pattern_value_types: list[tuple[str, DataType]]
+        cls,
+        obj: JsonSchemaObject,
+        pattern_value_types: list[tuple[str, DataType]],
+        *,
+        declared_witness: bool = False,
     ) -> Literal["models"] | None:
         """Reuse the object compatibility proof after missing names receive raw required validation."""
         pair_size = 2
@@ -11251,7 +11350,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if (
             patterns
             and cls._pattern_validation_loses_raw_value(
-                obj.model_copy(update={"patternProperties": {**obj.patternProperties, **patterns}}), pattern_value_types
+                obj.model_copy(update={"patternProperties": {**obj.patternProperties, **patterns}}),
+                pattern_value_types,
+                declared_witness=declared_witness,
             )
             == "models"
         ):
@@ -11343,17 +11444,28 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             any((self.config.base_class, self.config.base_class_map, self.config.custom_template_dir))
             or self.config.extra_template_data is not None
         )
-        intersection = None if helpers_kept else self._pattern_validation_loses_raw_value(obj, pattern_value_types)
+        declared_witness = not self.use_single_dict_for_object_maps
+        intersection = (
+            None
+            if helpers_kept
+            else self._pattern_validation_loses_raw_value(obj, pattern_value_types, declared_witness=declared_witness)
+        )
         if obj is self._pattern_validation_document_root:
             if intersection is None and not self.force_optional_for_required_fields:
-                intersection = self._pattern_validation_with_undeclared_required(obj, pattern_value_types)
+                intersection = self._pattern_validation_with_undeclared_required(
+                    obj, pattern_value_types, declared_witness=declared_witness
+                )
             if (
                 intersection is None
                 and not obj.extras.keys() <= {"title", "description"}
                 and self._plain_pattern_root_annotations(obj, pattern_value_types)
             ):
-                intersection = self._pattern_validation_intersection(obj, pattern_value_types)
-        if not helpers_kept and self._pattern_checks_declared_key(obj, names_by_property):
+                intersection = self._pattern_validation_intersection(
+                    obj, pattern_value_types, declared_witness=declared_witness
+                )
+        if intersection == "declared" or (
+            not declared_witness and not helpers_kept and self._pattern_checks_declared_key(obj, names_by_property)
+        ):
             rule_type = IndependentDeclaredPatternPropertiesRule
         elif intersection == "models":
             rule_type = IndependentModelPatternPropertiesRule
@@ -12748,9 +12860,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         propertyNames types the keys and additionalProperties the values. Where the patternProperties validator
         checks the map, the values are ``Any`` and the keys are read from propertyNames as a pattern map reads them.
-        The object map builder's rule gives the dict its null. The field reads the keywords that count the keys of
-        the object, patternProperties included, so a key that a pattern admits counts.
+        The object map builder's rule gives the dict its null. The field reads the keywords that count the keys of the
+        object, patternProperties included, so a key that a pattern admits counts. Without
+        ``--use-single-dict-for-object-maps`` the field is that of 0.86.0
+        (``_get_released_additional_properties_root_field``).
         """
+        if not self.use_single_dict_for_object_maps:
+            return self._get_released_additional_properties_root_field(name, obj, path)
         value_type = self.data_type_manager.get_data_type(Types.any)
         if self._has_pattern_properties_validator(obj):
             key_type = self._pattern_map_key_type(obj.propertyNames, None)
@@ -12783,6 +12899,47 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             required=True,
             original_field_name=None,
             field_type=_with_null(map_type) if self._object_map_admits_null(obj) else map_type,
+            alias=None,
+        )
+
+    def _get_released_additional_properties_root_field(
+        self,
+        name: str,
+        obj: JsonSchemaObject,
+        path: list[str],
+    ) -> DataModelFieldBase:
+        """Build the dict root field of 0.86.0: ``str`` keys, and counts read without patternProperties."""
+        additional_props_type = None
+        if not self._has_pattern_properties_validator(obj):
+            match obj.additionalProperties:
+                case JsonSchemaObject() as additional_properties:
+                    additional_props_type = self._parse_additional_properties_value(
+                        name,
+                        [*path, "additionalProperties"],
+                        obj,
+                        additional_properties=additional_properties,
+                    )
+
+        additional_props_field = self.SCHEMA_OBJECT_TYPE.model_validate({
+            "minProperties": obj.minProperties,
+            "maxProperties": obj.maxProperties,
+            "propertyNames": obj.propertyNames,
+            "additionalProperties": obj.additionalProperties,
+        })
+
+        return self.get_object_field(
+            field_name=None,
+            field=additional_props_field,
+            required=True,
+            original_field_name=None,
+            field_type=self.data_type(
+                data_types=[
+                    additional_props_type
+                    if additional_props_type is not None
+                    else self.data_type_manager.get_data_type(Types.any)
+                ],
+                is_dict=True,
+            ),
             alias=None,
         )
 
@@ -12921,8 +13078,61 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         type is written, and a value that admits anything makes the whole value ``Any``. The patterns are joined
         into one key pattern, intersected with ``property_names``. A ``false`` pattern admits no key. A map whose
         additionalProperties types the keys that match no pattern (``_other_keys_schema``) is not built here.
+        Without ``--use-single-dict-for-object-maps`` the map is the union of one dict per value type
+        (``_parse_pattern_properties_union``).
         """
+        if not self.use_single_dict_for_object_maps:
+            return self._parse_pattern_properties_union(name, pattern_properties, path, property_names)
         return self._parse_pattern_map(name, pattern_properties, path, property_names, None)
+
+    def _parse_pattern_properties_union(
+        self,
+        name: str,
+        pattern_properties: dict[str, JsonSchemaObject | bool],
+        path: list[str],
+        property_names: JsonSchemaObject | bool | None,  # ruff: ignore[boolean-type-hint-positional-argument]
+    ) -> DataType:
+        """Parse patternProperties into a union of dicts, one per value type, whose keys match its patterns."""
+        pattern_value_pairs: list[tuple[str, DataType]] = []
+        for i, (pattern, schema) in enumerate(pattern_properties.items()):
+            if schema is False:
+                continue
+
+            if schema is True:
+                value_type = self.data_type_manager.get_data_type(Types.any)
+            else:
+                value_type = self.parse_item(
+                    name,
+                    schema,
+                    get_special_path(f"patternProperties/{i}", path),
+                )
+            pattern_value_pairs.append((pattern, value_type))
+
+        if not pattern_value_pairs:
+            return self.data_type(
+                data_types=[self.data_type_manager.get_data_type(Types.any)],
+                is_dict=True,
+            )
+
+        groups: dict[str, tuple[list[str], DataType]] = {}
+        for pattern, value_type in pattern_value_pairs:
+            key = value_type.type_hint
+            if key not in groups:
+                groups[key] = ([], value_type)
+            groups[key][0].append(pattern)
+
+        data_types: list[DataType] = []
+        for patterns, value_type in groups.values():
+            merged_pattern = patterns[0] if len(patterns) == 1 else "|".join(patterns)
+            data_types.append(
+                self.data_type(
+                    data_types=[value_type],
+                    is_dict=True,
+                    dict_key=self._pattern_map_key_type(property_names, merged_pattern),
+                )
+            )
+
+        return self.data_type(data_types=data_types)
 
     def _parse_pattern_map(
         self,
@@ -13043,8 +13253,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         values only under ``--use-typed-nullable-map-values``, whose value schema callers pass as ``typed_values``.
         The dict itself admits the null of a type array of object and null, or of ``nullable`` under
         ``--strict-nullable``, so its property counts stay on it; other types of the type array join it in a union.
-        The members of the dict are parsed under ``object_path``, the other types under ``path``.
+        The members of the dict are parsed under ``object_path``, the other types under ``path``. Without
+        ``--use-single-dict-for-object-maps`` the map is built as 0.86.0 built it (``_parse_object_map_union``).
         """
+        if not self.use_single_dict_for_object_maps:
+            return self._parse_object_map_union(name, obj, path, object_path, typed_values)
         if pattern_properties := obj.patternProperties:
             self._warn_inexact_object_map(name, obj, pattern_properties)
             map_type = (
@@ -13062,13 +13275,53 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             map_type = self._parse_additional_properties_map(name, obj, object_path, obj.additionalProperties)
         else:
             map_type = self.data_type_manager.get_data_type(Types.object)
-        if (type_list := _object_map_other_types(obj)) is not None:
-            return build_union(
-                self.data_type,
-                [map_type, *self._iter_non_object_union_types(name, obj, type_list, path, keep_constraints=True)],
-                nullable=self._object_map_admits_null(obj),
-            )
+        if (union := self._object_map_type_union(name, obj, path, map_type)) is not None:
+            return union
         return _with_null(map_type) if self._object_map_admits_null(obj) else map_type
+
+    def _object_map_type_union(
+        self, name: str, obj: JsonSchemaObject, path: list[str], map_type: DataType
+    ) -> DataType | None:
+        """Return the union of the dict of an object map with the other types of its type array, or None."""
+        if (type_list := _object_map_other_types(obj)) is None:
+            return None
+        return build_union(
+            self.data_type,
+            [map_type, *self._iter_non_object_union_types(name, obj, type_list, path, keep_constraints=True)],
+            nullable=self._object_map_admits_null(obj),
+        )
+
+    def _parse_object_map_union(
+        self,
+        name: str,
+        obj: JsonSchemaObject,
+        path: list[str],
+        object_path: list[str],
+        typed_values: JsonSchemaObject | None,
+    ) -> DataType:
+        """Build an object map as 0.86.0 did, without ``--use-single-dict-for-object-maps``.
+
+        patternProperties give a union of dicts, one per value type (``parse_pattern_properties``), else propertyNames
+        and additionalProperties one dict; the null and the other types of its type array are left to the field.
+        The values typed under ``--use-typed-nullable-map-values`` make one dict, optional where its type array lists
+        null, and the union with the other types of its type array.
+        """
+        if pattern_properties := obj.patternProperties:
+            return self.parse_pattern_properties(
+                name, pattern_properties, object_path, property_names=obj.propertyNames
+            )
+        if obj.propertyNames is not None:
+            return self.parse_property_names(
+                name, obj.propertyNames, obj.additionalProperties, object_path, parent_obj=obj
+            )
+        if typed_values is not None:
+            map_type = self._parse_nullable_map(name, obj, object_path, typed_values)
+            if (union := self._object_map_type_union(name, obj, path, map_type)) is not None:
+                return union
+            return self.data_type(data_types=[map_type], is_optional=obj.type_has_null)
+        if isinstance(obj.additionalProperties, JsonSchemaObject):
+            return self._parse_additional_properties_map(name, obj, object_path, obj.additionalProperties)
+        return self.data_type_manager.get_data_type(Types.object)
 
     def _object_map_admits_null(self, obj: JsonSchemaObject) -> bool:
         """Return whether an object map admits null: its type array lists object and null, or it is nullable.
@@ -13598,7 +13851,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> DataType:
         """Parse an object into its model, joined in a union with the other types of its type array."""
         model_type = self.parse_object(name, item, get_special_path("object", path), singular_name=singular_name)
-        if not (item.has_multiple_types and isinstance(item.type, list)):
+        if not (self._joins_other_types(item) and isinstance(item.type, list)):
             return model_type
         return build_union(
             self.data_type, [model_type, *self._iter_non_object_union_types(name, item, item.type, path)]
@@ -14260,9 +14513,17 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
     def _parse_object_model(self, name: str, obj: JsonSchemaObject, path: list[str]) -> DataType:
         """Parse an object into its model; a type array with other types makes a root model of their union."""
-        if obj.has_multiple_types and isinstance(obj.type, list):
+        if self._joins_other_types(obj) and isinstance(obj.type, list):
             return self._parse_multiple_types_with_properties(name, obj, obj.type, path)
         return self.parse_object(name, obj, path)
+
+    def _joins_other_types(self, obj: JsonSchemaObject) -> bool:
+        """Return whether the model of an object joins the other types of its type array in a union.
+
+        An object without properties, built as a model for its schema validators, joins them only under
+        ``--use-single-dict-for-object-maps``, as an object map does.
+        """
+        return obj.has_multiple_types and (bool(obj.properties) or self.use_single_dict_for_object_maps)
 
     def _parse_object_kind_schema(self, name: str, obj: JsonSchemaObject, path: list[str]) -> DataType | None:
         """Parse an object-kind schema into its model as a definition is parsed; ``None`` for other schemas."""

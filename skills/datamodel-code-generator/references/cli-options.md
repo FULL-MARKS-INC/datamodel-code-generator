@@ -53,12 +53,14 @@ Type annotation, import, and primitive type behavior.
 - `--no-use-standard-collections`: Use standard collections for type hinting (list, dict). Default: enabled
 - `--use-object-type`: Use object instead of Any for unspecified JSON Schema object and array values
 - `--use-typed-nullable-map-values`: Type the values of nullable maps, schemas whose type array lists object, alone or with null or other types, such as [object, null], [object] or [object, string], with additionalProperties, as their schema says, with a model for object values. Without it the 0.83.0 form is kept, dict[str, Any] | None, or dict[str, Any] without null.
+- `--use-single-dict-for-object-maps`: Type an object map, an object without properties whose keys patternProperties or propertyNames constrain, as one dict whose keys are those of every key class and whose value is the union of their values, beside the null and the other types of its type array
 - `--use-specialized-enum`: Use specialized Enum class (StrEnum, IntEnum). Requires --target-python-version 3.11+
 - `--no-use-specialized-enum`: Use specialized Enum class (StrEnum, IntEnum). Requires --target-python-version 3.11+
 - `--use-union-operator`: Use | operator for Union type (PEP 604). Default: enabled
 - `--no-use-union-operator`: Use | operator for Union type (PEP 604). Default: enabled
 - `--use-unique-items-as-set`: define field type as `set` when the field attribute has `uniqueItems`
 - `--use-tuple-for-fixed-items`: Generate tuple types for arrays with items array syntax when minItems equals maxItems equals items length
+- `--use-tuple-for-closed-arrays`: Generate tuple types for positional arrays that no other item can follow: a closed prefixItems tail (items, unevaluatedItems or additionalItems false) whose length the length keywords fix, so that each position keeps its own type
 - `--use-tuple-for-fixed-length-arrays`: Generate tuple types for fixed-length arrays with a single items schema
 - `--use-total-false-for-typed-dict`: Generate TypedDict with total=False and mark required fields with Required
 - `--use-closed-typed-dict`: Generate TypedDict with PEP 728 closed=True/extra_items for additionalProperties constraints. Use --no-use-closed-typed-dict for type checkers that don't yet support PEP 728 (e.g., mypy).

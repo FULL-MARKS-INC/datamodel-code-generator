@@ -431,7 +431,11 @@ PAYLOAD_BACKEND_EXTRA_ARGS_BY_CASE_ID: dict[str, dict[PayloadBackend, tuple[str,
         PayloadBackend.MSGSPEC: ("--enum-field-as-literal", "all"),
     },
     "jsonschema/items_array_additional_items_false.json": dict.fromkeys(
-        PayloadBackend, ("--use-tuple-for-fixed-items",)
+        PayloadBackend, ("--use-tuple-for-fixed-items", "--use-tuple-for-closed-arrays")
+    ),
+    "jsonschema/prefix_items_closed_length.json": dict.fromkeys(PayloadBackend, ("--use-tuple-for-closed-arrays",)),
+    "openapi/nullable_object_maps.yaml::components.schemas.ValueRoot": dict.fromkeys(
+        PayloadBackend, ("--use-single-dict-for-object-maps",)
     ),
 }
 ROUND_TRIP_EXCLUDED_CASES: dict[str, str] = {

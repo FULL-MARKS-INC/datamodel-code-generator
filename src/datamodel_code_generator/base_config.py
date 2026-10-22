@@ -242,6 +242,7 @@ class BaseGenerateConfig(BaseModel):
     tag_msgspec_by_payload_name: bool = False
     use_msgspec_nullable_enum_alias: bool = False
     use_typed_nullable_map_values: bool = False
+    use_single_dict_for_object_maps: bool = False
     use_single_value_enum_as_const: bool = False
     read_const_beside_enum: bool = False
     filter_literal_values: bool = False
@@ -274,6 +275,7 @@ class BaseGenerateConfig(BaseModel):
     use_operation_id_as_name: bool = False
     use_unique_items_as_set: bool = False
     use_tuple_for_fixed_items: bool = False
+    use_tuple_for_closed_arrays: bool = False
     use_tuple_for_fixed_length_arrays: bool = False
     use_total_false_for_typed_dict: bool = False
     use_closed_typed_dict: bool = True

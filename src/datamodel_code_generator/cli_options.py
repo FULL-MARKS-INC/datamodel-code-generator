@@ -644,6 +644,12 @@ CLI_OPTION_META: dict[str, CLIOptionMeta] = {
         topic=OptionTopic.TYPING_CUSTOMIZATION,
         group=OptionGroup.TYPE_MAPPING,
     ),
+    "--use-single-dict-for-object-maps": CLIOptionMeta(
+        name="--use-single-dict-for-object-maps",
+        category=OptionCategory.TYPING,
+        topic=OptionTopic.TYPING_CUSTOMIZATION,
+        group=OptionGroup.TYPE_MAPPING,
+    ),
     "--use-type-checking-imports": CLIOptionMeta(
         name="--use-type-checking-imports",
         category=OptionCategory.TEMPLATE,
@@ -692,6 +698,12 @@ CLI_OPTION_META: dict[str, CLIOptionMeta] = {
     ),
     "--use-tuple-for-fixed-items": CLIOptionMeta(
         name="--use-tuple-for-fixed-items",
+        category=OptionCategory.TYPING,
+        topic=OptionTopic.TYPING_CUSTOMIZATION,
+        group=OptionGroup.COLLECTION_TYPES,
+    ),
+    "--use-tuple-for-closed-arrays": CLIOptionMeta(
+        name="--use-tuple-for-closed-arrays",
         category=OptionCategory.TYPING,
         topic=OptionTopic.TYPING_CUSTOMIZATION,
         group=OptionGroup.COLLECTION_TYPES,
