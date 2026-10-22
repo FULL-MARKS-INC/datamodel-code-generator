@@ -248,6 +248,7 @@ openapi/external_ref_with_transitive_local_ref/openapi.yaml	yaml_fast_constructo
 openapi/external_ref_with_transitive_local_ref/schemas/feedback.yaml	yaml_fast_constructor/parity.txt
 openapi/external_relative_ref/model_a/types.openapi.yaml	yaml_fast_constructor/parity.txt
 openapi/external_relative_ref/model_b/module.openapi.yaml	yaml_fast_constructor/parity.txt
+openapi/extracted_branch_default.yaml	yaml_fast_constructor/parity.txt
 openapi/field_model_name_collision.yaml	yaml_fast_constructor/parity.txt
 openapi/field_property_name_collision.yaml	yaml_fast_constructor/parity.txt
 openapi/field_render_plan.yaml	yaml_fast_constructor/parity.txt

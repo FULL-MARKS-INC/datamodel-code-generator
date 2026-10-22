@@ -9418,7 +9418,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         target_attribute_name: str,
     ) -> list[DataType]:
         """Parse combined schema (anyOf, oneOf, allOf) into a list of data types."""
-        base_object = obj.model_dump(exclude={target_attribute_name, "title"}, exclude_unset=True, by_alias=True)
+        base_object = obj.model_dump(
+            exclude={target_attribute_name, "title", "default"}, exclude_unset=True, by_alias=True
+        )
         combined_schemas: list[JsonSchemaObject] = []
         refs = []
         use_builtin_false_ref_facts: bool | None = None
