@@ -125,7 +125,6 @@ from datamodel_code_generator.model._decisions.tag_value import (
     schema_path_keys,
     struct_tag_clash,
     struct_tag_conflicts,
-    struct_tag_field,
     tag_field_matches,
     tag_key,
     variant_tags,
@@ -5469,13 +5468,10 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 _drop_discriminator_tag_patterns(tag_fields)
                 if not tags:
                     continue
-                tag_field = struct_tag_field(
-                    property_name=property_name, field_name=field_name, tagged_unions=tagged_unions
-                )
                 if tagged_unions:
-                    unions.append((model, tags, tag_field, mapping))
+                    unions.append((model, tags, property_name, mapping))
                 else:
-                    _apply_discriminator_tags(tags, tag_field, can_retain_cache=can_retain_cache)
+                    _apply_discriminator_tags(tags, property_name, can_retain_cache=can_retain_cache)
         if (deferred := self._deferred_tagged_unions) or unions:
             self._deferred_tagged_unions = _tag_discriminator_unions(
                 [*deferred, *unions],

@@ -633,6 +633,18 @@ def test_main_openapi_discriminator_enum_use_values_force_optional(
     )
 
 
+@pytest.mark.parametrize("extra_args", [[], ["--use-msgspec-tagged-unions"]], ids=["default", "tagged-unions"])
+def test_main_openapi_discriminator_msgspec_inferred_property(output_file: Path, extra_args: list[str]) -> None:
+    """Tag msgspec variants by the property every branch holds a literal for, without the declared one's mapping."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "discriminator_msgspec_inferred_property.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=["--output-model-type", "msgspec.Struct", "--disable-timestamp", *extra_args],
+        force_exec_validation=True,
+    )
+
+
 def test_main_openapi_discriminator_enum_single_value_msgspec(output_file: Path) -> None:
     """Single-value enum discriminator is used as the msgspec tag."""
     run_main_and_assert(

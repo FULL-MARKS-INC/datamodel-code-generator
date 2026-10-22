@@ -14791,6 +14791,18 @@ def test_main_msgspec_discriminator_const_enum(output_file: Path, extra_args: li
     )
 
 
+@pytest.mark.parametrize("extra_args", [[], ["--use-msgspec-tagged-unions"]], ids=["default", "tagged-unions"])
+def test_main_msgspec_discriminator_wire_name(output_file: Path, extra_args: list[str]) -> None:
+    """Tag msgspec variants by the property name the payload carries, not by its Python name."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "discriminator_msgspec_wire_name.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        extra_args=["--output-model-type", "msgspec.Struct", "--disable-timestamp", *extra_args],
+        force_exec_validation=True,
+    )
+
+
 @pytest.mark.parametrize(
     ("extra_args", "expected_file"),
     [

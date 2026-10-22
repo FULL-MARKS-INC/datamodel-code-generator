@@ -977,6 +977,9 @@ fields	main/openapi/discriminator/msgspec_tagged_unions_default.py
 fields	main/openapi/discriminator/msgspec_tagged_unions_default_warnings.txt	= main/openapi/discriminator_field_aliases/msgspec_warnings.txt
 shared-variants	main/openapi/discriminator/mapping_msgspec_untagged_default.py
 shared-variants	main/openapi/discriminator/mapping_msgspec_untagged_default_warnings.txt
+[test_main_openapi_discriminator_msgspec_inferred_property]
+default	main/openapi/main_openapi/discriminator_msgspec_inferred_property[default].py
+tagged-unions	main/openapi/main_openapi/discriminator_msgspec_inferred_property[tagged-unions].py	= main/openapi/main_openapi/discriminator_msgspec_inferred_property[default].py
 [test_main_openapi_discriminator_no_mapping]
 	main/openapi/discriminator/no_mapping.py
 [test_main_openapi_discriminator_no_mapping_no_subtypes]
