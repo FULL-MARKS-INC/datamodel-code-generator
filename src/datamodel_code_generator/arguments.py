@@ -1189,6 +1189,21 @@ field_options.add_argument(
     default=None,
 )
 field_options.add_argument(
+    "--read-nullable-beside-type-list",
+    help="Write the null that `nullable: true` declares beside a `type` list with an object into the root model of "
+    "that schema under --strict-nullable or --use-missing-sentinel, as a declared field does; without it only a "
+    "`type` list holding null makes that root admit None",
+    action="store_true",
+    default=None,
+)
+field_options.add_argument(
+    "--keep-field-defaults-off-branch-roots",
+    help="Leave the default of a property off the root models extracted from the branches of its `anyOf` or `oneOf`, "
+    "which then require their value; without it each such root takes the property's default",
+    action="store_true",
+    default=None,
+)
+field_options.add_argument(
     "--use-field-description",
     help="Use schema description to populate field docstring",
     action="store_true",

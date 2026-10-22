@@ -845,6 +845,10 @@
       "not_recommended": "command",
       "reason": "Selects a pyproject.toml job; the recommendation keeps it."
     },
+    "keep_field_defaults_off_branch_roots": {
+      "not_recommended": "preset",
+      "reason": "Set by the 20261022 presets; the recommendation starts from a preset."
+    },
     "keep_model_order": {
       "not_recommended": "style",
       "reason": "Keeps the schema order of models in the output."
@@ -981,6 +985,10 @@
       "reason": "Selects a pyproject.toml profile; the recommendation keeps it."
     },
     "read_const_beside_enum": {
+      "not_recommended": "preset",
+      "reason": "Set by the 20261022 presets; the recommendation starts from a preset."
+    },
+    "read_nullable_beside_type_list": {
       "not_recommended": "preset",
       "reason": "Set by the 20261022 presets; the recommendation starts from a preset."
     },

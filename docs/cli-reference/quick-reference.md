@@ -133,6 +133,7 @@ datamodel-codegen [OPTIONS]
 | [`--enable-faux-immutability`](model-customization.md#enable-faux-immutability) | Enable faux immutability in Pydantic models (frozen=True). |
 | [`--force-optional`](model-customization.md#force-optional) | Force all fields to be Optional regardless of required status. |
 | [`--frozen-dataclasses`](model-customization.md#frozen-dataclasses) | Generate frozen dataclasses with optional keyword-only fields. |
+| [`--keep-field-defaults-off-branch-roots`](model-customization.md#keep-field-defaults-off-branch-roots) | Leave a property's default off the root models extracted from its `anyOf` or `on... |
 | [`--keep-model-order`](model-customization.md#keep-model-order) | Keep generated model order deterministic while respecting dependency constraints... |
 | [`--keyword-only`](model-customization.md#keyword-only) | Generate dataclasses with keyword-only fields (Python 3.10+). |
 | [`--model-extra-keys`](model-customization.md#model-extra-keys) | Add model-level schema extensions to ConfigDict json_schema_extra. |
@@ -145,6 +146,7 @@ datamodel-codegen [OPTIONS]
 | [`--output-model-type`](model-customization.md#output-model-type) | Select the output model type (Pydantic v2, Pydantic v2 dataclass, dataclasses, T... |
 | [`--parent-scoped-naming`](model-customization.md#parent-scoped-naming) | Namespace models by their parent scope to avoid naming conflicts. |
 | [`--pin-aliases-with-alias-generator`](model-customization.md#pin-aliases-with-alias-generator) | Decide a field's alias by the alias generator its model applies. |
+| [`--read-nullable-beside-type-list`](model-customization.md#read-nullable-beside-type-list) | Write the null that `nullable: true` declares beside a `type` list into the root... |
 | [`--reuse-model`](model-customization.md#reuse-model) | Reuse identical model definitions instead of generating duplicates. |
 | [`--reuse-scope`](model-customization.md#reuse-scope) | Scope for model reuse detection (root or tree). |
 | [`--skip-root-model`](model-customization.md#skip-root-model) | Skip generation of root model when schema contains nested definitions. |
@@ -406,6 +408,7 @@ All options sorted alphabetically:
 - [`--install-skill`](utility-options.md#install-skill) - Install the bundled Agent Skill (experimental)
 - [`--intersect-allof-keywords`](typing-customization.md#intersect-allof-keywords) - Combine the keywords of every part of an `allOf`, a `$ref` w...
 - [`--job`](utility-options.md#job) - Run a named generation job from pyproject.toml (experimental)
+- [`--keep-field-defaults-off-branch-roots`](model-customization.md#keep-field-defaults-off-branch-roots) - Leave a property's default off the root models extracted fro...
 - [`--keep-model-order`](model-customization.md#keep-model-order) - Keep generated model order deterministic while respecting de...
 - [`--keyword-only`](model-customization.md#keyword-only) - Generate dataclasses with keyword-only fields (Python 3.10+)...
 - [`--list-deprecations`](utility-options.md#list-deprecations) - List registered deprecations and scheduled breaking changes
@@ -447,6 +450,7 @@ All options sorted alphabetically:
 - [`--preset`](base-options.md#preset) - Apply an immutable built-in option preset.
 - [`--profile`](utility-options.md#profile) - Use a named profile from pyproject.toml
 - [`--read-const-beside-enum`](typing-customization.md#read-const-beside-enum) - Read a `const` beside an `enum` as JSON Schema does.
+- [`--read-nullable-beside-type-list`](model-customization.md#read-nullable-beside-type-list) - Write the null that `nullable: true` declares beside a `type...
 - [`--read-only-write-only-model-type`](openapi-only-options.md#read-only-write-only-model-type) - Generate separate request and response models for readOnly/w...
 - [`--recommend-options`](general-options.md#recommend-options) - Recommend options for the input schema on top of the latest ...
 - [`--remove-special-field-name-prefix`](field-customization.md#remove-special-field-name-prefix) - Remove the special prefix from field names.
