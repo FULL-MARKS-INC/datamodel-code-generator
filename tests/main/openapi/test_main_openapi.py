@@ -1101,6 +1101,13 @@ def test_main_openapi_use_msgspec_nullable_enum_alias(output_file: Path) -> None
             id="openapi-30-set-default-enum-member-alias",
         ),
         pytest.param("msgspec_nullable_enum_inherited.yaml", [], "openapi_inherited.py", True, id="inherited"),
+        pytest.param(
+            "msgspec_nullable_enum_inherited_overlap.yaml",
+            [],
+            "openapi_inherited_overlap.py",
+            False,
+            id="inherited-overlap",
+        ),
     ],
 )
 def test_main_openapi_msgspec_nullable_enum(
@@ -1110,7 +1117,8 @@ def test_main_openapi_msgspec_nullable_enum(
 
     The `IntEnum` of `type: integer`, which cannot hold a `None` member, is written without it also without the
     option, and without the alias, as its `type` rejects null. An allOf of enums that no value meets in common, whose
-    merged `IntEnum` would hold a `None` member and fail at import, takes its first enum.
+    merged `IntEnum` would hold a `None` member and fail at import, takes its first enum. An allOf of enums that
+    share a value, whose merged `IntEnum` keeps the `None` member, is warned about as an import failure.
     """
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
@@ -3567,6 +3575,31 @@ def test_main_openapi_strip_default_none_semantic_default(
             output_model_type,
             "--target-python-version",
             target_python_version,
+        ],
+    )
+
+
+@pytest.mark.parametrize("output_model_type", ["pydantic_v2.BaseModel", "pydantic_v2.dataclass"])
+def test_main_openapi_strip_default_none_nullable_reference(output_model_type: str, output_file: Path) -> None:
+    """Keep the None default of a field naming a nullable model only where the field writes no ``Field()``.
+
+    ``Field()`` decides from the type's None as written before render preparation, which leaves out the None the
+    nullable model gives (row ``legacy-strip-keeps-written-null-only``): ``n_1`` and ``n2`` write ``Field()`` without
+    it, while ``n`` keeps ``= None``.
+    """
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "strip_default_none_nullable_reference.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        extra_args=[
+            "--output-model-type",
+            output_model_type,
+            "--strict-nullable",
+            "--strip-default-none",
+            "--target-python-version",
+            "3.10",
+            "--formatters",
+            "builtin",
         ],
     )
 

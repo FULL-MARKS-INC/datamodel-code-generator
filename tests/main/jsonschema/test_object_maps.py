@@ -40,7 +40,7 @@ OBJECT_MAP_INPUTS = (
     "pattern_maps",
     "nullable_maps",
     "type_array_maps",
-    "type_array_typed_values",
+    "type_list_maps",
     "pattern_counts",
     "pattern_additional",
     "declared_patterns",
@@ -65,6 +65,7 @@ OPTION_SETS = {
     "annotated": ("--use-annotated",),
     "typed_map_values_field_constraints": ("--use-typed-nullable-map-values", "--field-constraints"),
     "typed_map_values_annotated": ("--use-typed-nullable-map-values", "--use-annotated"),
+    "omit_redundant_reference_null": ("--omit-redundant-reference-null",),
 }
 
 

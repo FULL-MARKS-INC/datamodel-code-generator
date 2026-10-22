@@ -182,6 +182,7 @@ from datamodel_code_generator.parser._finality import (
     parse_checks,
     pass_scope,
     record_ordering_inputs,
+    viewed,
 )
 from datamodel_code_generator.parser._graph_ids import (
     UNRESOLVED_MODEL_KEY,
@@ -190,6 +191,7 @@ from datamodel_code_generator.parser._graph_ids import (
     keyed_models,
     unchecked,
 )
+from datamodel_code_generator.parser._held_null import OMIT_HELD_NULL
 from datamodel_code_generator.parser._imports_plan import ImportProducer, ModuleImportLedger
 from datamodel_code_generator.parser._model_shapes import (
     COLLAPSE_REUSE,
@@ -2140,6 +2142,7 @@ def _apply_inherited_field_nullability(
     """Keep omission optionality separate from the schema's null intersection."""
     if not copied_field.required and current_type.is_optional:
         copied_field.data_type.is_optional = True
+        GenerationStore.clear_target_null(copied_field.data_type)
 
     match current_type:
         case _InheritedTypeModifiers(excludes_null=True):
@@ -3671,7 +3674,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     _cache_local_sources_during_parse: ClassVar[bool] = False
     _cache_parsed_sources_from_path: ClassVar[bool] = False
     _collapses_list_item_root_models: ClassVar[bool] = True
-    _DECISION_PASSES: ClassVar[tuple[DecisionPass[Any], ...]] = ()
+    _DECISION_PASSES: ClassVar[tuple[DecisionPass[Any], ...]] = (OMIT_HELD_NULL,)
     """The decisions of the decision phase, in registration order; ``parser/_phases.py`` says how they run."""
     _http_fetch_session: _HTTPFetchSession | None = None
     _dropped_constraint_fields: DroppedConstraintFields = frozenset()
@@ -3965,6 +3968,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self.use_subclass_enum: bool = config.use_subclass_enum
         self.use_specialized_enum: bool = config.use_specialized_enum
         self.strict_nullable: bool = config.strict_nullable
+        self.omit_redundant_reference_null: bool = config.omit_redundant_reference_null
         self.use_generic_container_types: bool = config.use_generic_container_types
         self.use_union_operator: bool = config.use_union_operator
         self.enable_faux_immutability: bool = config.enable_faux_immutability
@@ -4670,6 +4674,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         models keep the names they had before values were typed.
         """
         models = self._typed_map_values_last(models)
+        for model in models:
+            model._write_pre_render_nullability()  # noqa: SLF001
         scoped_model_resolver = ModelResolver(
             exclude_names={i.alias or i.import_ for m in models for i in m.imports},
             duplicate_name_suffix="Model",
@@ -7327,7 +7333,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             return models
         kept: list[DataModel] = []
         for model in models:
-            if model.class_name in overrides:
+            if model.class_name in overrides or self.__enum_site_override_import(model.reference) is not None:
                 self.generation_store.retire_model(model)
             else:
                 kept.append(model)
@@ -7373,6 +7379,16 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             not (model.IS_ROOT_MODEL or model.IS_ALIAS)
             or (target := model.reference.__dict__.get(_DERIVED_FROM_KEY)) is None
         ):
+            return None
+        return self._model_type_override_imports.get(target.name)
+
+    def __enum_site_override_import(self, reference: Reference) -> Import | None:
+        """Return the model-level override of the target an enum site model is built from, which replaces the model.
+
+        An enum cannot take the type that replaces its target as its root, so it gives way to that type as the target
+        does: the model is left out and its references take the type.
+        """
+        if (target := reference.__dict__.get(_DERIVED_FROM_KEY)) is None or not isinstance(reference.source, Enum):
             return None
         return self._model_type_override_imports.get(target.name)
 
@@ -7508,7 +7524,10 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     def _apply_override_to_data_type(self, data_type: DataType) -> bool:
         """Recursively apply model-level overrides to a DataType."""
         overridden = False
-        if data_type.reference and (override_import := self._model_type_override_imports.get(data_type.reference.name)):
+        if (reference := data_type.reference) and (
+            override_import := self._model_type_override_imports.get(reference.name)
+            or self.__enum_site_override_import(reference)
+        ):
             self.generation_store.override_type_import(data_type, override_import)
             data_type.alias = override_import.import_
             self.generation_store.detach_data_type_ref(data_type)
@@ -9174,15 +9193,29 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
     def __decide(self, runner: Runner, run: _FinishRun) -> None:
         """Seal the facts final at B1 and run the decisions of the registry on them, when it holds any."""
-        if not (decisions := self._DECISION_PASSES):
+        if not (decisions := tuple(d for d in self._DECISION_PASSES if d.when is None or d.when(self))):
             return
         unused = {id(model) for model in run.unused_models}
         modules = [(ctx.module_key, [model for model in ctx.models if id(model) not in unused]) for ctx in run.contexts]
         facts = self.generation_store.seal_facts(modules, decision_views())
-        writer = _DecisionWriter(self.generation_store)
+        writer = _DecisionWriter(self.generation_store, viewed, _copy_data_type)
         for decision in decision_order(decisions):
             runner.run_decision(decision, facts, writer)
         run.decisions = writer.outcome(model for _, models in modules for model in models)
+
+    def __finalize_rendered_nullability(self, state: _FinalizeState) -> None:
+        """Write the None each type hint of every model renders, once per node, before imports and rendering read it.
+
+        It runs after the module bodies: the members' hints read the union operator and the quotes that updating type
+        aliases writes (row ``legacy-member-null-from-hint-text``).
+        """
+        seen: set[int] = set()
+        for model in _context_models(state.contexts):
+            for field in model.fields:
+                for data_type in field.data_type.all_data_types:
+                    if id(data_type) not in seen:
+                        seen.add(id(data_type))
+                        self.generation_store.write_rendered_null(data_type)
 
     def __collect_all_models(self, state: _FinalizeState) -> None:  # noqa: PLR6301
         """Take the models of every module, before unused models leave them."""
@@ -10324,6 +10357,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             Phase.RENDER_PREPARATION,
             _same_state,
             (
+                PassSpec(
+                    decls.FINALIZE_RENDERED_NULLABILITY,
+                    lambda self, s: self.__finalize_rendered_nullability(s),
+                    checked_models=lambda _, s: _context_models(s.contexts),
+                ),
                 PassSpec(decls.COLLECT_ALL_MODELS, lambda self, s: self.__collect_all_models(s)),
                 PassSpec(
                     decls.PREPARE_TYPE_ALIAS_FIELDS,
