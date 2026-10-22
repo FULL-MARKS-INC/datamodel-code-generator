@@ -84,7 +84,7 @@ class Cat(Struct):
 
 
 class NamedCat(Cat):
-    kind: str | None
+    kind: str
     name: str | UnsetType = UNSET
 
 

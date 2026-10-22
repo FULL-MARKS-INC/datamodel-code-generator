@@ -18,6 +18,7 @@ class Cat:
     kind: str | None = None
     kind2: str | None = None
     kind3: str | None = None
+    kind4: str | None = None
     ckind: str | None = None
 
 
@@ -26,7 +27,8 @@ Ckind: TypeAlias = str
 
 @dataclass
 class NamedCat(Cat):
-    kind: str | None = field()
+    kind: str = field()
+    kind4: str = field(kw_only=True)
     ckind: Ckind = field(kw_only=True)
     direct: str = field(kw_only=True)
     direct_obj: Dog = field(kw_only=True)

@@ -272,6 +272,8 @@ from datamodel_code_generator.types import (
     DefaultValueDescriptor,
     DefaultValueRecipe,
     Types,
+    build_union,
+    union_members,
 )
 from datamodel_code_generator.util import camel_to_snake, record_watch_dependency
 
@@ -286,6 +288,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.http import _HTTPFetchSession
     from datamodel_code_generator.model._decisions.tag_value import TagFieldMatch, VariantTagSource
     from datamodel_code_generator.model_metadata import GeneratedModelMetadata, ModelFieldMetadata, ModelMetadata
+    from datamodel_code_generator.parser._null_facts import NullRule
     from datamodel_code_generator.parser._schema_graph import SchemaGraphBuilder
 
 
@@ -2045,7 +2048,7 @@ def _copy_data_model_field(
 def _get_inherited_type_modifiers(
     data_type: DataType,
     *,
-    excludes_null: bool = False,
+    null_rule: NullRule | None = None,
 ) -> _InheritedTypeModifiers:
     """Compress a partial type before replacing its forward placeholder."""
     list_wrapper = (
@@ -2054,7 +2057,7 @@ def _get_inherited_type_modifiers(
         else None
     )
     return _InheritedTypeModifiers(
-        excludes_null=excludes_null,
+        null_rule=null_rule,
         is_optional=data_type.is_optional,
         is_dict=data_type.is_dict,
         is_list=data_type.is_list,
@@ -2067,6 +2070,21 @@ def _get_inherited_type_modifiers(
         kwargs=deepcopy(data_type.kwargs),
         list_wrapper=list_wrapper,
     )
+
+
+def _without_null_members(data_type: DataType, current_type: DataType | _InheritedTypeModifiers) -> DataType:
+    """Return a fresh copy of the inherited ``data_type`` without the None members its override excludes."""
+    if not (
+        isinstance(current_type, _InheritedTypeModifiers)
+        and current_type.null_rule == "inherited-typed-without-null"
+        and (members := union_members(data_type))
+    ):
+        return data_type
+    kept = [member for member in members if member.type != NONE or member.data_types]
+    rebuilt = data_type.model_copy(update={"data_types": build_union(DataType, kept).data_types})
+    for member in rebuilt.data_types:
+        member.parent = rebuilt
+    return rebuilt
 
 
 def _merge_data_type_modifiers(
@@ -2148,6 +2166,7 @@ def _copy_resolved_inherited_field(  # noqa: PLR0913, PLR0915
                 inherited_field.data_type,
                 register_references=register_references,
             )
+            copied_data_type = _without_null_members(copied_data_type, current_type)
             wrapper_template = (
                 current_type.list_wrapper
                 if isinstance(current_type, _InheritedTypeModifiers)

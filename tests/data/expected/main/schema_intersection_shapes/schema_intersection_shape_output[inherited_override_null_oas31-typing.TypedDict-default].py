@@ -16,6 +16,7 @@ class Cat(TypedDict):
     kind: NotRequired[str | None]
     kind2: NotRequired[str | None]
     kind3: NotRequired[str | None]
+    kind4: NotRequired[str | None]
     ckind: NotRequired[str | None]
     lives: int
 
@@ -24,9 +25,10 @@ Ckind: TypeAlias = str
 
 
 class NamedCat(Cat):
-    kind: str | None
+    kind: str
     kind2: NotRequired[str]
     kind3: NotRequired[str | None]
+    kind4: str
     ckind: Ckind
     name: NotRequired[str]
     direct: str

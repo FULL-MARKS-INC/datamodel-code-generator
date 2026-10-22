@@ -15,11 +15,13 @@ class Cat(Struct):
     kind: str | None | UnsetType = UNSET
     kind2: str | None | UnsetType = UNSET
     kind3: str | None | UnsetType = UNSET
+    kind4: str | None | UnsetType = UNSET
     ckind: str | None | UnsetType = UNSET
 
 
 class NamedCat(Cat, kw_only=True):
-    kind: str | None
+    kind: str
+    kind4: str
     ckind: str
     direct: str
     direct_obj: Dog

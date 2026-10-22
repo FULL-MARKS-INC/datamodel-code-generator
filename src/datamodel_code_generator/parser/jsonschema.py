@@ -8025,13 +8025,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             if field_name not in deferred_property_names:
                 continue
             source_property = properties.get(field_name)
-            excludes_null = (
-                isinstance(source_property, JsonSchemaObject)
-                and self._null_facts(source_property, "inherited-child").admits_null is False
+            facts = (
+                self._null_facts(source_property, "inherited-child")
+                if isinstance(source_property, JsonSchemaObject)
+                else None
             )
             field.__dict__[_DEFERRED_INHERITED_TYPE_KEY] = _get_inherited_type_modifiers(
                 field.data_type,
-                excludes_null=excludes_null,
+                null_rule=facts.rule if facts is not None and facts.admits_null is False else None,
             )
 
     def _get_deferred_inherited_parse_object(  # noqa: PLR6301

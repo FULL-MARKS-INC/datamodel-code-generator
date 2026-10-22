@@ -108,8 +108,8 @@ NullRule: TypeAlias = Literal[
     "legacy-enum-literal-value-only",
     "nullable-branch-adds-null",
     "branch-keeps",
-    "inherited-declared-not-null",
     "inherited-typed-without-null",
+    "inherited-declared-not-null",
     "inherited-keeps-null",
 ]
 """The rows of :func:`resolve_null_facts`.
@@ -170,8 +170,8 @@ NullRule: TypeAlias = Literal[
 * ``nullable-branch-adds-null``: a ``nullable`` member of a combined schema that does not admit null by its type adds a
   null member beside it, whatever ``--strict-nullable`` says.
 * ``branch-keeps``: otherwise the member stays as written.
-* ``inherited-declared-not-null``: ``nullable: false`` drops the inherited null.
-* ``inherited-typed-without-null``: so does a ``type`` without null, unless ``nullable: true``.
+* ``inherited-typed-without-null``: a ``type`` without null, unless ``nullable: true``, drops the inherited null.
+* ``inherited-declared-not-null``: so does ``nullable: false`` beside no such ``type``.
 * ``inherited-keeps-null``: otherwise the inherited type keeps its null.
 """
 
@@ -330,10 +330,10 @@ def resolve_null_facts(  # noqa: PLR0911, PLR0912, PLR0913
             if sources.nullable and not type_null:
                 return NullFacts("nullable-branch-adds-null", admits_null=True)
             return NullFacts("branch-keeps")
-    if sources.nullable is False:
-        return NullFacts("inherited-declared-not-null", admits_null=False)
     if sources.typed and not type_null and sources.nullable is not True:
         return NullFacts("inherited-typed-without-null", admits_null=False)
+    if sources.nullable is False:
+        return NullFacts("inherited-declared-not-null", admits_null=False)
     return NullFacts("inherited-keeps-null")
 
 

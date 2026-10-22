@@ -14,6 +14,7 @@ class Cat(BaseModel):
     kind: str | None = None
     kind2: str | None = None
     kind3: str | None = None
+    kind4: str | None = None
     ckind: str | None = None
     lives: int
 
@@ -23,9 +24,10 @@ class Ckind(RootModel[constr(min_length=2)]):
 
 
 class NamedCat(Cat):
-    kind: str | None
+    kind: str
     kind2: str | None = None
     kind3: str | None = None
+    kind4: str
     ckind: Ckind
     name: str | None = None
     direct: str

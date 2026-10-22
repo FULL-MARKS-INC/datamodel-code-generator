@@ -6163,6 +6163,7 @@
     "base": {
       "lives": 9,
       "kind": "x",
+      "kind4": "x",
       "ckind": "xy",
       "direct": "x",
       "direct_obj": {
@@ -6197,6 +6198,15 @@
           "x"
         ],
         "invalid": [
+          1
+        ]
+      },
+      "kind4": {
+        "valid": [
+          "x"
+        ],
+        "invalid": [
+          null,
           1
         ]
       },

@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.imports import Imports
     from datamodel_code_generator.model.base import DataModel, DataModelFieldBase
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
+    from datamodel_code_generator.parser._null_facts import NullRule
     from datamodel_code_generator.parser.generation import GenerationStore
     from datamodel_code_generator.reference import ModelResolver, Reference
     from datamodel_code_generator.types import DataTypeManager, DefaultValueDescriptor
@@ -54,7 +55,7 @@ _SHADOWED_IMPORTS: Final = ImportProducer("shadowed-imports")
 class _InheritedTypeModifiers:
     """Compact deferred state for a partial inherited field."""
 
-    excludes_null: bool
+    null_rule: NullRule | None
     is_optional: bool
     is_dict: bool
     is_list: bool
@@ -66,6 +67,11 @@ class _InheritedTypeModifiers:
     tuple_item_count: int | None
     kwargs: dict[str, Any] | None
     list_wrapper: DataType | None
+
+    @property
+    def excludes_null(self) -> bool:
+        """Return whether the overriding schema drops the inherited null."""
+        return self.null_rule is not None
 
 
 def iter_models_field_data_types(
