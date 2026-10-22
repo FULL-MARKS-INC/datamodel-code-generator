@@ -293,6 +293,26 @@ A JSON object of a loaded document is validated once per parse (`SchemaGraphBuil
 body targets of `get_ref_model`, and the `if`, `then`, `else` and `not` branches `_get_conditional_schema` reads share
 one object per located value and its type, which no reader writes; the schema graph check compares each shared object
 at the end of L1 with the fingerprint taken when it was validated (`kind="shared-schema"`).
+The walks that follow references from a schema (field flags, literal and null checks, inherited properties and
+overrides, validation sources, `uniqueItems` rules, merged `allOf` values) visit each schema graph node once
+(`SchemaNodeId`, the location of the object a reference names: `_key_node`), and a `$ref` target merged with its sibling
+keywords is dumped once per node and document being parsed (`_ref_target_dump`).
+A local reference whose model a document has not parsed yet is reserved for that document (`reserved_refs`).
+`_parse_file`, `_resolve_unparsed_json_pointer` and AsyncAPI's `_resolve_asyncapi_unparsed_json_pointer` take the
+targets from one worklist (`_reserved_targets`: a `ReservedTarget` with the document, the key and the node the key names
+in the document's prepared tree), in key order, repeating while a round reserves more keys (`_parse_file`) or adds
+models (the others), and parse each target from the prepared tree; the schema graph check loads the source again and
+compares the value at each target (`kind="reserved-target"`).
+`walk_schema_resources` also keeps the anchor tables of each document: its `$dynamicAnchor` names (the first in walk
+order wins) and its `$recursiveAnchor: true` schemas (`ResourceRegistry.anchor_tables`). The `$dynamicRef` analysis
+(`_dynamic_anchors_used`, `_dynamic_ref_edges`) and the models specialized for a dynamic scope are keyed by the schema
+graph node a reference names, so references that spell one schema differently share its analysis and its specialized
+model. The fallbacks of the dynamic-scope rule still read the anchors L1 has registered so far (`_build_anchor_indexes`
+and `_parse_file`: the root, the definitions and each schema parsed through `_parse_raw_or_validated_obj`):
+`_resolve_dynamic_ref`, `_resolve_recursive_ref` and `_recursive_ref_target`. The schema graph check compares each of
+their answers with the one of the document's anchor tables and records a difference (`kind="anchor-answer"`): a
+`$recursiveAnchor` below `properties` is never registered, and an OpenAPI component's `$dynamicRef` parsed before the
+component that declares its anchor resolves through its edge instead.
 OpenAPI parses its main document in `_parse_specification` (merging path-level parameters into shallow copies of
 operations in `_process_path_items`) instead of `_parse_file`. Converted inputs (Avro, XML Schema, Protocol Buffers)
 build a JSON Schema dict and call `_parse_file` without `_read_document`, so document rewrites do not apply to them.
@@ -1015,8 +1035,8 @@ parses. Parse paths are not document locations: legacy OpenAPI `paths` and `para
 sibling keywords, `$ref` targets inside extension keys and properties whose names start with `x-` all produce paths
 that a path-based test misreads. The mark has to survive every step that builds a new object from a marked one:
 copy-on-write rewrites (`_single_value_enum_as_const`, `_rewrite_schema_resource_refs`), `_validate_schema_object`,
-`_merge_ref_with_schema`, synthetic enums, allOf and combined-schema merges, OpenAPI operation copies, and
-`_resolve_unparsed_json_pointer`, which loads the source again as a fresh dict. `--use-single-value-enum-as-const` has
+`_merge_ref_with_schema`, synthetic enums, allOf and combined-schema merges, and OpenAPI operation copies.
+`--use-single-value-enum-as-const` has
 such a mark: its L0 walk marks every schema object that holds a `const` after the rewrite, written or rewritten, with
 `x-datamodel-code-generator-read-as-const`, and L1 `_extract_const_enum_from_combined` reads it as `read_as_const`. That
 it survives each of these steps is not verified. The schema location of [Metadata Output](#metadata-output) is a mark

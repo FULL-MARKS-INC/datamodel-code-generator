@@ -25256,6 +25256,12 @@ ALLOF_INHERITANCE_CYCLE_ERROR = (
 )
 
 
+ALLOF_INHERITANCE_MULTI_BASE_CYCLE_ERROR = (
+    "Generated model inheritance cycle: A (cycle_multi_base.json#/$defs/A) -> B (cycle_multi_base.json#/$defs/B) "
+    "-> A (cycle_multi_base.json#/$defs/A)\n"
+)
+
+
 ALLOF_INHERITANCE_MRO_ERROR = (
     "Generated model E (mro_conflict.json#/$defs/E) has inconsistent method resolution order for generated bases "
     "C (mro_conflict.json#/$defs/C), D (mro_conflict.json#/$defs/D).\n"
@@ -25276,6 +25282,21 @@ def test_main_allof_inheritance_cycle(output_model: str, output_file: Path, caps
         expected_exit=Exit.ERROR,
         capsys=capsys,
         expected_stderr=ALLOF_INHERITANCE_CYCLE_ERROR,
+        output_should_not_exist=True,
+    )
+
+
+def test_main_allof_inheritance_cycle_with_multiple_bases(
+    output_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Reject a cycle whose classes have several allOf parents while ordering their bases."""
+    run_main_and_assert(
+        input_path=ALLOF_INHERITANCE_ERRORS_PATH / "cycle_multi_base.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        expected_exit=Exit.ERROR,
+        capsys=capsys,
+        expected_stderr=ALLOF_INHERITANCE_MULTI_BASE_CYCLE_ERROR,
         output_should_not_exist=True,
     )
 
@@ -31033,6 +31054,64 @@ def test_schema_graph_check_of_a_reader_that_writes_a_shared_schema(
     assert_output(str(parser.parse()))
     if flag == "report":
         assert_output(report_path.read_text(encoding="utf-8"), name="report")
+
+
+def test_main_jsonschema_reserved_target_of_a_rewritten_document(tmp_path: Path) -> None:
+    """A target another file reserves in a document whose embedded `$id` rewrites a reference is read as loaded.
+
+    `box.json` is parsed before `holder.json` reserves `#/definitions/Box/properties/item` in it. The embedded
+    resource rewrites that `$ref` in the prepared tree, so the target is read from a fresh load of `box.json`, as
+    before the schema graph: there `#/definitions/Item` names no value of the document and stays dangling.
+    """
+    with pytest.warns(DanglingRefWarning, match="#/definitions/Item"):
+        run_main_and_assert(
+            input_path=JSON_SCHEMA_DATA_PATH / "reserved_target_rewritten_document",
+            output_path=tmp_path / "model",
+            input_file_type="jsonschema",
+        )
+
+
+def test_schema_graph_check_records_reserved_targets_of_a_rewritten_document(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The schema graph check records a reserved target read from a fresh load as the listed class, not a mismatch.
+
+    `report:<path>` appends one `rewritten-document` line for the target whose fresh load differs from the prepared
+    tree; the check (`1`, as the test suite sets it) does not raise for it.
+    """
+    report_path = tmp_path / "checks.jsonl"
+    monkeypatch.setenv(CHECK_SCHEMA_GRAPH_ENV, f"report:{report_path}")
+    with pytest.warns(DanglingRefWarning, match="#/definitions/Item"):
+        generate(
+            JSON_SCHEMA_DATA_PATH / "reserved_target_rewritten_document",
+            input_file_type=InputFileType.JsonSchema,
+            output=tmp_path / "model",
+            disable_timestamp=True,
+            formatters=[Formatter.BUILTIN],
+        )
+    assert_output(report_path.read_text(encoding="utf-8"))
+
+
+def test_schema_graph_check_records_anchor_answers_that_differ_from_the_document(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The schema graph check records a `$recursiveRef` answer that differs from every anchor of its document.
+
+    The parser registers the `$recursiveAnchor` of a document's root and definitions, not the one of the embedded
+    `branch.json` resource below `properties`, so its `$recursiveRef` resolves to the root `Tree` while the nearest
+    `$recursiveAnchor` of the whole document is `branch`. `report:<path>` appends it as an `anchor-answer` line; the
+    check (`1`, as the test suite sets it) does not raise for it, and the output keeps the registered answer.
+    """
+    report_path = tmp_path / "checks.jsonl"
+    monkeypatch.setenv(CHECK_SCHEMA_GRAPH_ENV, f"report:{report_path}")
+    generate(
+        JSON_SCHEMA_DATA_PATH / "recursive_ref_resources" / "tree.json",
+        input_file_type=InputFileType.JsonSchema,
+        output=tmp_path / "model.py",
+        disable_timestamp=True,
+        formatters=[Formatter.BUILTIN],
+    )
+    assert_output(report_path.read_text(encoding="utf-8"))
 
 
 def test_main_jsonschema_shared_schema_with_cyclic_extension() -> None:

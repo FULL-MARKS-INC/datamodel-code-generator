@@ -9,7 +9,9 @@ location table, which ``JsonSchemaObject`` reads through ``SCHEMA_GRAPH`` while 
 ``SchemaGraphBuilder.with_ref_edges`` makes each `$ref` and `$dynamicRef` keyword of the document a ``ResolvedRef``, the
 string as written that also carries its ``RefEdge``; ``SchemaGraphBuilder.edge_key`` keeps the ``RefKey`` each edge
 resolves to in its own document, and ``SchemaGraphBuilder.schema`` the object each JSON object of a loaded document
-validates to, which every reader of that object shares.
+validates to, which every reader of that object shares. ``SchemaGraphBuilder.node`` names a JSON object of a loaded
+document as the node walks visit once (``SchemaNodeId``), and a ``ReservedTarget`` the node a reference a document
+reserves names in it.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, NewType, Protocol, TypeAlias, TypeVar
 from urllib.parse import unquote, urljoin
 
-from typing_extensions import Self, final, override
+from typing_extensions import ReadOnly, Self, TypedDict, final, override
 
 from datamodel_code_generator.reference import SchemaLocation
 
@@ -40,17 +42,35 @@ __all__ = [
     "RefKey",
     "RefOrigin",
     "RefReading",
+    "ReservedTarget",
     "ResolvedRef",
     "ResourceRegistry",
     "SchemaGraphBuilder",
     "SchemaGraphView",
+    "SchemaNodeId",
     "canonical_ref_spelling",
     "keep_resolved_ref",
+    "same_values",
     "walk_schema_resources",
 ]
 
 DocumentId = NewType("DocumentId", str)
 """A loaded document as the resource registry names it: an absolute POSIX path or a URL, empty for unnamed input."""
+
+SchemaNodeId = NewType("SchemaNodeId", SchemaLocation)
+"""A JSON object of a loaded document as a node of the graph: its location, which names one object per parse."""
+
+
+class ReservedTarget(TypedDict):
+    """A reference a source document reserves, to parse its target from the document after the models it holds."""
+
+    document: ReadOnly[DocumentId]
+    """The source document, whose prepared tree holds the target."""
+    key: ReadOnly[str]
+    """The reference key the parser reserves (``reserved_refs``), which names the model of the target."""
+    node: ReadOnly[SchemaNodeId | None]
+    """The node the key names in the prepared tree, or None when no JSON object of it is there."""
+
 
 SchemaPath: TypeAlias = tuple[str | int, ...]
 """The keys and indexes from a schema to a schema-valued keyword below it."""
@@ -223,6 +243,10 @@ class DocumentResources:
     """The identifiers, as written, of the resources each resource embeds, to their pointers; the first one wins."""
     dynamic_anchors: Mapping[str, Mapping[str, str]]
     """The `$dynamicAnchor` names of each resource to their locations; the first one wins."""
+    document_dynamic_anchors: Mapping[str, str]
+    """The `$dynamicAnchor` names of the whole document to their locations; the first one in walk order wins."""
+    recursive_anchors: tuple[str, ...]
+    """The location of each schema that declares `$recursiveAnchor: true`, in walk order."""
     implicit_resources: bool
     """Whether the document evaluates schemas as resources without an identifier, as OpenAPI component schemas."""
     embeds_resources: bool
@@ -256,6 +280,8 @@ def walk_schema_resources(  # noqa: PLR0913
     resources: set[str] = set()
     embedded: dict[str, dict[str, str]] = {}
     dynamic_anchors: dict[str, dict[str, str]] = {}
+    document_dynamic_anchors: dict[str, str] = {}
+    recursive_anchors: list[str] = []
     root_base = base
 
     def name(uri: str, location: str) -> None:
@@ -282,6 +308,9 @@ def walk_schema_resources(  # noqa: PLR0913
                 name(urljoin(base, f"#{anchor}"), location)
                 if keyword == "$dynamicAnchor":
                     dynamic_anchors.setdefault(resource, {}).setdefault(anchor, location)
+                    document_dynamic_anchors.setdefault(anchor, location)
+        if schema.get("$recursiveAnchor") is True:
+            recursive_anchors.append(location)
         for path, child in children(schema):
             embeds |= visit(child, pointer + _pointer(path), base, id_field, resource)
         return embeds
@@ -298,6 +327,8 @@ def walk_schema_resources(  # noqa: PLR0913
         resources=frozenset(resources),
         embedded=MappingProxyType({key: MappingProxyType(value) for key, value in embedded.items()}),
         dynamic_anchors=MappingProxyType({key: MappingProxyType(value) for key, value in dynamic_anchors.items()}),
+        document_dynamic_anchors=MappingProxyType(document_dynamic_anchors),
+        recursive_anchors=tuple(recursive_anchors),
         implicit_resources=bool(implicit),
         embeds_resources=embeds_resources,
     )
@@ -314,6 +345,8 @@ class ResourceRegistry:
     resources: dict[str, set[str]] = field(default_factory=dict)
     dynamic_anchors: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     embedded: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
+    anchor_tables: dict[str, tuple[Mapping[str, str], tuple[str, ...]]] = field(default_factory=dict)
+    """The `$dynamicAnchor` names of each whole document and its `$recursiveAnchor` schemas (``DocumentResources``)."""
     keys: dict[str, set[str]] = field(default_factory=dict)
     """The URIs each document registered, which a later registration of the document drops while they name it."""
 
@@ -325,6 +358,7 @@ class ResourceRegistry:
         for resource in self.resources.pop(document, ()):
             self.dynamic_anchors.pop((document, resource), None)
             self.embedded.pop((document, resource), None)
+        self.anchor_tables.pop(document, None)
 
     def register(self, resources: DocumentResources) -> None:
         """Register the resources of a document, as the walk over the document registered them before the graph."""
@@ -340,6 +374,7 @@ class ResourceRegistry:
             self.dynamic_anchors[document, resource] = dict(anchors)
         for resource, identifiers in resources.embedded.items():
             self.embedded[document, resource] = dict(identifiers)
+        self.anchor_tables[document] = resources.document_dynamic_anchors, resources.recursive_anchors
         self.keys[document] = set(resources.names)
 
     def location(self, absolute: str) -> str | None:
@@ -359,6 +394,7 @@ class ResourceRegistry:
             resources={key: set(value) for key, value in self.resources.items()},
             dynamic_anchors={key: dict(value) for key, value in self.dynamic_anchors.items()},
             embedded={key: dict(value) for key, value in self.embedded.items()},
+            anchor_tables=dict(self.anchor_tables),
             keys={key: set(value) for key, value in self.keys.items()},
         )
 
@@ -445,6 +481,11 @@ class SchemaGraphBuilder:
             schema = validate()
             cached = self._schemas[key] = schema, _fingerprint(schema) if fingerprint else None
         return cached[0]
+
+    def node(self, raw: object) -> SchemaNodeId | None:
+        """Return the node a JSON object of a loaded document is, or None for a value the graph does not locate."""
+        location = self.locations.get(id(raw)) if isinstance(raw, dict) else None
+        return None if location is None else SchemaNodeId(location)
 
     def changed_schemas(self) -> Iterator[SchemaLocation]:
         """Yield the location of each shared object whose fingerprint differs from the one recorded at validation."""
@@ -580,6 +621,11 @@ class SchemaGraphBuilder:
         mounted = self.index_document(converted, location)
         self._mounted.add(id(mounted))
         return mounted
+
+
+def same_values(left: object, right: object) -> bool:
+    """Return whether two values of loaded documents hold the same data, their attributes and types included."""
+    return _fingerprint(left) == _fingerprint(right)
 
 
 def _fingerprint(value: object, active: frozenset[int] = frozenset()) -> object:
