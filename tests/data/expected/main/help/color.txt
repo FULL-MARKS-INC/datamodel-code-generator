@@ -725,6 +725,11 @@ For detailed usage, see: https://datamodel-code-generator.koxudaxi.dev
                         later)
 
 [36;1mOpenAPI-only options[0m:
+  --dedupe-request-response-variants
+                        Decide Request/Response variants from the schema graph
+                        and build each inline model once, without the
+                        unreferenced duplicate classes and shifted class
+                        numbers of 0.86.0
   --include-path-parameters
                         Include path parameters in generated parameter models
                         in addition to query parameters (Only OpenAPI)

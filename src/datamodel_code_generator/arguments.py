@@ -1475,6 +1475,13 @@ openapi_options.add_argument(
     default=None,
 )
 openapi_options.add_argument(
+    "--dedupe-request-response-variants",
+    help="Decide Request/Response variants from the schema graph and build each inline model once, without the "
+    "unreferenced duplicate classes and shifted class numbers of 0.86.0",
+    action="store_true",
+    default=None,
+)
+openapi_options.add_argument(
     "--use-status-code-in-response-name",
     help="Include HTTP status code in response model names (e.g., ResourceGetResponse200, ResourceGetResponseDefault)",
     action="store_true",
