@@ -6644,6 +6644,44 @@ def test_main_decimal_multiple_of_in_field_forms(output_file: Path, extra_args: 
 
 
 @pytest.mark.cli_doc(
+    options=["--use-site-models-for-constrained-refs"],
+    option_description="""Give an allOf of `$ref` members whose other parts add assertions its own model.
+
+Without the option such an allOf is written as the referenced type, which leaves out the constraints, the enum values
+or the type its other parts add: `allOf: [{$ref: Quantity}], maximum: 10` accepts 11. With the option the site gets
+its own model of the values all parts admit (`conint(ge=1, le=10)`), named after the site, and an allOf of enum
+references gets an enum of the members they share. The referenced type stays where it enforces what the parts enforce
+together in the output (dataclasses and TypedDict check no constraints, so only types and literals count there), and
+msgspec writes the added constraints beside the reference where its `Meta` takes them. A model-level
+`--type-overrides` entry of the referenced model applies to its site models too.""",
+    input_schema="jsonschema/site_models_for_constrained_refs.json",
+    cli_args=["--use-site-models-for-constrained-refs"],
+    golden_output="main/jsonschema/site_models_for_constrained_refs~main_site_models_for_constrained_refs[option].py",
+    comparison_output="main/jsonschema/site_models_for_constrained_refs.py",
+)
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        pytest.param([], id="default"),
+        pytest.param(["--use-site-models-for-constrained-refs"], id="option"),
+        pytest.param(
+            ["--output-model-type", "msgspec.Struct", "--use-site-models-for-constrained-refs"], id="msgspec_option"
+        ),
+    ],
+)
+def test_main_site_models_for_constrained_refs(output_file: Path, extra_args: list[str]) -> None:
+    """Test ``--use-site-models-for-constrained-refs`` gives an allOf that narrows a reference its own model."""
+    run_main_and_assert(
+        input_path=JSON_SCHEMA_DATA_PATH / "site_models_for_constrained_refs.json",
+        output_path=output_file,
+        input_file_type="jsonschema",
+        assert_func=assert_file_content,
+        extra_args=[*extra_args, "--formatters", "builtin", "--disable-timestamp", "--target-python-version", "3.10"],
+        force_exec_validation=True,
+    )
+
+
+@pytest.mark.cli_doc(
     options=["--omit-redundant-constraints"],
     option_description="""Do not write a constraint again beside a type that already enforces it.
 
@@ -30255,6 +30293,66 @@ def test_schema_graph_check_of_reference_edges(
     assert_output(str(parser.parse()))
     if flag == "report":
         assert_output(report_path.read_text(encoding="utf-8"), name="report")
+
+
+class _SharedSchemaWriterParser(JsonSchemaParser):
+    """Writes the description of each schema a reference loads: a reader that changes the object the graph shares."""
+
+    def _load_ref_schema_object(self, ref: str) -> Any:
+        loaded = super()._load_ref_schema_object(ref)
+        loaded.description = "written"
+        return loaded
+
+
+@pytest.mark.parametrize("flag", ["check", "report", "off"])
+def test_schema_graph_check_of_a_reader_that_writes_a_shared_schema(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flag: str
+) -> None:
+    """A reader that writes a schema object the graph validated once and shares is reported, and generation goes on.
+
+    The check (`1`, as the test suite sets it) compares each shared object at the end of L1 with the fingerprint taken
+    when it was validated and raises, `report:<path>` appends the changed locations as a JSON line, and with the check
+    off (`0`) the parser generates from the written objects.
+    """
+    report_path = tmp_path / "checks.jsonl"
+    monkeypatch.setenv(CHECK_SCHEMA_GRAPH_ENV, {"check": "1", "report": f"report:{report_path}", "off": "0"}[flag])
+    parser = _SharedSchemaWriterParser(
+        JSON_SCHEMA_DATA_PATH / "ref_edges" / "redirect.json", formatters=[Formatter.BUILTIN]
+    )
+    if flag == "check":
+        with pytest.raises(
+            Error,
+            match=f"^{CHECK_SCHEMA_GRAPH_ENV}: shared schema objects changed after validation: "
+            "redirect.json#/properties/kept$",
+        ):
+            parser.parse()
+        return
+    assert_output(str(parser.parse()))
+    if flag == "report":
+        assert_output(report_path.read_text(encoding="utf-8"), name="report")
+
+
+def test_main_jsonschema_shared_schema_with_cyclic_extension() -> None:
+    """A referenced schema whose extension value holds itself is validated once and shared by its readers.
+
+    The schema graph check fingerprints the shared object, whose extension value it records once.
+    """
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+    item_ref = {"$ref": "#/$defs/Item"}
+    schema = {
+        "$defs": {"Item": {"type": "object", "x-cycle": cycle, "properties": {"id": {"type": "integer"}}}},
+        "type": "object",
+        "properties": {
+            "item": {**item_ref, "description": "An item."},
+            "items": {"allOf": [item_ref, {"required": ["id"]}]},
+        },
+    }
+    assert_output(
+        generate(
+            schema, input_file_type=InputFileType.JsonSchema, disable_timestamp=True, formatters=[Formatter.BUILTIN]
+        )
+    )
 
 
 @pytest.mark.parametrize(
