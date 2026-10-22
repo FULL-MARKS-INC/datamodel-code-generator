@@ -4,22 +4,26 @@
 adapter ``model/base.py:DataModel._field_assignment_facts``; constructor ordering, keyword-only fixes, hidden-type
 checks and the signature warning read it instead of classifying the field themselves.
 
-``FieldRenderPlan`` is what a field of a Pydantic ``BaseModel``, ``RootModel`` or dataclass, or of a type alias, writes:
-the form of its annotation, its ``Field()`` call, its default, the imports the call needs and every item the field
-declares that it does not write, each with the ``Why`` that put it there. The backend builds it
-(``model/pydantic_base.py:DataModelField``, ``model/pydantic_v2/dataclass.py:_PydanticDataclassField``). The
-parser freezes one plan per field in the parse's ``RenderReady`` when render preparation ends (B2), and the field's
-``field``, ``annotated``, ``type_hint``, ``represented_default`` and ``has_default_factory_in_field`` read the frozen
-plan from then on; before B2, and for a field that no parse froze, they read a plan the same builder makes without
-keeping it. A plan holds values, not text: its text is written when it is read, so the names it holds (the model a
-default factory builds, an aliased pattern expression) are the final ones.
+``FieldRenderPlan`` is what a field of a Pydantic ``BaseModel``, ``RootModel`` or dataclass, a msgspec ``Struct``, a
+stdlib dataclass, a ``TypedDict``, an enum or a type alias writes: the form of its annotation, its calls (``Field()``,
+``field()``, ``Meta()``), its default, the imports the calls need and every item the field declares that it does not
+write, each with the ``Why`` that put it there. The field's backend builds it (``model/pydantic_base.py``,
+``model/pydantic_v2/dataclass.py``, ``model/msgspec.py``, ``model/dataclass.py``, ``model/typed_dict.py``; an enum
+member is a field of the output's backend). The parser freezes one plan per field in the parse's ``RenderReady`` when
+render preparation ends (B2), and the field's ``field``, ``annotated``, ``type_hint``, ``represented_default``,
+``has_default_factory_in_field`` and imports read the frozen plan from then on; before B2, and for a field that no
+parse froze, they read a plan the same builder makes without keeping it. A frozen plan keeps the contents of what it
+read from its field, and a field whose contents differ when its model renders, as a model's ``render`` may change them,
+renders from a plan rebuilt then. A plan holds values, not text: its text is
+written when it is read, so the names it holds (the model a default factory builds, an aliased pattern expression) are
+the final ones.
 
 Named legacy row ``legacy.L-NF``: render preparation decides the default factories of optional nested models
 (``NestedFactoryMetadata``) before B2, but the import snapshot reads each field as if the factory were written, as it
 did when the decision came after the snapshot: the parse keeps a second plan for a field whose factory the decision
-drops or rewrites, which ``RenderReady.import_view`` returns. The models of the other outputs read the decision from
-the point it was published before. The fix (msgspec ``UNSET`` ``NameError``, the ``RecursionError`` under
-``--strip-default-none``) deletes the second plan.
+drops or rewrites, which ``RenderReady.import_view`` returns. The models that render without frozen plans (GraphQL
+unions, custom output models) read the decision from the point ``Parser`` publishes it on the models. The fix
+(msgspec ``UNSET`` ``NameError``, the ``RecursionError`` under ``--strip-default-none``) deletes the second plan.
 """
 
 from __future__ import annotations
@@ -27,7 +31,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Literal, NamedTuple, NewType, Protocol, TypeAlias, final
+from operator import eq, is_
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, NewType, Protocol, TypeAlias, cast, final
+
+from datamodel_code_generator.python_literal import represent_python_value
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator, Mapping
@@ -40,6 +47,8 @@ __all__ = [
     "AnnotationForm",
     "AssignmentFacts",
     "AssignmentRule",
+    "CallArguments",
+    "CallKind",
     "CallPlan",
     "ConstructorDefault",
     "FieldDefault",
@@ -51,11 +60,15 @@ __all__ = [
     "PlannedField",
     "Positional",
     "PositionalKind",
+    "RenderInputs",
     "RenderReady",
     "RuleId",
     "Why",
+    "field_call_text",
     "frozen_render_plan",
+    "unchanged_render_inputs",
     "visible_nested_factories",
+    "written_argument_names",
 ]
 
 ConstructorDefault: TypeAlias = Literal["none", "value", "factory"]
@@ -167,6 +180,8 @@ OmitReason: TypeAlias = Literal[
     "not-a-property-name",
     "superseded",
     "factory-not-applicable",
+    "meta-needs-annotated",
+    "inexact-float-divisor",
 ]
 """Why a declared item of a field is not written.
 
@@ -181,7 +196,8 @@ OmitReason: TypeAlias = Literal[
 * ``none-type``: a number constraint on a ``None`` type.
 * ``consumed-by-type``: the type expresses the keyword (``const`` as a ``Literal``, an integer ``multipleOf`` of 1).
 * ``use-field-description``: ``--use-field-description`` writes the description as the field's docstring.
-* ``backend-cannot-express``: the backend has no argument for it (``unique_items`` in Pydantic 2).
+* ``backend-cannot-express``: the backend has no argument for it (``unique_items`` in Pydantic 2 and msgspec, a
+  non-finite bound in msgspec ``Meta``).
 * ``union-mode-inapplicable``: ``union_mode`` on a type that is no union, or beside a discriminator.
 * ``alias-generator-reproduces``: the model's alias generator gives the same alias.
 * ``validation-aliases``: ``AliasChoices`` replaces the single alias.
@@ -189,8 +205,13 @@ OmitReason: TypeAlias = Literal[
 * ``compiled-pattern-metadata``: the prepared pattern expression, which the ``pattern`` argument writes.
 * ``none-value``: the value is ``None``, which ``Field()`` takes as unset.
 * ``not-a-property-name``: a discriminator that is neither a property name nor a mapping with ``propertyName``.
-* ``superseded``: a later argument of the same name replaced it.
-* ``factory-not-applicable``: a declared default factory of a required field or of one with a default value.
+* ``superseded``: a later argument of the same name replaced it, a stronger bound of the other kind (msgspec ``gt``
+  beside ``ge``), or the default factory that replaces a default.
+* ``factory-not-applicable``: a declared default factory of a required field or of one with a default value, or a
+  declared default of a required field (msgspec, stdlib dataclasses).
+* ``meta-needs-annotated``: msgspec writes ``Meta(...)`` only inside ``Annotated`` (``--use-annotated``).
+* ``inexact-float-divisor``: msgspec checks ``multiple_of`` on a float by its floating-point remainder, which rejects
+  multiples of a divisor that floats only approximate; it warns.
 """
 
 
@@ -209,6 +230,95 @@ class Omitted(NamedTuple):
     detail: str | None = None
 
 
+@final
+class CallArguments:
+    """The keyword arguments of a call while the field builds them, with the declared items each writes.
+
+    An argument removed with ``pop`` leaves its items as ``Omitted`` with the reason; ``take`` removes one whose
+    items another argument writes. ``factory`` is the default factory a ``Field()`` call writes before its other
+    arguments, the one the field's own facts give it; ``field()`` keeps its default factory among its arguments.
+    """
+
+    __slots__ = ("_entries", "factory", "omitted")
+
+    def __init__(self, omitted: list[Omitted]) -> None:
+        """Start with no argument and the omissions the field already knows."""
+        self._entries: dict[str, Kwarg] = {}
+        self.omitted = omitted
+        self.factory: Kwarg | None = None
+
+    def __contains__(self, name: str) -> bool:
+        """Return whether the call has an argument ``name``."""
+        return name in self._entries
+
+    def __bool__(self) -> bool:
+        """Return whether the call has any argument."""
+        return bool(self._entries)
+
+    def get(self, name: str) -> Any:
+        """Return the value of the argument ``name``, or None."""
+        return None if (entry := self._entries.get(name)) is None else entry.value
+
+    def entry(self, name: str) -> Kwarg | None:
+        """Return the argument ``name``, or None."""
+        return self._entries.get(name)
+
+    def names(self) -> tuple[str, ...]:
+        """Return the names of the arguments in the order they were added."""
+        return tuple(self._entries)
+
+    def put(self, name: str, value: Any, why: Why, items: tuple[str, ...] = ()) -> None:
+        """Set the argument ``name``; one it replaces leaves its items as ``superseded``."""
+        if (replaced := self._entries.get(name)) is not None:
+            self.omit_entry(replaced, "superseded", why)
+        self._entries[name] = Kwarg(name, value, why, items)
+
+    def update(self, name: str, value: Any, why: Why, items: tuple[str, ...] = ()) -> None:
+        """Give the argument ``name`` a new value in its place, keeping its items and adding ``items``."""
+        entry = self._entries[name]
+        self._entries[name] = Kwarg(
+            name,
+            value,
+            Why(why.rule, why.keyword, why.option, (entry.why.rule,)),
+            (
+                *entry.items,
+                *items,
+            ),
+        )
+
+    def take(self, name: str) -> Kwarg | None:
+        """Remove the argument ``name`` and return it; its items stay to be written or omitted by the caller."""
+        return self._entries.pop(name, None)
+
+    def pop(self, name: str, reason: OmitReason, why: Why) -> Any:
+        """Remove the argument ``name``, its items omitted for ``reason``, and return its value."""
+        if (entry := self._entries.pop(name, None)) is None:
+            return None
+        self.omit_entry(entry, reason, why)
+        return entry.value
+
+    def omit(self, item: str, value: Any, reason: OmitReason, why: Why) -> None:
+        """Record a declared item the call does not write."""
+        self.omitted.append(Omitted(item, value, reason, why))
+
+    def omit_entry(self, entry: Kwarg, reason: OmitReason, why: Why) -> None:
+        """Record the items of an argument the call does not write."""
+        for item in entry.items:
+            self.omit(item, entry.value, reason, why)
+
+    def writes(self, item: str) -> bool:
+        """Return whether an argument writes the declared item ``item``."""
+        return any(item in entry.items for entry in self._entries.values())
+
+    def data(self) -> dict[str, Any]:
+        """Return the arguments as a mapping of names to values, in order."""
+        return {name: entry.value for name, entry in self._entries.items()}
+
+    def kwargs(self) -> tuple[Kwarg, ...]:
+        """Return the arguments in order."""
+        return tuple(self._entries.values())
+
+
 PositionalKind: TypeAlias = Literal["required", "default", "none"]
 """The positional argument of a ``Field()`` call: ``...``, the field's default, or ``None``."""
 
@@ -220,14 +330,19 @@ class Positional(NamedTuple):
     why: Why
 
 
+CallKind: TypeAlias = Literal["Field", "field", "Meta"]
+"""The callee: Pydantic's ``Field()``, the ``field()`` of a stdlib dataclass or msgspec, or msgspec ``Meta()``."""
+
+
 @final
 @dataclass(frozen=True, slots=True)
 class CallPlan:
-    """A ``Field()`` call: its positional argument, its default factory and its other keyword arguments.
+    """A call: its positional argument, its default factory and its other keyword arguments.
 
-    The arguments are written in that order, the keyword arguments sorted by their text. ``default_keyword`` writes
-    the positional argument as ``default=`` where the call follows the annotation (``--use-default-kwarg``); inside
-    ``Annotated`` it stays positional.
+    The arguments are written in that order; ``Field()`` and ``Meta()`` sort their keyword arguments by their text,
+    ``field()`` keeps their order and its default factory among them. ``default_keyword`` writes the positional
+    argument as ``default=`` where the call follows the annotation (``--use-default-kwarg``); inside ``Annotated`` it
+    stays positional.
     """
 
     positional: Positional | None
@@ -235,16 +350,27 @@ class CallPlan:
     kwargs: tuple[Kwarg, ...]
     default_keyword: bool
     why: Why
+    callee: CallKind = "Field"
+
+    def written_items(self) -> Iterator[str]:
+        """Yield the declared items the call's arguments write."""
+        arguments = (*self.kwargs, self.factory) if self.factory is not None else self.kwargs
+        for argument in arguments:
+            yield from argument.items
 
 
 @final
 @dataclass(frozen=True, slots=True)
 class FieldDefault:
-    """The default a field writes: its value, or Pydantic's ``MISSING`` sentinel (``--use-missing-sentinel``)."""
+    """The default a field writes: its value, or Pydantic's ``MISSING`` sentinel (``--use-missing-sentinel``).
+
+    ``items`` are the declared items a default written alone (``FieldRenderPlan.bare_default``) writes.
+    """
 
     value: object
     missing_sentinel: bool
     why: Why
+    items: tuple[str, ...] = ()
 
 
 AnnotationForm: TypeAlias = Literal["plain", "annotated", "classvar"]
@@ -261,6 +387,10 @@ class FieldRenderPlan:
     ``symbol_imports`` are the imports the call needs; the type hint's imports come from its data type.
     A Pydantic dataclass field under ``--use-annotated`` whose call the dataclass must see has a ``plain`` annotation
     and writes ``call`` after it, its default moved into the call where the dataclass needs it.
+
+    A msgspec field writes ``annotated_call`` (``Meta(...)``) inside ``Annotated`` and ``call`` (``field(...)``) after
+    the annotation; a msgspec or stdlib dataclass field with ``bare_default`` writes its default alone after the
+    annotation. ``qualifiers`` wrap the type hint, innermost first (``TypedDict``'s ``ReadOnly[``, ``NotRequired[``).
     """
 
     annotation_form: AnnotationForm
@@ -270,18 +400,59 @@ class FieldRenderPlan:
     omitted: tuple[Omitted, ...]
     symbol_imports: tuple[tuple[Import, Why], ...]
     why: Why
+    annotated_call: CallPlan | None = None
+    bare_default: bool = False
+    qualifiers: tuple[tuple[str, Why], ...] = ()
 
     def written_items(self) -> frozenset[str]:
-        """Return the declared items the call writes."""
-        if (call := self.call) is None:
-            return frozenset()
-        arguments = (*call.kwargs, call.factory) if call.factory is not None else call.kwargs
-        return frozenset(item for argument in arguments for item in argument.items)
+        """Return the declared items the calls, or the default written alone, write."""
+        items = {item for call in (self.call, self.annotated_call) if call is not None for item in call.written_items()}
+        if self.bare_default:
+            items.update(self.default.items)
+        return frozenset(items)
 
     def unaccounted(self, declared: frozenset[str]) -> tuple[frozenset[str], frozenset[str]]:
         """Return the declared items neither written nor omitted, and the written or omitted items not declared."""
         accounted = self.written_items() | {omitted.item for omitted in self.omitted}
         return declared - accounted, accounted - declared
+
+
+RenderInputs: TypeAlias = tuple[Any, tuple[object, ...] | None, tuple[object, ...], tuple["RenderInputs", ...]]
+"""What a render plan read from a field when it was built: the mapping or the collection it read (the field's
+attributes, a dict, a list), its keys then (None for a collection), its values then, and the inputs of the values that
+hold more (a field's types and constraints, containers), which ``unchanged_render_inputs`` compares with them now."""
+
+
+_EQUAL_BY_VALUE: Final = frozenset({str, bool, int, float, bytes, type(None)})
+"""The immutable types whose values are the same when they are equal and of the same type."""
+
+
+def unchanged_render_inputs(inputs: RenderInputs) -> bool:
+    """Return whether what a plan read holds the same keys and values now, and the same inside values that hold more.
+
+    A value is the same object, or an equal immutable value of the same type (``_same_value``), such as a cache that
+    was computed again.
+    """
+    live, keys, values, nested = inputs
+    if len(live) != len(values):
+        return False
+    if keys is None:
+        same = all(map(is_, live, values)) or all(map(_same_value, live, values))
+    else:
+        current = live.values()
+        same = all(map(eq, live, keys)) and (all(map(is_, current, values)) or all(map(_same_value, current, values)))
+    return same and all(map(unchanged_render_inputs, nested))
+
+
+def _same_value(new: Any, old: Any) -> bool:
+    """Return whether ``new`` is ``old``, or equals it as an immutable value or a tuple of them of the same type."""
+    if new is old:
+        return True
+    if (kind := type(new)) is not type(old):
+        return False
+    if kind is tuple:
+        return len(new) == len(old) and all(map(_same_value, new, old))
+    return kind in _EQUAL_BY_VALUE and new == old
 
 
 class PlannedField(Protocol):
@@ -300,6 +471,9 @@ class PlannedField(Protocol):
     def _declared_render_items(self) -> frozenset[str]:
         """Return the items the field declares that its plan must write or omit."""
 
+    def _render_inputs(self) -> RenderInputs:
+        """Return what the field's plan reads from the field, as ``RenderInputs``."""
+
 
 @final
 @dataclass(frozen=True, slots=True)
@@ -314,40 +488,70 @@ class NestedFactoryMetadata:
     recursive: Mapping[ModelKey, frozenset[ModelKey]]
 
 
+class _FrozenPlan(NamedTuple):
+    """A field's frozen plan, the plan the import snapshot reads if different, and what the plan read from the field.
+
+    ``inputs`` are the field's ``_render_inputs`` when the plan was built.
+    """
+
+    field: object
+    plan: FieldRenderPlan
+    import_plan: FieldRenderPlan | None
+    inputs: RenderInputs
+
+
 @final
 class RenderReady:
     """The field render plans one parse froze at B2, and the nested-factory decision render preparation made.
 
     A plan is looked up by its field object. ``import_view`` returns, inside it, the second plan of a field that row
-    ``legacy.L-NF`` keeps.
+    ``legacy.L-NF`` keeps. Each plan keeps the contents of what it read from its field, and ``refreshed`` rebuilds it
+    when the field's model renders with them changed, as a model's ``render`` that changes its fields first does.
     """
 
     __slots__ = ("_deciding", "_import_view", "_plans", "_rebuilding", "nested_factories")
 
     def __init__(self) -> None:
         """Start a parse with no plan frozen."""
-        self._plans: dict[int, tuple[object, FieldRenderPlan, FieldRenderPlan | None]] = {}
+        self._plans: dict[int, _FrozenPlan] = {}
         self._import_view = False
         self._deciding = False
         self._rebuilding = False
         self.nested_factories: NestedFactoryMetadata | None = None
 
-    def freeze(self, field: object, plan: FieldRenderPlan, import_plan: FieldRenderPlan | None = None) -> None:
+    def freeze(self, field: PlannedField, plan: FieldRenderPlan, import_plan: FieldRenderPlan | None = None) -> None:
         """Keep ``plan`` as the field's plan, and ``import_plan`` as the one the import snapshot reads, if different."""
-        self._plans[id(field)] = (field, plan, import_plan)
+        self._plans[id(field)] = _FrozenPlan(field, plan, import_plan, field._render_inputs())  # noqa: SLF001
 
     def plan_of(self, field: object) -> FieldRenderPlan | None:
-        """Return the plan frozen for ``field`` in the current view, or None when the parse froze none for it."""
-        if self._rebuilding or (entry := self._plans.get(id(field))) is None or entry[0] is not field:
+        """Return the plan frozen for ``field`` in the current view, or None when the parse froze none for it.
+
+        An entry holds its field, so no other object takes the field's ``id`` while the parse runs.
+        """
+        if self._rebuilding or (entry := self._plans.get(id(field))) is None:
             return None
-        if self._import_view and entry[2] is not None:
-            return entry[2]
-        return entry[1]
+        if self._import_view and entry.import_plan is not None:
+            return entry.import_plan
+        return entry.plan
 
     def frozen(self) -> Iterator[tuple[object, FieldRenderPlan]]:
         """Yield every field with the plan frozen for it."""
-        for field, plan, _ in self._plans.values():
-            yield field, plan
+        for entry in self._plans.values():
+            yield entry.field, entry.plan
+
+    def refreshed(self, field: PlannedField) -> FieldRenderPlan | None:
+        """Rebuild the plan frozen for ``field`` if what it read from the field changed since; return the rebuilt plan.
+
+        The plan is rebuilt from the field's facts as the frozen plans' check rebuilds it, and kept with what it read
+        now; the import snapshot's plan stays. Return None when the parse froze no plan for the field or the contents
+        it read are the same.
+        """
+        if (entry := self._plans.get(id(field))) is None or unchanged_render_inputs(entry.inputs):
+            return None
+        with self.rebuilding():
+            plan = cast("FieldRenderPlan", field._build_frozen_render_plan())  # noqa: SLF001
+        self._plans[id(field)] = entry._replace(plan=plan, inputs=field._render_inputs())  # noqa: SLF001
+        return plan
 
     def deciding_nested_factories(self) -> NestedFactoryMetadata | None:
         """Return the nested-factory decision while ``nested_factories_decided`` runs, else None."""
@@ -397,3 +601,21 @@ def frozen_render_plan(field: object) -> FieldRenderPlan | None:
     if (ready := RENDER_READY.get()) is None:
         return None
     return ready.plan_of(field)
+
+
+def _field_argument_text(argument: Kwarg) -> str:
+    """Write one ``field()`` argument: the default factory as code, any other value as its literal."""
+    value = argument.value if argument.name == "default_factory" else represent_python_value(argument.value)
+    return f"{argument.name}={value}"
+
+
+def field_call_text(call: CallPlan) -> str:
+    """Write a ``field(...)`` call of a stdlib dataclass or msgspec: its arguments in order, the factory as code."""
+    return f"field({', '.join(_field_argument_text(argument) for argument in call.kwargs)})"
+
+
+def written_argument_names(plan: FieldRenderPlan) -> tuple[str, ...]:
+    """Return the names of the ``field()`` arguments ``plan`` writes, ``default`` for a default written alone."""
+    if plan.bare_default:
+        return ("default",)
+    return () if plan.call is None else tuple(argument.name for argument in plan.call.kwargs)
