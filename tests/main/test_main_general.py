@@ -405,37 +405,22 @@ def test_parser_run_context_preserves_subclass_lifecycle_hooks(tmp_path: Path) -
     )
 
 
-def test_parser_retains_builtin_import_cache_and_invalidates_custom_cache() -> None:
-    """Retain built-in caches while keeping the legacy custom-model invalidation contract."""
+def test_parser_never_calls_the_deprecated_imports_cache_hook() -> None:
+    """Models keep no imports cache: the parser never calls ``clear_imports_cache``, which subclasses may override."""
     from datamodel_code_generator.model import DataModel, get_data_model_types
     from datamodel_code_generator.model.pydantic_v2 import BaseModel
     from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
 
     class CacheProbeJsonSchemaParser(JsonSchemaParser):
-        cache_reuse_manifest: tuple[str, ...] = ()
         module_processing_calls: int = 0
 
         def _process_single_module(self, module_: Any, models: list[Any], *args: Any, **kwargs: Any) -> Any:
             self.module_processing_calls += 1
-            for model in models:
-                _ = model.imports
-            cached_imports = tuple(model.__dict__[model._IMPORTS_CACHE_KEY] for model in models)
-            context = super()._process_single_module(module_, models, *args, **kwargs)
-            self.cache_reuse_manifest += tuple(
-                f"{model.class_name}:"
-                f"{'retained' if cached is model.__dict__.get(model._IMPORTS_CACHE_KEY) else 'invalidated'}"
-                for cached, model in zip(cached_imports, context.models, strict=True)
-            )
-            return context
+            return super()._process_single_module(module_, models, *args, **kwargs)
 
     class CacheAwareBaseModel(BaseModel):
         def clear_imports_cache(self) -> None:
-            cache_state = "cached" if self._IMPORTS_CACHE_KEY in self.__dict__ else "empty"
-            history = self.__dict__.setdefault("cache_clear_history", [])
-            history.append(cache_state)
-            if getattr(self, "_internal_template_data", None) is not None:
-                self._set_internal_template_data("class_body_lines", [f"cache_clear_history = {history!r}"])
-            super().clear_imports_cache()
+            """Override the deprecated hook; the parser never calls it."""
 
     class InjectingJsonSchemaParser(JsonSchemaParser):
         def _create_data_model(
@@ -469,10 +454,6 @@ def test_parser_retains_builtin_import_cache_and_invalidates_custom_cache() -> N
         f"{parser.module_processing_calls}\n",
         EXPECTED_MAIN_PATH / "process_single_module_single_call.txt",
     )
-    assert_output(
-        "\n".join(parser.cache_reuse_manifest) + "\n",
-        EXPECTED_MAIN_PATH / "builtin_import_cache_retention.txt",
-    )
 
     input_path = JSON_SCHEMA_DATA_PATH / "unique_items_unhashable_default.json"
     unhashable_default_parser = CacheProbeJsonSchemaParser(
@@ -491,10 +472,6 @@ def test_parser_retains_builtin_import_cache_and_invalidates_custom_cache() -> N
     assert_output(
         f"{unhashable_default_parser.module_processing_calls}\n",
         EXPECTED_MAIN_PATH / "process_single_module_single_call.txt",
-    )
-    assert_output(
-        "\n".join(unhashable_default_parser.cache_reuse_manifest) + "\n",
-        EXPECTED_MAIN_PATH / "builtin_import_cache_unique_items_unhashable.txt",
     )
 
     input_path = DATA_PATH / "performance" / "large_models.json"
@@ -574,7 +551,7 @@ def test_parser_retains_builtin_import_cache_and_invalidates_custom_cache() -> N
 
 
 def test_parser_preserves_cross_module_external_import_cache_hook() -> None:
-    """Do not invoke an external model's cache hook from another built-in module."""
+    """Generate with an external model that overrides the deprecated imports cache hook, which is never called."""
     from datamodel_code_generator.model import DataModel, get_data_model_types
     from datamodel_code_generator.model.msgspec import Struct
     from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
@@ -583,10 +560,7 @@ def test_parser_preserves_cross_module_external_import_cache_hook() -> None:
         clear_history: ClassVar[list[str]] = []
 
         def clear_imports_cache(self) -> None:
-            state = "cached" if self._IMPORTS_CACHE_KEY in self.__dict__ else "empty"
-            name = getattr(self, "class_name", "") or "?"
-            self.clear_history.append(f"{name}:{state}")
-            super().clear_imports_cache()
+            """Override the deprecated hook; the parser never calls it."""
 
     class SelectiveExternalStructParser(JsonSchemaParser):
         def _create_data_model(
@@ -633,7 +607,7 @@ def test_parser_preserves_cross_module_external_import_cache_hook() -> None:
 
 
 def test_parser_rechecks_external_enum_after_module_materialization() -> None:
-    """Keep the external hook fallback when an inherited enum replaces a built-in wrapper."""
+    """Generate with an external enum that overrides the deprecated imports cache hook, which is never called."""
     from datamodel_code_generator import ModuleSplitMode
     from datamodel_code_generator.model import get_data_model_types
     from datamodel_code_generator.model.enum import Enum
@@ -643,10 +617,7 @@ def test_parser_rechecks_external_enum_after_module_materialization() -> None:
         clear_history: ClassVar[list[str]] = []
 
         def clear_imports_cache(self) -> None:
-            state = "cached" if self._IMPORTS_CACHE_KEY in self.__dict__ else "empty"
-            name = getattr(self, "class_name", "") or "?"
-            self.clear_history.append(f"{name}:{state}")
-            super().clear_imports_cache()
+            """Override the deprecated hook; the parser never calls it."""
 
     class SelectiveExternalEnumParser(OpenAPIParser):
         def _get_enum_model_class(self, type_: Any, enum_values: list[Any]) -> tuple[type[Enum], Any]:
