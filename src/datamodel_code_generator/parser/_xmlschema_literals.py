@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-import datetime as datetime_module
+import datetime as dt
 import re
 from decimal import Decimal
 from math import isfinite
@@ -70,7 +70,7 @@ def _safe_date_expression(value: str) -> _PythonExpression | None:
     if value != date_value:
         return None
     with contextlib.suppress(ValueError):
-        datetime_module.date.fromisoformat(date_value)
+        dt.date.fromisoformat(date_value)
         return _datetime_expression(f".date.fromisoformat({date_value!r})")
     return None
 
@@ -79,7 +79,7 @@ def _safe_time_expression(value: str) -> _PythonExpression | None:
     value = value.strip(XSD_WHITESPACE_CHARS)
     normalized = _normalize_timezone(value)
     with contextlib.suppress(ValueError):
-        datetime_module.time.fromisoformat(normalized)
+        dt.time.fromisoformat(normalized)
         return _datetime_expression(f".time.fromisoformat({normalized!r})")
     return None
 
@@ -88,7 +88,7 @@ def _safe_datetime_expression(value: str) -> _PythonExpression | None:
     value = value.strip(XSD_WHITESPACE_CHARS)
     normalized = _normalize_timezone(value)
     with contextlib.suppress(ValueError):
-        datetime_module.datetime.fromisoformat(normalized)
+        dt.datetime.fromisoformat(normalized)
         return _datetime_expression(f".datetime.fromisoformat({normalized!r})")
     return None
 
