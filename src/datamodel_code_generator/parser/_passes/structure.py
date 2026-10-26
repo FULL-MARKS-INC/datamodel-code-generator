@@ -18,7 +18,7 @@ from typing_extensions import Protocol
 from datamodel_code_generator import Error, ModuleSplitMode, ReuseScope
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, reference_graph
-from datamodel_code_generator._scc import find_circular_sccs
+from datamodel_code_generator._scc import find_circular_sccs, strongly_connected_components
 from datamodel_code_generator.model.base import (
     DataModel,
     _keyed_answer,
@@ -43,7 +43,7 @@ from datamodel_code_generator.reference import ModelResolver
 from datamodel_code_generator.util import camel_to_snake
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from datamodel_code_generator._format_types import PythonVersion
     from datamodel_code_generator._internal_utils import HashableComparable
@@ -839,12 +839,97 @@ def rename_and_relocate_scc_models(
     return module_class_mappings
 
 
+def _is_below(path: tuple[str, ...], package: tuple[str, ...]) -> bool:
+    """Return whether the module at ``path`` lies below ``package``, whose ``__init__`` module Python runs first."""
+    return len(path) > len(package) and path[: len(package)] == package
+
+
+def _failing_cycles(
+    nodes: set[tuple[tuple[str, ...], int]],
+    imports: dict[tuple[tuple[str, ...], int], set[tuple[tuple[str, ...], int]]],
+    packages: dict[tuple[tuple[str, ...], int], set[tuple[tuple[str, ...], int]]],
+    entered: frozenset[tuple[tuple[str, ...], int]] = frozenset(),
+) -> Iterator[set[tuple[tuple[str, ...], int]]]:
+    """Yield the import cycles among ``nodes`` that fail when one of their modules is imported first.
+
+    A cycle of a package and modules below it runs the package first, whichever of them is imported first, so it
+    imports unless a module of it imports from the package: the cycles left without running the packages of
+    ``entered`` are checked again. Any other cycle finds one of its modules half built.
+    """
+    graph = {node: (imports[node] | (packages[node] - entered)) & nodes for node in nodes}
+    for component in strongly_connected_components(graph):
+        if len(component) == 1:
+            continue
+        top = min(component, key=lambda node: len(node[0]))
+        if top[1] < 0 and top not in entered and all(node == top or _is_below(node[0], top[0]) for node in component):
+            yield from _failing_cycles(component, imports, packages, entered | {top})
+        else:
+            yield component
+
+
+def _failing_import_cycles(
+    merges: list[set[tuple[str, ...]]], module_graph: dict[tuple[str, ...], set[tuple[str, ...]]]
+) -> list[set[tuple[tuple[str, ...], int]]]:
+    """Return the import cycles through an ``_internal`` module that fail once each merge moves into its own.
+
+    A node is a module path with ``-1``, or the path of the ``_internal`` module of a merge with the index of the
+    merge. A merged module imports its ``_internal`` module, which imports what the merged modules import; a module
+    that uses a merged model imports the ``_internal`` module. Importing a module runs the ``__init__`` module of each
+    package above it first.
+    """
+    internal_nodes = [(compute_internal_module_path(merge, set()), index) for index, merge in enumerate(merges)]
+    forwarded = {module: internal_nodes[index] for index, merge in enumerate(merges) for module in merge}
+
+    def node_of(module: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
+        return forwarded.get(module, (module, -1))
+
+    imports = {
+        (module, -1): {forwarded[module]} if module in forwarded else set(map(node_of, targets))
+        for module, targets in module_graph.items()
+    }
+    for node, merge in zip(internal_nodes, merges, strict=True):
+        imports[node] = set(map(node_of, {target for module in merge for target in module_graph[module]} - merge))
+    packages = {
+        (path, index): {(path[:size], -1) for size in range(len(path)) if path[:size] in module_graph} - targets
+        for (path, index), targets in imports.items()
+    }
+    return [
+        cycle for cycle in _failing_cycles(set(imports), imports, packages) if any(index >= 0 for _, index in cycle)
+    ]
+
+
+def _joined_merges(
+    merges: list[set[tuple[str, ...]]], cycles: list[set[tuple[tuple[str, ...], int]]]
+) -> list[set[tuple[str, ...]]]:
+    """Join each import cycle with its modules and the merges whose ``_internal`` module or modules it holds.
+
+    A joined merge takes the place of the first merge it holds; the other merges keep their order.
+    """
+    merge_of = {module: index for index, merge in enumerate(merges) for module in merge}
+    group_of = list(range(len(merges)))
+    joined = dict(enumerate(map(set, merges)))
+    for cycle in cycles:
+        first, *rest = sorted({
+            group_of[index if index >= 0 else merge_of[path]] for path, index in cycle if index >= 0 or path in merge_of
+        })
+        for group in rest:
+            joined[first] |= joined.pop(group)
+            group_of = [first if held == group else held for held in group_of]
+        joined[first] |= {path for path, index in cycle if index < 0}
+    return list(joined.values())
+
+
 def module_dependency_cycles(
     parser: StructureHost,
     module_models_list: list[tuple[tuple[str, ...], list[DataModel]]],
 ) -> list[set[tuple[str, ...]]]:
-    """Find the modules that import each other, from the snapshot of the references between their models.
+    """Find the modules to merge into ``_internal`` modules, from the snapshot of the references between models.
 
+    A merge starts as modules that import each other. Importing a module runs the ``__init__`` module of each package
+    above it first, so ``_internal`` can still import itself back: through a forwarder package of the merge above a
+    module it imports, or through a module it imports that uses a merged model. The modules of each such import cycle
+    that fails join the merge, with the merges whose modules it holds, until none is left; the import cycles that are
+    there without the merges stay as they are.
     The models that the schema validator rules of a model name count as its field types do: its module imports them
     for the class body that evaluates the rules, an alias written as a class for its rules included.
     A stand-in is no member of its module: its module imports nothing for it, and nothing imports it.
@@ -891,9 +976,11 @@ def module_dependency_cycles(
                         module_graph[module].add(target_module)
         return find_circular_sccs(module_graph)
 
-    return graph_answer(
-        snapshot, find_circular_sccs(graph.quotient(module_of, (EdgeKind.REFERENCE, EdgeKind.RULE_TYPE))), old
-    )
+    module_graph = graph.quotient(module_of, (EdgeKind.REFERENCE, EdgeKind.RULE_TYPE))
+    merges = graph_answer(snapshot, find_circular_sccs(module_graph), old)
+    while merges and (failing := _failing_import_cycles(merges, module_graph)):
+        merges = _joined_merges(merges, failing)
+    return merges
 
 
 def resolve_circular_imports(
