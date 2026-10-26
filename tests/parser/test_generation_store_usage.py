@@ -305,6 +305,7 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "add_model_import",
             "append_field",
             "apply_const",
+            "apply_literal_default",
             "clear_target_null",
             "collapse_root_data_type",
             "defer_refresh",
@@ -315,10 +316,13 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "drop_held_null",
             "drop_union_member_constraints",
             "drop_union_operator",
+            "force_field_assignment",
             "inline_shared",
             "insert_field",
+            "mark_forward_references",
             "mark_target_null",
             "move_model",
+            "name_reference",
             "note_changed_models",
             "override_type_import",
             "record_dropped_multiple_of",
@@ -327,6 +331,7 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "redirect_reference_users",
             "register_model",
             "remove_field",
+            "rename_field",
             "rename_model",
             "replace_data_type_ref",
             "replace_field_type",
@@ -334,6 +339,7 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "replace_nested_data_type",
             "require_field",
             "reset_base_classes",
+            "restore_required_inherited_field",
             "retire_model",
             "set_base_classes",
             "set_field_constraints",
@@ -343,6 +349,7 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "set_fields",
             "set_nested_data_types",
             "set_type_discriminator",
+            "set_type_expressions",
             "swap_data_type",
             "update_model_reference",
             "use_assignment_for_forward_references",
@@ -550,7 +557,7 @@ class Parser:
             17,
             "Parser.method",
             "nullable",
-            "nullable changes Fact.NULLABLE outside GenerationStore operations",
+            "use GenerationStore.apply_literal_default() instead of writing nullable",
         ),
     ])
 
@@ -891,7 +898,7 @@ def test_cli_checks_paths_and_writes_the_allowlist(
     assert (clean, failing, created, created_output, created_matches, refused) == snapshot((0, 1, 0, "", True, 1))
     assert failing_output == snapshot("""\
 GenerationStore usage violations found:
-<tmp>/bad.py:2:5: use GenerationStore.require_field() instead of writing required (in write)
+<tmp>/bad.py:2:5: use GenerationStore.apply_literal_default() or require_field() instead of writing required (in write)
 """)
     assert refused_output.splitlines()[:2] == snapshot([
         "Refusing to add allowlist entries; route these writes through GenerationStore:",

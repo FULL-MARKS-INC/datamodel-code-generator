@@ -10,6 +10,14 @@ a field or node key from being reused within the parse; another object under the
 Outside a parse no memo is current: values are computed at each read, and the rendering of a union keeps the members
 its nodes join in a memo of its own (`rendering_memo`).
 
+The memo also keeps the derived values of a field (`ParseMemo.derived`: its render plan and its imports) with the
+revisions they read: the field's own, its model's own (``own``) and the model's own and its fields' (``deep``) of each
+model the computation read: the models its type references, through a root model or type alias the models its root
+type references, the models an on-demand walk of the model graph reached while it computed (`note_reads`) and what
+the derived values of other fields it read depend on. The store's mutations bump what they write (`bump_field`,
+`bump_node`, `bump_model`, `bump_deep`); a node bump reaches the fields whose values read the node and the field that
+holds it. A derived value is returned while none of those revisions moved.
+
 Under the ``RENDER_MEMOS`` check, each value a memo returns is computed anew and compared; a value that differs is a
 stale hit. The memos return what the caches they replace returned, stale or not, and two tables are known to return
 stale values that today's output keeps (`LEGACY_ROWS`): their stale hits are recorded with a report file and never
@@ -20,7 +28,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeVar, final
@@ -28,7 +36,7 @@ from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeVar, final
 from datamodel_code_generator._checks import CheckArea, CheckMode, check_mode
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Hashable, Mapping
+    from collections.abc import Callable, Generator, Hashable, Iterable, Mapping
 
     from datamodel_code_generator._model_keys import FieldKey, ModelKey, NodeKey
 
@@ -53,6 +61,12 @@ class MemoTable(Enum):
     SELF_REFERENCE = "self reference"
     """Whether the type of a field names the model that holds it, by its field key (``DataModelFieldBase``
     ``self_reference``)."""
+    FIELD_RENDER_PLAN = "field render plan"
+    """The render plan of a field built from its facts (``DataModelFieldBase._build_render_plan``), by its field key
+    and what else it reads (``model/base.py:_plan_view``), kept with the revisions it read (`ParseMemo.derived`)."""
+    FIELD_IMPORTS = "field imports"
+    """The imports of a field (``DataModelFieldBase.imports``), by its field key and the plan they read, kept with the
+    revisions they read (`ParseMemo.derived`)."""
     UNION_MEMBERS = "union members"
     """The member hints the last rendering of a union node joined, by its node key and the hint they joined to; an
     enclosing union that reads the same hint spreads them."""
@@ -92,16 +106,212 @@ class _Slot:
 
 
 @final
+@dataclass(slots=True)
+class _Derived:
+    """A derived value of a field, with the revisions it read (`ParseMemo.derived`)."""
+
+    field: Any
+    source: object
+    revision: int
+    parent: object
+    own: int
+    references: tuple[tuple[Any, object, int], ...]
+    """Each reference the field's type held, also through root models and type aliases, its model then and that model's
+    ``deep`` revision then."""
+    reads: tuple[tuple[object, int], ...]
+    """Each other model the computation read (`note_reads`), with its ``deep`` revision then."""
+    value: Any
+
+
+@final
 class ParseMemo:
     """The memos of one parse, which the generation store owns."""
 
-    __slots__ = ("_epochs", "_joins", "_slots")
+    __slots__ = (
+        "_clock",
+        "_deep",
+        "_derived",
+        "_epochs",
+        "_joins",
+        "_own",
+        "_readers",
+        "_reading",
+        "_revisions",
+        "_slots",
+    )
 
     def __init__(self) -> None:
         """Start with no values."""
         self._slots: dict[tuple[MemoTable, MemoKey], _Slot] = {}
         self._epochs: dict[tuple[MemoTable, MemoKey], int] = {}
         self._joins = 0
+        self._clock = 0
+        self._revisions: dict[int, int] = {}
+        self._own: dict[int, int] = {}
+        self._deep: dict[int, int] = {}
+        self._readers: dict[int, dict[int, Any]] = {}
+        self._derived: dict[tuple[MemoTable, int, Hashable], _Derived] = {}
+        self._reading: list[tuple[Any, dict[int, object]]] = []
+
+    def bump_field(self, field: Any) -> None:
+        """Move the revision of a field and the ``deep`` revision of its model, after a write to the field."""
+        self._clock += 1
+        self._revisions[id(field)] = self._clock
+        if (parent := field.parent) is not None:
+            self._deep[id(parent)] = self._clock
+
+    def bump_model(self, model: object) -> None:
+        """Move the ``own`` and ``deep`` revisions of a model, after a write to the model."""
+        self._clock += 1
+        self._own[id(model)] = self._deep[id(model)] = self._clock
+
+    def bump_deep(self, model: object) -> None:
+        """Move the ``deep`` revision of a model, after a write inside its fields that names no field."""
+        self._clock += 1
+        self._deep[id(model)] = self._clock
+
+    def bump_node(self, node: object) -> None:
+        """Bump the fields whose derived values read a data type node, or its member list, and the field holding it."""
+        readers = self._readers
+        for key in (id(node), id(getattr(node, "data_types", None))):
+            if (fields := readers.get(key)) is not None:
+                for field in tuple(fields.values()):
+                    self.bump_field(field)
+        current = node
+        while (parent := getattr(current, "parent", None)) is not None:
+            if hasattr(parent, "invalidate_semantic_caches"):
+                self.bump_field(parent)
+                return
+            current = parent
+
+    def revision(self, field: Any) -> tuple[int, int]:
+        """Return the revisions of a field and of its model's own attributes."""
+        return self._revisions.get(id(field), 0), self._own.get(id(field.parent), 0)
+
+    def derived(  # noqa: PLR0913
+        self,
+        table: MemoTable,
+        field: Any,
+        view: Hashable,
+        compute: Callable[[], _V],
+        recompute: Callable[[], _V] | None = None,
+        *,
+        source: object = None,
+    ) -> _V:
+        """Return the value of a field kept in the table for ``view`` and read from ``source``, or compute and keep it.
+
+        A kept value is returned while the field's revision, its model's ``own`` revision and the ``deep`` revision of
+        each model it read when it was computed hold; the nodes of its type then become its readers. ``source`` (the
+        plan imports read) is compared by identity. A value that another field's computation reads adds what it
+        depends on to that computation.
+        """
+        key = (table, id(field), view)
+        if (entry := self._derived.get(key)) is not None and self._holds(entry, field, source):
+            if self._reading:
+                self._read_by_outer(entry)
+            return _checked(table, field, entry.value, recompute or compute)
+        reads: dict[int, object] = {}
+        self._reading.append((field, reads))
+        try:
+            value = compute()
+        finally:
+            self._reading.pop()
+        self._derived[key] = entry = self._derive(field, source, value, reads)
+        if self._reading:
+            self._read_by_outer(entry)
+        return value
+
+    def _holds(self, entry: _Derived, field: Any, source: object) -> bool:
+        """Return whether a kept value was computed for ``field`` from ``source`` and the revisions it read hold."""
+        return (
+            entry.field is field
+            and entry.source is source
+            and entry.revision == self._revisions.get(id(field), 0)
+            and entry.parent is field.parent
+            and self._models_hold(entry)
+        )
+
+    def _models_hold(self, entry: _Derived) -> bool:
+        """Return whether the revisions of the models a kept value read hold: its model's own, the others' deep."""
+        deep = self._deep
+        return (
+            entry.own == self._own.get(id(entry.parent), 0)
+            and all(
+                reference.source is model and deep.get(id(model), 0) == revision
+                for reference, model, revision in entry.references
+            )
+            and (not entry.reads or all(deep.get(id(model), 0) == revision for model, revision in entry.reads))
+        )
+
+    def note_reads(self, models: Iterable[object]) -> None:
+        """Record ``models`` as read by the derived value being computed, if any."""
+        if reading := self._reading:
+            reads = reading[-1][1]
+            for model in models:
+                reads[id(model)] = model
+
+    def _read_by_outer(self, entry: _Derived) -> None:
+        """Add what a derived value depends on to the computation that reads it, when that is another field's value.
+
+        A field's imports read its own plan, which they are kept with (``source``). The ``deep`` revision of the
+        field's model covers the field's own revision.
+        """
+        if (outer := self._reading[-1])[0] is not entry.field:
+            reads = outer[1]
+            reads[id(entry.parent)] = entry.parent
+            for _, model, _ in entry.references:
+                reads[id(model)] = model
+            for model, _ in entry.reads:
+                reads[id(model)] = model
+
+    def _derive(self, field: Any, source: object, value: object, reads: dict[int, object]) -> _Derived:
+        """Keep ``value`` with the revisions it read, and make the nodes of the field's type its readers.
+
+        The type of a root model or type alias that the field's type names counts as read too, as the type the model
+        stands for, and so on through the ones that type names.
+        """
+        readers = self._readers
+        deep = self._deep
+        field_key = id(field)
+        references: list[tuple[Any, object, int]] = []
+        aliases: list[Any] = []
+        seen: set[int] = set()
+        own = True
+        stack = [field.data_type]
+        while True:
+            while stack:
+                node = stack.pop()
+                if own:
+                    readers.setdefault(id(node), {})[field_key] = field
+                if children := node.data_types:
+                    if own:
+                        readers.setdefault(id(children), {})[field_key] = field
+                    stack.extend(children)
+                if (reference := node.reference) is not None:
+                    model = reference.source
+                    references.append((reference, model, deep.get(id(model), 0)))
+                    if (getattr(model, "IS_ROOT_MODEL", False) or getattr(model, "IS_ALIAS", False)) and (
+                        id(model) not in seen
+                    ):
+                        seen.add(id(model))
+                        aliases.append(model)
+                if (dict_key := node.dict_key) is not None:
+                    stack.append(dict_key)
+            if not aliases:
+                break
+            own = False
+            stack.extend(alias_field.data_type for alias_field in aliases.pop().fields)
+        parent = field.parent
+        return _Derived(
+            field,
+            source,
+            self._revisions.get(field_key, 0),
+            parent,
+            self._own.get(id(parent), 0),
+            tuple(references),
+            tuple((model, deep.get(id(model), 0)) for model in reads.values()),
+            value,
+        )
 
     def value(  # noqa: PLR0913, PLR0917
         self,
@@ -125,10 +335,7 @@ class ParseMemo:
             and slot.epoch == self._epochs.get(slot_key, 0)
             and args in slot.values
         ):
-            kept = slot.values[args]
-            if (mode := check_mode(CheckArea.RENDER_MEMOS)) is not None:
-                _check_hit(mode, table, owner, kept, recompute or compute)
-            return kept
+            return _checked(table, owner, slot.values[args], recompute or compute)
         value = compute()
         epoch = self._epochs.get(slot_key, 0)
         if (slot := self._slots.get(slot_key)) is None or slot.owner is not owner or slot.epoch != epoch:
@@ -203,6 +410,39 @@ def forget(table: MemoTable, key: MemoKey, owner: object) -> None:
         memo.forget(table, key, owner)
 
 
+def note_reads(models: Iterable[object]) -> None:
+    """Record ``models`` as read by the derived field value the current parse computes (`ParseMemo.note_reads`).
+
+    A walk over the model graph that a computation asks for on demand records the models it reached.
+    """
+    if (memo := PARSE_MEMO.get()) is not None:
+        memo.note_reads(models)
+
+
+def bump_field(field: object) -> None:
+    """Move the revision of a field in the current parse (`ParseMemo.bump_field`); outside a parse nothing is kept."""
+    if (memo := PARSE_MEMO.get()) is not None:
+        memo.bump_field(field)
+
+
+def bump_deep(model: object) -> None:
+    """Move the ``deep`` revision of a model in the current parse (`ParseMemo.bump_deep`)."""
+    if (memo := PARSE_MEMO.get()) is not None:
+        memo.bump_deep(model)
+
+
+def bump_node(node: object) -> None:
+    """Bump what reads a data type node in the current parse (`ParseMemo.bump_node`)."""
+    if (memo := PARSE_MEMO.get()) is not None:
+        memo.bump_node(node)
+
+
+def bump_model(model: object) -> None:
+    """Move the revisions of a model in the current parse (`ParseMemo.bump_model`)."""
+    if (memo := PARSE_MEMO.get()) is not None:
+        memo.bump_model(model)
+
+
 @contextmanager
 def rendering_memo() -> Generator[ParseMemo, None, None]:
     """Yield a memo of the rendering's own, current while the block runs; outside a parse, a union rendering uses it."""
@@ -222,10 +462,35 @@ def _owner_name(owner: object) -> str:
 
 
 def _same(kept: object, fresh: object) -> bool:
-    """Compare two values; a mapping of model objects (an enum member index) holds the same objects."""
+    """Compare two values; a mapping of model objects (an enum member index) holds the same objects.
+
+    Values that differ only by objects that equal nothing, such as a ``nan`` default computed again, write the same.
+    """
     if isinstance(kept, dict) and isinstance(fresh, dict):
         return kept.keys() == fresh.keys() and all(kept[name] is fresh[name] for name in kept)
-    return kept == fresh
+    return _equal(kept, fresh)
+
+
+def _equal(kept: object, fresh: object) -> bool:
+    """Compare two values item by item inside tuples, lists and dataclasses.
+
+    Other values of one type are the same when they write the same text, such as ``nan`` or a runtime expression
+    built again, which equal nothing but themselves.
+    """
+    if kept is fresh or kept == fresh:
+        return True
+    if isinstance(kept, (tuple, list)) and isinstance(fresh, (tuple, list)) and type(kept) is type(fresh):
+        return len(kept) == len(fresh) and all(map(_equal, kept, fresh))
+    if is_dataclass(kept) and type(kept) is type(fresh):
+        return all(_equal(getattr(kept, field.name), getattr(fresh, field.name)) for field in fields(kept))
+    return type(kept) is type(fresh) and repr(kept) == repr(fresh)
+
+
+def _checked(table: MemoTable, owner: object, kept: _V, recompute: Callable[[], object]) -> _V:
+    """Return a kept value, compared under the ``RENDER_MEMOS`` check with the value computed anew."""
+    if (mode := check_mode(CheckArea.RENDER_MEMOS)) is not None:
+        _check_hit(mode, table, owner, kept, recompute)
+    return kept
 
 
 def _check_hit(mode: CheckMode, table: MemoTable, owner: object, kept: object, recompute: Callable[[], object]) -> None:
