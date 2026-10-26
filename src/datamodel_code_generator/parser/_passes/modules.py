@@ -111,6 +111,7 @@ from datamodel_code_generator.parser._passes._shared import (
     _unique_items_tuple,
     _VariantDiscriminatorTags,
     enum_discriminator_literal,
+    enum_discriminator_members,
     enum_site_override_import,
     get_constructor_field_adjustment,
     get_inherited_constructor_info,
@@ -1355,11 +1356,9 @@ def _iter_nested_discriminator_tag_fields(
             yield tag_field, (value,)
 
 
-def _is_enum_member_tag(
-    model: DataModel, field_name: str, tag_name: str, value: DiscriminatorValue, *, use_field_name: bool
-) -> bool:
-    """Return whether the Enum typing a variant's tag field has a member for ``value``, written as that member."""
-    enum_source = next(
+def _find_tag_enum(model: DataModel, field_name: str, tag_name: str, *, use_field_name: bool) -> Enum | None:
+    """Return the Enum typing a variant's tag field, of the field itself or else of its bases."""
+    return next(
         (
             enum_source
             for field in model.fields
@@ -1368,7 +1367,53 @@ def _is_enum_member_tag(
         ),
         None,
     ) or _get_enum_from_base(model, field_name, use_field_name=use_field_name)
+
+
+def _is_enum_member_tag(
+    model: DataModel, field_name: str, tag_name: str, value: DiscriminatorValue, *, use_field_name: bool
+) -> bool:
+    """Return whether the Enum typing a variant's tag field has a member for ``value``, written as that member."""
+    enum_source = _find_tag_enum(model, field_name, tag_name, use_field_name=use_field_name)
     return enum_source is not None and enum_source.find_member(value, coerce_strings=True) is not None
+
+
+def _members_equal_values(enum_source: Enum) -> bool:
+    """Return whether the members of an Enum equal their values at runtime, as Pydantic compares discriminator choices.
+
+    So do the members of an ``IntEnum``, a ``StrEnum`` and an Enum that subclasses its value type; a member of a plain
+    Enum equals only itself.
+    """
+    return isinstance(enum_source, (IntEnum, StrEnum)) or any(
+        base.reference is None and base.import_ is None for base in enum_source.base_classes
+    )
+
+
+def _written_enum_member_keys(
+    model: DataModel, field_name: str, tag_name: str, values: list[DiscriminatorValue], *, use_field_name: bool
+) -> list[object]:
+    """Return the keys of the choices that the members a variant is written with make (``enum_discriminator_members``).
+
+    A member is its value where members equal their values, else only itself (its Enum and its value). A variant tagged
+    by no member takes every member, so its tags are their values whatever the Enum compares. A tag field that already
+    is the one ``Literal`` of the variant's tag is kept as it is.
+    """
+    literal_kept = any(
+        _tag_field_matches(field, "source-name" if use_field_name else "python-or-original-name", tag_name)
+        and len(literals := field.data_type.literals) == 1
+        and same_tag(literals[0], values[0], "legacy-python-equality")
+        for field in model.fields
+    )
+    if (
+        literal_kept
+        or (enum_source := _find_tag_enum(model, field_name, tag_name, use_field_name=use_field_name)) is None
+    ):
+        return []
+    tags = enum_discriminator_members(enum_source, values)
+    values_of_members = [tag_key(member.value, "legacy-python-equality") for member in tags.members]
+    keys: list[object] = (
+        values_of_members if _members_equal_values(enum_source) else [(id(enum_source), v) for v in values_of_members]
+    )
+    return [*keys, *values_of_members] if tags.rule == "all-members" else keys
 
 
 def _discriminator_variants_are_valid(
@@ -1416,7 +1461,20 @@ def _discriminator_variants_are_valid(
             for value in discriminator_values
         ):
             return False
-        for key in (tag_key(value, "legacy-python-equality") for value in discriminator_values):
+        keys = [tag_key(value, "legacy-python-equality") for value in discriminator_values]
+        if (
+            enum_member_tags
+            and can_update_discriminator
+            and not discriminator_model.REQUIRES_TAGGED_UNION_DISCRIMINATOR
+        ):
+            keys += _written_enum_member_keys(
+                discriminator_model,
+                field_name,
+                original_name if original_name is not None else field_name,
+                discriminator_values,
+                use_field_name=original_name is not None,
+            )
+        for key in keys:
             if (previous_owner := discriminator_value_owners.get(key)) is not None and previous_owner != owner:
                 return False
             discriminator_value_owners[key] = owner
