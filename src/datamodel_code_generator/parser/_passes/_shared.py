@@ -960,7 +960,14 @@ def alias_shadowed_imports(
 
 
 def _is_pydantic_v2_root_model(model: DataModel, root_model_type: type[DataModel] | None) -> bool:
-    return root_model_type is not None and isinstance(model, root_model_type)
+    """Return whether the model's fields need dependency ordering: the root type requires it and so does its class.
+
+    A model the configured type keeps as its base class, such as a ``RootModel`` that ``--use-root-model-type-alias``
+    keeps for a constrained root, is ordered like the configured type.
+    """
+    return root_model_type is not None and (
+        isinstance(model, root_model_type) or model.REQUIRES_FIELD_DEPENDENCY_ORDERING
+    )
 
 
 @dataclass(frozen=True, slots=True)
