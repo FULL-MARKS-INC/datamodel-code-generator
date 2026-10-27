@@ -43,7 +43,7 @@ from datamodel_code_generator._parse_memo import (
 from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
 from datamodel_code_generator._requirements import backport_path, python_target_meets
-from datamodel_code_generator._target_unicode import host_identifiers
+from datamodel_code_generator._target_unicode import host_identifiers, host_parsable
 from datamodel_code_generator.imports import (
     IMPORT_ANNOTATED,
     IMPORT_ANY,
@@ -2421,15 +2421,15 @@ def _field_participates_in_constructor(field: DataModelFieldBase) -> bool:
 def _bind_field_expressions(rendered: str, class_name: str, bindings: Mapping[str, str]) -> str:
     """Bind names in field annotations and defaults without changing template objects.
 
-    Identifier characters the running interpreter does not know are lent letters of the same UTF-8 length, so the
-    offsets it parses hold for the rendered text.
+    Identifier characters the running interpreter does not know are lent letters of the same UTF-8 length and a type
+    statement is parsed as an assignment of the same length (`host_parsable`), so the offsets it parses hold for the
+    rendered text.
     """
     source = rendered.encode()
     offsets = [0, *accumulate(map(len, source.splitlines(keepends=True)))]
     replacements: list[tuple[int, int, str]] = []
-    lent = host_identifiers(rendered)
-    restore_name = lent.restore_name if lent else str
-    for statement in ast.parse(lent.source if lent else rendered).body:
+    host_source, restore_name = host_parsable(rendered)
+    for statement in ast.parse(host_source).body:
         if not isinstance(statement, ast.ClassDef) or restore_name(statement.name) != class_name:
             continue
         for field in statement.body:
@@ -3810,6 +3810,16 @@ def _share_path_identity(root_model: DataModel, inner_model: DataModel) -> None:
     """
     root_model.__dict__[_PATH_PARTNER_KEY] = model_key_of(inner_model.reference)
     inner_model.__dict__[_PATH_PARTNER_KEY] = model_key_of(root_model.reference)
+
+
+def _path_identity_keys(model: DataModel) -> tuple[ModelKey, ...]:
+    """Return the model key of ``model``, and the key of the model that shares its path (`_share_path_identity`).
+
+    Row ``legacy-replaced-root-shares-path``: a reference to either of the two names both, so what is recorded under
+    the path of one is recorded for both.
+    """
+    key = model_key_of(model.reference)
+    return (key,) if (partner := model.__dict__.get(_PATH_PARTNER_KEY)) is None else (key, partner)
 
 
 def forget_model_memos(model: DataModel, *tables: MemoTable) -> None:
