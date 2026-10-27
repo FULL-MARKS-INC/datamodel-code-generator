@@ -54,6 +54,8 @@ class TypeAlias(TypeAliasBase):
     TEMPLATE_FILE_PATH: ClassVar[str] = "TypeAliasAnnotation.jinja2"
     BASE_CLASS: ClassVar[str] = ""
     DEFAULT_IMPORTS: ClassVar[tuple[Import, ...]] = (IMPORT_TYPE_ALIAS,)
+    IS_EVALUATED_ALIAS: ClassVar[bool] = True
+    """Whether the name is the value itself at runtime, so a name of the value None is None."""
 
 
 class TypeAliasTypeBackport(TypeAliasBase):

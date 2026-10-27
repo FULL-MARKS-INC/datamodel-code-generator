@@ -74,7 +74,6 @@ from datamodel_code_generator.types import (
     DataType,
     Nullable,
     chain_as_tuple,
-    get_optional_type,
 )
 
 if TYPE_CHECKING:
@@ -859,7 +858,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
             return NONE
         if self._field_null_source(data_type) is None:
             return type_hint
-        return get_optional_type(type_hint, self._use_union_operator)
+        return data_type._optional_hint(type_hint, self._use_union_operator)  # noqa: SLF001
 
     def _field_null_source(
         self,

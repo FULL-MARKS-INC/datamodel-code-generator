@@ -89,4 +89,4 @@ class Positions:
     definitionSingle: Single | None = None
     allOfDefinition: Literal[AllOfNarrowed.b] | None = None
     besideNull: BesideNull | None = None
-    constNull: ConstNull | None = None
+    constNull: ConstNull = None

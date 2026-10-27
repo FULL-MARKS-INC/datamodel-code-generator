@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Model",
+  "type": "object",
+  "properties": {
+    "p": {"$ref": "#/$defs/S"},
+    "q": {"$ref": "#/$defs/Q"},
+    "r": {"$ref": "#/$defs/R"},
+    "s": {"$ref": "#/$defs/Same"},
+    "d": {"$ref": "#/$defs/Disjoint"}
+  },
+  "$defs": {
+    "T": {"type": "string"},
+    "N": {"type": ["string", "null"]},
+    "S": {"allOf": [{"$ref": "#/$defs/T"}, {"type": ["string", "null"]}]},
+    "Q": {"allOf": [{"$ref": "#/$defs/N"}, {"type": "string"}]},
+    "R": {"allOf": [{"$ref": "#/$defs/N"}, {"type": ["null", "string", "integer"]}, {"type": ["string", "null"], "minLength": 2}]},
+    "Disjoint": {"allOf": [{"$ref": "#/$defs/T"}, {"type": ["integer", "null"]}]},
+    "Same": {"allOf": [{"$ref": "#/$defs/N"}, {"type": ["string", "null"], "maxLength": 5}]}
+  }
+}

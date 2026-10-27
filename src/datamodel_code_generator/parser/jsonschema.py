@@ -781,6 +781,11 @@ _NUMERIC_TYPE_DOMAINS = {
 }
 
 
+def _json_schema_types(schema_type: str | list[str]) -> list[str]:
+    """Return the JSON Schema type keyword as a list."""
+    return [schema_type] if isinstance(schema_type, str) else schema_type
+
+
 def _numeric_type_domain(schema_type: str | list[str]) -> frozenset[str] | None:
     """Expand number to its numeric subtypes within the numeric/null domain."""
     if isinstance(schema_type, str):
@@ -9873,6 +9878,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return None
 
         constraint_items: list[JsonSchemaObject] = []
+        common_types: list[str] | None = None
         for item in obj.allOf:
             if not isinstance(item, JsonSchemaObject):  # pragma: no cover
                 continue
@@ -9882,20 +9888,19 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return None
             if item.has_constraint or item.type or item.format:
                 if item.type and ref_schema.type:
-                    compatible_type_pairs = {
-                        ("integer", "number"),
-                        ("number", "integer"),
-                    }
                     numeric_types = (
                         _numeric_type_domain(item.type) is not None
                         and _numeric_type_domain(ref_schema.type) is not None
                     )
-                    if (
-                        not numeric_types
-                        and item.type != ref_schema.type
-                        and (item.type, ref_schema.type) not in compatible_type_pairs
-                    ):
-                        return None
+                    if not numeric_types and item.type != ref_schema.type:
+                        item_types = _json_schema_types(item.type)
+                        common_types = [
+                            type_
+                            for type_ in (common_types or _json_schema_types(ref_schema.type))
+                            if type_ in item_types
+                        ]
+                        if not common_types:
+                            return None
                 constraint_items.append(item)
 
         if not constraint_items:
@@ -9905,6 +9910,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         merged_schema = self._merge_primitive_schemas_for_allof(all_items)
         if merged_schema is None:
             return None
+        if common_types:
+            merged_schema = self._schema_object({
+                **merged_schema.model_dump(exclude_unset=True, by_alias=True),
+                "type": common_types[0] if len(common_types) == 1 else common_types,
+            })
 
         has_literals = (
             self.generate_schema_validators

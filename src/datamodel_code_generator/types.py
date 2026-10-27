@@ -1046,6 +1046,44 @@ class DataType(_BaseModel):  # noqa: PLR0904
             and bool(getattr(source, "nullable", False))
         )
 
+    @property
+    def names_none_alias(self) -> bool:
+        """Return whether the type hint is the name of a ``TypeAlias`` whose value is None, which ``|`` cannot join."""
+        return self._names_none_alias(())
+
+    def _names_none_alias(self, chain: tuple[Reference, ...]) -> bool:
+        """Return ``names_none_alias``, following the aliases of ``chain`` once, so aliases that name each other end."""
+        if self.alias or self.type:
+            return False
+        reference = self.reference
+        if reference is not None and (
+            self.data_types
+            or any(named is reference for named in chain)
+            or not getattr(reference.source, "IS_EVALUATED_ALIAS", False)
+        ):
+            return False
+        if any(_container_name(self, container) is not None for container in self._TYPE_HINT_CONTAINER_ORDER):
+            return False
+        if reference is None:
+            members = self.data_types
+            return any(member._names_none_alias(chain) for member in members) and all(  # noqa: SLF001
+                member._names_none_alias(chain) or member._is_bare_none  # noqa: SLF001
+                for member in members
+            )
+        fields = getattr(reference.source, "fields", ())[:1]
+        return any(_writes_none_alone(field, (*chain, reference)) for field in fields)
+
+    @property
+    def _is_bare_none(self) -> bool:
+        """Return whether the type is the plain type ``None``."""
+        return self.type == NONE and not (self.alias or self.reference or self.data_types or self.is_func)
+
+    def _optional_hint(self, type_: str, use_union_operator: bool) -> str:  # noqa: FBT001
+        """Write the hint with its None, except for the name of an alias of None, which is None already."""
+        if use_union_operator and self.names_none_alias:
+            return type_
+        return get_optional_type(type_, use_union_operator)
+
     def _reference_adds_null(self) -> bool:
         """Return whether the type hint adds the None of the nullable model the type names.
 
@@ -1253,6 +1291,12 @@ TypeExpr: TypeAlias = TypeLeaf | RefLeaf | TypeApply
 """A type expression: the structure of a data type tree, with the nodes whose hooks and names write it."""
 
 
+def _writes_none_alone(field: Any, chain: tuple[Reference, ...]) -> bool:
+    """Return whether the field of a type alias writes the value None and nothing else: no annotation, no call."""
+    value = field.data_type
+    return (value._names_none_alias(chain) or value._is_bare_none) and not (field.annotated or field.field)  # noqa: SLF001
+
+
 def _container_name(data_type: DataType, container: str) -> str | None:
     """Return the name the data type's container ``container`` is written as, or None when it is not in one."""
     standard = data_type.use_standard_collections
@@ -1357,7 +1401,7 @@ def _render_apply(expr: TypeApply) -> str:
     if (
         node.is_optional or member_null or (expr.form != "base" and node._reference_adds_null())  # noqa: SLF001
     ) and text != ANY:
-        return get_optional_type(text, node.use_union_operator)
+        return node._optional_hint(text, node.use_union_operator)  # noqa: SLF001
     if not expr.base and node.is_func and node.kwargs:
         return f"{text}({', '.join(f'{k}={represent_python_value(v)}' for k, v in node.kwargs.items())})"
     return text
@@ -1400,7 +1444,10 @@ def _render_union(node: DataType, members: tuple[TypeExpr, ...], *, discriminate
         merged = union.merge_members(union.WrittenMember(hint, hint) for hint in _union_member_hints(members) if hint)
     else:
         merged = _merge_union_members(node, members)
-    if not (kept := merged.kept):
+    kept, takes_null = merged.kept, merged.takes_null
+    if node.use_union_operator:
+        kept, takes_null = _drop_none_after_none_alias(members, kept, takes_null=takes_null)
+    if not kept:
         text = ANY
         node._materialize_render_state("empty-union")  # noqa: SLF001
     elif len(kept) == 1:
@@ -1411,7 +1458,24 @@ def _render_union(node: DataType, members: tuple[TypeExpr, ...], *, discriminate
             memo.keep_union_members(NodeKey(id(node)), node, text, kept)
     if discriminated and (discriminator := node.discriminator):
         text = node._wrap_discriminator_type_hint(text, discriminator)  # noqa: SLF001
-    return text, merged.takes_null
+    return text, takes_null
+
+
+def _drop_none_after_none_alias(
+    members: tuple[TypeExpr, ...], kept: tuple[str, ...], *, takes_null: bool
+) -> tuple[tuple[str, ...], bool]:
+    """Drop the None that follows the name of an alias of None, which ``|`` cannot join: the alias is None already.
+
+    The names are those of the members that are such aliases; the None is a member written as ``None``, a second such
+    name, or the None the union takes over from its members, which a union of that name alone writes no more.
+    """
+    names = {render_type_expr(member) for member in members if member.node is not None and member.node.names_none_alias}
+    if not names:
+        return kept, takes_null
+    none_valued = {*names, NONE}
+    if len(kept) > 1 and kept[0] in none_valued and kept[1] in none_valued:
+        kept = (kept[0], *(hint for hint in kept[1:] if hint not in none_valued))
+    return kept, takes_null and not (len(kept) == 1 and kept[0] in names)
 
 
 def _merge_union_members(node: DataType, members: tuple[TypeExpr, ...]) -> MergedMembers[str]:
