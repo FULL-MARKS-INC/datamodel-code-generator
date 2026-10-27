@@ -2829,6 +2829,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self,
         sorted_data_models: SortedDataModels,
         module_split_mode: ModuleSplitMode | None,
+        all_exports_scope: AllExportsScope | None,
     ) -> tuple[
         ModuleModels,
         set[ModulePath],
@@ -2841,7 +2842,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         Reuse compares the tags of discriminated unions as their mappings give them before any model is merged,
         since merging redirects the variants of a union to models that its mapping does not name.
         """
-        state = _StructureState(sorted_data_models, module_split_mode)
+        state = _StructureState(sorted_data_models, module_split_mode, all_exports_scope)
         self.__runner().run_steps(STRUCTURE_BODY, self, state)
         return (
             state.module_models,

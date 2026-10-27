@@ -18,11 +18,20 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
 
 from tests.conftest import assert_output
-from tests.main.conftest import DATA_PATH, OPEN_API_DATA_PATH, _generated_package_module, run_main_and_assert
+from tests.main.conftest import (
+    DATA_PATH,
+    JSON_SCHEMA_DATA_PATH,
+    OPEN_API_DATA_PATH,
+    _generated_package_module,
+    run_main_and_assert,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 PAYLOADS_PATH = DATA_PATH / "payloads"
@@ -54,6 +63,24 @@ NESTED_CYCLE_MODELS = {
     "a.sub.s": ("a.sub", "S"),
     "a.peer.p": ("a.peer", "P"),
 }
+EXPORTS_SCOPE = "circular_imports_exports_scope_module_below_package"
+EXPORTS_SCOPE_MODELS = {
+    "x.thing": ("x", "Thing"),
+    "y.thing": ("y", "Thing"),
+    "p.t.leaf": ("p.t", "Leaf"),
+    "p.item": ("p", "Item"),
+    "p.u.user": ("p.u", "User"),
+}
+DOTTED_MODULES = "circular_imports_exports_scope_dotted_modules"
+DOTTED_MODULES_PATH = JSON_SCHEMA_DATA_PATH / "circular_imports_exports_scope_dotted"
+DOTTED_MODULES_MODELS = {
+    "x.thing.json": ("x.thing", "Thing"),
+    "y.thing.json": ("y.thing", "Thing"),
+    "p.t.leaf.json": ("p.t.leaf", "Leaf"),
+    "p.item.json": ("p.item", "Item"),
+    "p.u.user.json": ("p.u.user", "User"),
+    "root_thing.json": ("root_thing", "RootThing"),
+}
 
 
 def _schema_verdict(validator: Draft202012Validator, document: dict[str, Any]) -> str:
@@ -70,7 +97,12 @@ def _model_verdict(model: Any, document: dict[str, Any]) -> str:
     return "accepts"
 
 
-def _verdicts(output_dir: Path, name: str, models: dict[str, tuple[str, str]]) -> str:
+def _verdicts(
+    output_dir: Path,
+    name: str,
+    models: dict[str, tuple[str, str]],
+    validator_of: Callable[[str], Draft202012Validator],
+) -> str:
     """Import every module of the generated package on its own, then compare the schema and the models on payloads.
 
     Each module is imported first in a fresh interpreter state, as a user's first import of the package can be any.
@@ -79,7 +111,6 @@ def _verdicts(output_dir: Path, name: str, models: dict[str, tuple[str, str]]) -
         parts = path.relative_to(output_dir).with_suffix("").parts
         with _generated_package_module(output_dir, ".".join(parts[:-1] if parts[-1] == "__init__" else parts)):
             pass
-    components = yaml.safe_load((OPEN_API_DATA_PATH / f"{name}.yaml").read_text())["components"]
     payloads = json.loads((PAYLOADS_PATH / name / f"{name}.json").read_text())
     lines: list[str] = []
     with _generated_package_module(output_dir, ""):
@@ -87,13 +118,41 @@ def _verdicts(output_dir: Path, name: str, models: dict[str, tuple[str, str]]) -
             module_path, class_name = models[schema_name]
             module = importlib.import_module(f"{output_dir.name}.{module_path}" if module_path else output_dir.name)
             model = getattr(module, class_name)
-            validator = Draft202012Validator({"$ref": f"#/components/schemas/{schema_name}", "components": components})
+            validator = validator_of(schema_name)
             lines.extend(
                 f"{schema_name} {json.dumps(document)}: schema {_schema_verdict(validator, document)}, "
                 f"model {_model_verdict(model, document)}\n"
                 for document in documents
             )
     return "".join(lines)
+
+
+def _open_api_verdicts(output_dir: Path, name: str, models: dict[str, tuple[str, str]]) -> str:
+    """Compare the schemas of the components of an OpenAPI document and the generated models on payloads."""
+    components = yaml.safe_load((OPEN_API_DATA_PATH / f"{name}.yaml").read_text())["components"]
+    return _verdicts(
+        output_dir,
+        name,
+        models,
+        lambda schema_name: Draft202012Validator({
+            "$ref": f"#/components/schemas/{schema_name}",
+            "components": components,
+        }),
+    )
+
+
+def _dotted_verdicts(output_dir: Path) -> str:
+    """Compare the schema files of a directory and the generated models on payloads."""
+    registry: Registry[Any] = Registry().with_resources([
+        (f"https://example.test/{path.name}", Resource.from_contents(json.loads(path.read_text()), DRAFT202012))
+        for path in DOTTED_MODULES_PATH.glob("*.json")
+    ])
+    return _verdicts(
+        output_dir,
+        DOTTED_MODULES,
+        DOTTED_MODULES_MODELS,
+        lambda file_name: Draft202012Validator({"$ref": f"https://example.test/{file_name}"}, registry=registry),
+    )
 
 
 @pytest.mark.parametrize(
@@ -116,7 +175,7 @@ def test_circular_imports_module_below_package(output_dir: Path, extra_args: lis
         input_file_type="openapi",
         extra_args=["--output-model-type", "pydantic_v2.BaseModel", *extra_args],
     )
-    assert_output(_verdicts(output_dir, BELOW_PACKAGE, BELOW_PACKAGE_MODELS), name="payloads")
+    assert_output(_open_api_verdicts(output_dir, BELOW_PACKAGE, BELOW_PACKAGE_MODELS), name="payloads")
 
 
 def test_circular_imports_module_below_cycle_package(output_dir: Path) -> None:
@@ -131,7 +190,7 @@ def test_circular_imports_module_below_cycle_package(output_dir: Path) -> None:
         input_file_type="openapi",
         extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
     )
-    assert_output(_verdicts(output_dir, BELOW_CYCLE_PACKAGE, BELOW_CYCLE_PACKAGE_MODELS), name="payloads")
+    assert_output(_open_api_verdicts(output_dir, BELOW_CYCLE_PACKAGE, BELOW_CYCLE_PACKAGE_MODELS), name="payloads")
 
 
 def test_circular_imports_module_using_module_below_package(output_dir: Path) -> None:
@@ -147,7 +206,7 @@ def test_circular_imports_module_using_module_below_package(output_dir: Path) ->
         input_file_type="openapi",
         extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
     )
-    assert_output(_verdicts(output_dir, USING_BELOW_PACKAGE, USING_BELOW_PACKAGE_MODELS), name="payloads")
+    assert_output(_open_api_verdicts(output_dir, USING_BELOW_PACKAGE, USING_BELOW_PACKAGE_MODELS), name="payloads")
 
 
 def test_circular_imports_nested_cycle_below_package(output_dir: Path) -> None:
@@ -163,4 +222,45 @@ def test_circular_imports_nested_cycle_below_package(output_dir: Path) -> None:
         input_file_type="openapi",
         extra_args=["--output-model-type", "pydantic_v2.BaseModel"],
     )
-    assert_output(_verdicts(output_dir, NESTED_CYCLE, NESTED_CYCLE_MODELS), name="payloads")
+    assert_output(_open_api_verdicts(output_dir, NESTED_CYCLE, NESTED_CYCLE_MODELS), name="payloads")
+
+
+@pytest.mark.parametrize("scope", ["children", "recursive"])
+def test_circular_imports_exports_scope_module_below_package(output_dir: Path, scope: str) -> None:
+    """Merge the modules ``_internal.py`` imports below ``p`` that ``p`` re-exports, so ``p`` does not import it back.
+
+    ``x`` and ``y`` form the cycle, and ``x`` uses ``p.t``. With ``--all-exports-scope`` the ``__init__`` module of
+    ``p`` imports ``p.t`` and ``p.u``, which uses the cycle: importing ``_internal.py`` imported ``p.t``, so ``p`` ran
+    and imported ``p.u``, which imported ``_internal.py`` half built. ``p.t`` and ``p.u`` join the merge, while
+    ``p.item`` stays where it is. Every module imports, and the models accept and reject the payloads as the schema
+    does.
+    """
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / f"{EXPORTS_SCOPE}.yaml",
+        output_path=output_dir,
+        input_file_type="openapi",
+        extra_args=["--output-model-type", "pydantic_v2.BaseModel", "--all-exports-scope", scope],
+    )
+    assert_output(_open_api_verdicts(output_dir, EXPORTS_SCOPE, EXPORTS_SCOPE_MODELS), name="payloads")
+
+
+def test_circular_imports_exports_scope_dotted_modules(output_dir: Path) -> None:
+    """Place the dotted modules in their packages, whose ``__init__`` modules re-export the modules below them.
+
+    ``--treat-dot-as-module`` makes ``p.t.leaf.json`` the module ``p/t/leaf.py``, below the packages ``p.t`` and ``p``
+    that no schema file stands for. Their ``__init__`` modules import the modules below them as in the OpenAPI
+    document of the previous test, and the root module holds ``RootThing``.
+    """
+    run_main_and_assert(
+        input_path=DOTTED_MODULES_PATH,
+        output_path=output_dir,
+        input_file_type="jsonschema",
+        extra_args=[
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--treat-dot-as-module",
+            "--all-exports-scope",
+            "recursive",
+        ],
+    )
+    assert_output(_dotted_verdicts(output_dir), name="payloads")

@@ -256,6 +256,7 @@ class _StructureState:
 
     sorted_data_models: SortedDataModels
     module_split_mode: ModuleSplitMode | None
+    all_exports_scope: AllExportsScope | None
     module_models: ModuleModels = dataclasses.field(init=False)
     model_to_module_models: dict[DataModel, tuple[ModulePath, list[DataModel]]] = dataclasses.field(init=False)
     model_path_to_module_name: _ModuleNames = dataclasses.field(init=False)
