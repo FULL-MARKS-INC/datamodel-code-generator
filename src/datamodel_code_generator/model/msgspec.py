@@ -45,7 +45,6 @@ from datamodel_code_generator.model._render_plan import (
     RuleId,
     Why,
     field_call_text,
-    frozen_render_plan,
     written_argument_names,
 )
 from datamodel_code_generator.model.base import (
@@ -1080,10 +1079,8 @@ class DataModelField(DataModelFieldBase):
 
     @override
     def _written_assignment(self) -> MsgspecWritten:
-        """Return the ``field()`` arguments the field writes."""
-        if (plan := frozen_render_plan(self)) is not None:
-            return MsgspecWritten(data=written_data(written_argument_names(plan)))
-        return MsgspecWritten(data=written_data(self._field_call_arguments([])[0].names()))
+        """Return the ``field()`` arguments the field's render plan writes."""
+        return MsgspecWritten(data=written_data(written_argument_names(self._render_plan())))
 
     @override
     def _build_frozen_render_plan(self) -> FieldRenderPlan:
@@ -1688,10 +1685,8 @@ class DataModelField(DataModelFieldBase):
         return None if (meta := self._meta_call()) is None else _meta_call_text(meta)
 
     def _meta_call(self) -> CallPlan | None:
-        """Return the ``Meta(...)`` call of the frozen plan, or before B2 the call the plan would hold."""
-        if (plan := frozen_render_plan(self)) is not None:
-            return plan.annotated_call
-        return self._build_meta_call([])
+        """Return the ``Meta(...)`` call of the field's render plan, the frozen one or before B2 the live one."""
+        return self._render_plan().annotated_call
 
     def _build_meta_call(self, omitted: list[Omitted]) -> CallPlan | None:
         """Build the ``Meta(...)`` call written inside ``Annotated``: its arguments, under --use-annotated."""
