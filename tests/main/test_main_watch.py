@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import import_module
@@ -291,19 +292,29 @@ def _write_watch_cli_input_and_wait(
     condition: Callable[[], bool],
     description: str,
 ) -> None:
+    """Replace the watched file with the content and wait for the condition, touching it again while it is unmet.
+
+    Windows refuses to replace a file while the watch process has it open for reading, which only means the watcher is
+    still reading the previous version: the replacement is retried on each poll of the wait, within its timeout.
+    """
     pending_input = input_file.with_name(f".{input_file.name}.pending")
     pending_input.write_text(content, encoding="utf-8")
-    pending_input.replace(input_file)
     last_write = time.monotonic()
+    replaced = False
 
     def condition_after_write() -> bool:
-        nonlocal last_write
+        nonlocal last_write, replaced
 
-        if condition():
+        if not replaced:
+            with suppress(PermissionError):
+                pending_input.replace(input_file)
+                replaced = True
+                last_write = time.monotonic()
+        if replaced and condition():
             return True
 
         now = time.monotonic()
-        if now - last_write >= WATCH_CLI_CHANGE_RETRY_SECONDS:
+        if replaced and now - last_write >= WATCH_CLI_CHANGE_RETRY_SECONDS:
             input_file.touch()
             last_write = now
         return False
