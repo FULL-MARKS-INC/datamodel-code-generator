@@ -16,7 +16,9 @@ model the computation read: the models its type references, through a root model
 type references, the models an on-demand walk of the model graph reached while it computed (`note_reads`) and what
 the derived values of other fields it read depend on. The store's mutations bump what they write (`bump_field`,
 `bump_node`, `bump_model`, `bump_deep`); a node bump reaches the fields whose values read the node and the field that
-holds it. A derived value is returned while none of those revisions moved.
+holds it; a model's constructor bumps the model, as it names the model the source of its reference. A derived value is
+returned while none of those revisions moved. Every bump moves the memo's clock, so a value whose revisions were seen to
+hold at the current clock is returned without comparing them again.
 
 Under the ``RENDER_MEMOS`` check, each value a memo returns is computed anew and compared; a value that differs is a
 stale hit. The memos return what the caches they replace returned, stale or not, and two tables are known to return
@@ -33,7 +35,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, TypeAlias, TypeVar, final
 
-from datamodel_code_generator._checks import CheckArea, CheckMode, check_mode
+from datamodel_code_generator._checks import CHECK_MODES, CheckArea, CheckMode, check_mode
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Hashable, Iterable, Mapping
@@ -45,7 +47,12 @@ MemoKey: TypeAlias = "ModelKey | FieldKey | NodeKey"
 
 
 class MemoTable(Enum):
-    """What a memo keeps; the value names it in check reports."""
+    """What a memo keeps; the value names it in check reports.
+
+    A member hashes by identity: it is the first item of every memo key.
+    """
+
+    __hash__ = object.__hash__
 
     DEDUP_KEYS = "dedup keys"
     """The dedup keys of a model by its model key, one per class name it renders under and whether ``M`` stands in
@@ -121,6 +128,8 @@ class _Derived:
     reads: tuple[tuple[object, int], ...]
     """Each other model the computation read (`note_reads`), with its ``deep`` revision then."""
     value: Any
+    verified: int
+    """The memo's clock when the revisions it read were last seen to hold; a bump moves the clock."""
 
 
 @final
@@ -128,6 +137,7 @@ class ParseMemo:
     """The memos of one parse, which the generation store owns."""
 
     __slots__ = (
+        "_check",
         "_clock",
         "_deep",
         "_derived",
@@ -138,6 +148,7 @@ class ParseMemo:
         "_reading",
         "_revisions",
         "_slots",
+        "_walked",
     )
 
     def __init__(self) -> None:
@@ -152,6 +163,8 @@ class ParseMemo:
         self._readers: dict[int, dict[int, Any]] = {}
         self._derived: dict[tuple[MemoTable, int, Hashable], _Derived] = {}
         self._reading: list[tuple[Any, dict[int, object]]] = []
+        self._check: tuple[Mapping[CheckArea, CheckMode], CheckMode | None] | None = None
+        self._walked: dict[int, tuple[Any, int, tuple[tuple[Any, object, int], ...]]] = {}
 
     def bump_field(self, field: Any) -> None:
         """Move the revision of a field and the ``deep`` revision of its model, after a write to the field."""
@@ -209,7 +222,7 @@ class ParseMemo:
         if (entry := self._derived.get(key)) is not None and self._holds(entry, field, source):
             if self._reading:
                 self._read_by_outer(entry)
-            return _checked(table, field, entry.value, recompute or compute)
+            return self._checked(table, field, entry.value, recompute or compute)
         reads: dict[int, object] = {}
         self._reading.append((field, reads))
         try:
@@ -222,14 +235,18 @@ class ParseMemo:
         return value
 
     def _holds(self, entry: _Derived, field: Any, source: object) -> bool:
-        """Return whether a kept value was computed for ``field`` from ``source`` and the revisions it read hold."""
-        return (
-            entry.field is field
-            and entry.source is source
-            and entry.revision == self._revisions.get(id(field), 0)
-            and entry.parent is field.parent
-            and self._models_hold(entry)
-        )
+        """Return whether a kept value was computed for ``field`` from ``source`` and the revisions it read hold.
+
+        Every revision moves with the clock, so revisions seen to hold at the current clock still hold.
+        """
+        if entry.field is not field or entry.source is not source or entry.parent is not field.parent:
+            return False
+        if entry.verified == self._clock:
+            return True
+        if entry.revision == self._revisions.get(id(field), 0) and self._models_hold(entry):
+            entry.verified = self._clock
+            return True
+        return False
 
     def _models_hold(self, entry: _Derived) -> bool:
         """Return whether the revisions of the models a kept value read hold: its model's own, the others' deep."""
@@ -265,14 +282,33 @@ class ParseMemo:
                 reads[id(model)] = model
 
     def _derive(self, field: Any, source: object, value: object, reads: dict[int, object]) -> _Derived:
-        """Keep ``value`` with the revisions it read, and make the nodes of the field's type its readers.
+        """Keep ``value`` with the revisions it read and the references of the field's type (`_references`)."""
+        parent = field.parent
+        deep = self._deep
+        return _Derived(
+            field,
+            source,
+            self._revisions.get(id(field), 0),
+            parent,
+            self._own.get(id(parent), 0),
+            self._references(field),
+            tuple((model, deep.get(id(model), 0)) for model in reads.values()),
+            value,
+            self._clock,
+        )
+
+    def _references(self, field: Any) -> tuple[tuple[Any, object, int], ...]:
+        """Return the references of the field's type with their models and revisions, and make its nodes its readers.
 
         The type of a root model or type alias that the field's type names counts as read too, as the type the model
-        stands for, and so on through the ones that type names.
+        stands for, and so on through the ones that type names. What the walk reads moves the clock when it changes,
+        so the references walked for the field at the current clock are returned again.
         """
+        field_key = id(field)
+        if (walked := self._walked.get(field_key)) is not None and walked[0] is field and walked[1] == self._clock:
+            return walked[2]
         readers = self._readers
         deep = self._deep
-        field_key = id(field)
         references: list[tuple[Any, object, int]] = []
         aliases: list[Any] = []
         seen: set[int] = set()
@@ -301,17 +337,9 @@ class ParseMemo:
                 break
             own = False
             stack.extend(alias_field.data_type for alias_field in aliases.pop().fields)
-        parent = field.parent
-        return _Derived(
-            field,
-            source,
-            self._revisions.get(field_key, 0),
-            parent,
-            self._own.get(id(parent), 0),
-            tuple(references),
-            tuple((model, deep.get(id(model), 0)) for model in reads.values()),
-            value,
-        )
+        walked_references = tuple(references)
+        self._walked[field_key] = field, self._clock, walked_references
+        return walked_references
 
     def value(  # noqa: PLR0913, PLR0917
         self,
@@ -335,7 +363,7 @@ class ParseMemo:
             and slot.epoch == self._epochs.get(slot_key, 0)
             and args in slot.values
         ):
-            return _checked(table, owner, slot.values[args], recompute or compute)
+            return self._checked(table, owner, slot.values[args], recompute or compute)
         value = compute()
         epoch = self._epochs.get(slot_key, 0)
         if (slot := self._slots.get(slot_key)) is None or slot.owner is not owner or slot.epoch != epoch:
@@ -343,6 +371,19 @@ class ParseMemo:
         else:
             slot.values[args] = value
         return value
+
+    def _checked(self, table: MemoTable, owner: object, kept: _V, recompute: Callable[[], object]) -> _V:
+        """Return a kept value, compared under the ``RENDER_MEMOS`` check with the value computed anew.
+
+        The memo keeps the mode with the check flags it was read from and reads it again when other flags are current:
+        a memo outlives a parse, and its parser may parse again under other flags.
+        """
+        modes = CHECK_MODES.get()
+        if (check := self._check) is None or check[0] is not modes:
+            check = self._check = (modes, modes.get(CheckArea.RENDER_MEMOS))
+        if (mode := check[1]) is not None:
+            _check_hit(mode, table, owner, kept, recompute)
+        return kept
 
     def forget(self, table: MemoTable, key: MemoKey, owner: object) -> None:
         """Bump the owner's epoch in the table, so that no value it kept there is returned again."""
@@ -484,13 +525,6 @@ def _equal(kept: object, fresh: object) -> bool:
     if is_dataclass(kept) and type(kept) is type(fresh):
         return all(_equal(getattr(kept, field.name), getattr(fresh, field.name)) for field in fields(kept))
     return type(kept) is type(fresh) and repr(kept) == repr(fresh)
-
-
-def _checked(table: MemoTable, owner: object, kept: _V, recompute: Callable[[], object]) -> _V:
-    """Return a kept value, compared under the ``RENDER_MEMOS`` check with the value computed anew."""
-    if (mode := check_mode(CheckArea.RENDER_MEMOS)) is not None:
-        _check_hit(mode, table, owner, kept, recompute)
-    return kept
 
 
 def _check_hit(mode: CheckMode, table: MemoTable, owner: object, kept: object, recompute: Callable[[], object]) -> None:

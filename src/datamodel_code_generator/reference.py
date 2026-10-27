@@ -12,7 +12,6 @@ import stat
 from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
 from enum import Enum, auto
 from functools import cached_property, lru_cache, partial
 from itertools import count, zip_longest
@@ -41,6 +40,7 @@ from typing_extensions import TypeIs, override
 from datamodel_code_generator import Error, NamingStrategy, _model_keys
 from datamodel_code_generator._format_types import PythonVersion
 from datamodel_code_generator._model_keys import MODEL_KEY_ATTRIBUTE
+from datamodel_code_generator._records import record
 from datamodel_code_generator._target_unicode import (
     is_identifier,
     is_nfkc,
@@ -297,7 +297,7 @@ SCHEMA_LOCATION_CONFLICT_KEY: Final = "_schema_location_conflict"
 SCHEMA_OWNER_FRAMES_KEY: Final = "_schema_owner_frames"
 
 
-@dataclass(frozen=True, slots=True)
+@record
 class SchemaLocation:
     """A JSON value of a loaded document: the document as reference paths name it and the tokens from its root."""
 
@@ -1347,6 +1347,33 @@ class ModelResolver:  # noqa: PLR0904
         """Temporarily set the current root path within a context."""
         with context_variable(self.set_current_root, self.current_root, current_root):
             yield
+
+    def document_directory(self, document: str) -> Path:
+        """Return the resolved directory of a local document, which ``current_base_path_context`` would set for it."""
+        return (self._base_path / Path(document).parent).resolve()
+
+    @contextmanager
+    def document_context(
+        self, document: str, current_root: Sequence[str], directory: Path | None
+    ) -> Generator[None, None, None]:
+        """Resolve references from ``document`` with ``current_root``: from ``directory``, or its URL when remote.
+
+        ``directory`` is the resolved directory of a local document and None for a remote one. It sets what
+        ``current_base_path_context``, ``base_url_context`` and ``current_root_context`` set for the document.
+        """
+        previous_base_path, previous_base_url, previous_root = self.current_base_path, self.base_url, self.current_root
+        sets_base_url = bool(self._base_url) or directory is None
+        self.set_current_base_path(directory)
+        if sets_base_url:
+            self.set_base_url(None if directory is not None else document)
+        self.set_current_root(current_root)
+        try:
+            yield
+        finally:
+            self.set_current_root(previous_root)
+            if sets_base_url:
+                self.set_base_url(previous_base_url)
+            self.set_current_base_path(previous_base_path)
 
     @property
     def root_id(self) -> str | None:

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass
 from itertools import chain, islice
 from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypeAlias, cast
 
@@ -26,6 +25,7 @@ from datamodel_code_generator._constraint_applicability import TAG_LITERAL_UNTAK
 from datamodel_code_generator._graph import stable_toposort
 from datamodel_code_generator._internal_utils import get_most_of_parent
 from datamodel_code_generator._model_keys import ModelKey, model_key_of
+from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import (
     EdgeKind,
     GraphSnapshot,
@@ -65,8 +65,8 @@ from datamodel_code_generator.model.base import (
 )
 from datamodel_code_generator.model.enum import Enum, IntEnum, Member, StrEnum, _enum_class, get_raw_enum_member_value
 from datamodel_code_generator.model.type_alias import TypeAliasBase
+from datamodel_code_generator.parser._check_scopes import module_checkpoint, pass_scope
 from datamodel_code_generator.parser._facts import Phase
-from datamodel_code_generator.parser._finality import module_checkpoint, pass_scope
 from datamodel_code_generator.parser._graph_ids import UNRESOLVED_MODEL_KEY, keyed_models
 from datamodel_code_generator.parser._imports_plan import ImportProducer
 from datamodel_code_generator.parser._model_shapes import REUSE_MODEL, skips_root_model
@@ -1145,7 +1145,7 @@ def _variant_tags(  # noqa: PLR0913
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class _VariantTagFacts:
     """The facts of a variant that ``variant_tags`` reads, from its fields, the mapping and its schema path."""
 

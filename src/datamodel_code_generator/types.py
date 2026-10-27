@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum, auto
 from fractions import Fraction
@@ -64,6 +63,7 @@ from datamodel_code_generator._format_types import (
 )
 from datamodel_code_generator._model_keys import NodeKey
 from datamodel_code_generator._parse_memo import PARSE_MEMO, rendering_memo
+from datamodel_code_generator._records import record
 from datamodel_code_generator.enums import DefaultValueType, TargetPydanticVersion
 from datamodel_code_generator.imports import (
     IMPORT_ABC_MAPPING,
@@ -113,7 +113,7 @@ class DefaultValueRecipe(Enum):
     Decimal = auto()
 
 
-@dataclass(frozen=True, slots=True)
+@record
 class DefaultValueDescriptor:
     """Backend-declared semantics for one generated scalar type.
 
@@ -877,34 +877,51 @@ class DataType(_BaseModel):  # noqa: PLR0904
             yield from data_type.all_imports
         yield from self.imports
 
-    def _conditional_imports(self) -> Iterator[tuple[bool, Import]]:
-        """Yield (condition, import) pairs in the order they may be emitted."""
+    def _conditional_imports(self) -> list[Import]:  # noqa: PLR0912
+        """Return the imports the form of this data type writes, in the order they are emitted."""
+        imports: list[Import] = []
+        use_union_operator = self.use_union_operator
         use_standard_collections = self.use_standard_collections
-        yield (self.admits_none and not self.use_union_operator, IMPORT_OPTIONAL)
-        yield (len(self.data_types) > 1 and not self.use_union_operator, IMPORT_UNION)
-        has_literal = (bool(self.literals) or bool(self.enum_member_literals)) and not self.alias
-        yield (has_literal, self._literal_import if has_literal else IMPORT_LITERAL)
-        yield (bool(self.discriminator), IMPORT_ANNOTATED)
-        yield (self.is_frozen_set and not use_standard_collections, IMPORT_FROZEN_SET)
-        yield (self.is_mapping and use_standard_collections, IMPORT_ABC_MAPPING)
-        yield (self.is_mapping and not use_standard_collections, IMPORT_MAPPING)
-        yield (self.is_sequence and use_standard_collections, IMPORT_ABC_SEQUENCE)
-        yield (self.is_sequence and not use_standard_collections, IMPORT_SEQUENCE)
+        if self.admits_none and not use_union_operator:
+            imports.append(IMPORT_OPTIONAL)
+        if len(self.data_types) > 1 and not use_union_operator:
+            imports.append(IMPORT_UNION)
+        if (self.literals or self.enum_member_literals) and not self.alias:
+            imports.append(self._literal_import)
+        if self.discriminator:
+            imports.append(IMPORT_ANNOTATED)
+        if self.is_frozen_set and not use_standard_collections:
+            imports.append(IMPORT_FROZEN_SET)
+        if self.is_mapping:
+            imports.append(IMPORT_ABC_MAPPING if use_standard_collections else IMPORT_MAPPING)
+        if self.is_sequence:
+            imports.append(IMPORT_ABC_SEQUENCE if use_standard_collections else IMPORT_SEQUENCE)
         if self.use_generic_container:
             if use_standard_collections:
                 # frozenset is builtin, no import needed for is_set
-                yield (self.is_list, IMPORT_ABC_SEQUENCE)
-                yield (self.is_dict, IMPORT_ABC_MAPPING)
+                if self.is_list:
+                    imports.append(IMPORT_ABC_SEQUENCE)
+                if self.is_dict:
+                    imports.append(IMPORT_ABC_MAPPING)
             else:  # pragma: no cover
-                yield (self.is_list, IMPORT_SEQUENCE)
-                yield (self.is_set, IMPORT_FROZEN_SET)
-                yield (self.is_dict, IMPORT_MAPPING)
-                yield (self.is_tuple, IMPORT_TUPLE)
+                if self.is_list:
+                    imports.append(IMPORT_SEQUENCE)
+                if self.is_set:
+                    imports.append(IMPORT_FROZEN_SET)
+                if self.is_dict:
+                    imports.append(IMPORT_MAPPING)
+                if self.is_tuple:
+                    imports.append(IMPORT_TUPLE)
         elif not use_standard_collections:
-            yield (self.is_list, IMPORT_LIST)
-            yield (self.is_set, IMPORT_SET)
-            yield (self.is_dict, IMPORT_DICT)
-            yield (self.is_tuple, IMPORT_TUPLE)
+            if self.is_list:
+                imports.append(IMPORT_LIST)
+            if self.is_set:
+                imports.append(IMPORT_SET)
+            if self.is_dict:
+                imports.append(IMPORT_DICT)
+            if self.is_tuple:
+                imports.append(IMPORT_TUPLE)
+        return imports
 
     @property
     def runtime_expression_imports(self) -> tuple[Import, ...]:
@@ -928,6 +945,14 @@ class DataType(_BaseModel):  # noqa: PLR0904
         """Return the name that ``Literal`` is written as."""
         import_ = self.__dict__.get(_LITERAL_IMPORT_DATA_TYPE_KEY)
         return LITERAL if import_ is None else import_.binding_name
+
+    @property
+    def _annotation_texts(self) -> tuple[str | None, ...]:
+        """Return the texts of its own the type is written with, whose typing names its imports need.
+
+        They are its alias, and its type name unless a Python type writes it.
+        """
+        return (self.alias,) if self.python_type else (self.alias, self.type)
 
     def _set_literal_import(self, import_: Import) -> None:
         """Write ``Literal`` through an import bound under another name, as when a model of the module holds it."""
@@ -971,9 +996,8 @@ class DataType(_BaseModel):  # noqa: PLR0904
             yield IMPORT_DECIMAL
 
         # Yield imports based on conditions
-        for field, import_ in self._conditional_imports():
-            if field and import_ is not None and import_ != self.import_:
-                yield import_
+        own = self.import_
+        yield from (import_ for import_ in self._conditional_imports() if import_ != own)
 
         # Propagate imports from any dict_key type
         if self.dict_key:
@@ -1251,7 +1275,7 @@ _MAPPING_CONTAINERS: Final = frozenset({"mapping", "dict"})
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class TypeLeaf:
     """A type written as text: ``code``, or the hint of ``node``, whose class writes its own (a backend's override)."""
 
@@ -1261,7 +1285,7 @@ class TypeLeaf:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class RefLeaf:
     """The model ``node`` names, written by the name the model has when the expression is rendered."""
 
@@ -1269,7 +1293,7 @@ class RefLeaf:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class TypeApply:
     """What one data type writes: its ``form`` over ``args``, inside its container, quoted, with its None or its call.
 

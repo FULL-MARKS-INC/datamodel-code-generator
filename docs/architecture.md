@@ -257,12 +257,12 @@ adds the document to the schema graph (`parser/_schema_graph.py`): `walk_schema_
 names which schema of it (the root, `$id` or draft-04 `id` resources, the implicit component resources of OpenAPI,
 `$anchor` and `$dynamicAnchor`) and returns one frozen `DocumentResources` record, from which
 `ResourceRegistry.register` fills the registry dicts L1 resolves references through; then `$ref`s that resolve through
-an embedded `$id` are rewritten copy-on-write (`_rewrite_schema_resource_refs`), each `$ref` and `$dynamicRef` keyword
-becomes a `ResolvedRef` (a `str` equal to the value, carrying its `RefEdge`: the holder's location and document;
-`SchemaGraphBuilder.with_ref_edges`, copy-on-write, only at the keywords that hold schemas, never inside instance data,
+an embedded `$id` are rewritten copy-on-write (`_rewrite_schema_resource_refs`), and one walk of the prepared document
+(`SchemaGraphBuilder.index_document`, see [Metadata Output](#metadata-output)) indexes the location of every object and
+makes each `$ref` and `$dynamicRef` keyword a `ResolvedRef` (a `str` equal to the value, carrying its `RefEdge`: the
+holder's location and document; copy-on-write, only at the keywords that hold schemas, never inside instance data,
 examples, extensions, OAuth scopes, discriminator mappings or unknown keywords; `JsonSchemaObject` and the OpenAPI
-`ReferenceObject` keep the edge through a wrap validator), and the location of every object of the prepared document is
-indexed (`SchemaGraphBuilder.index_document`, see [Metadata Output](#metadata-output)).
+`ReferenceObject` keep the edge through a wrap validator).
 Referenced documents go through the same steps when `resolve_ref` loads them: documents enter the graph in the order
 L1 asks for them, and the graph never loads one by itself. With `DATAMODEL_CODE_GENERATOR_CHECK_SCHEMA_GRAPH=1`, which
 `tests/conftest.py` sets for the test suite, each edge is compared with its resolution at the sites: the key `get_ref_data_type` and `resolve_ref` would compute in their own context equals the edge's key, unless that
@@ -532,13 +532,15 @@ the None it adds; msgspec's top-level None and the `Field()` default plan read t
 `DataModel._write_pre_render_nullability` (`legacy-l3-import-nullability`, which overrides and constructor ordering
 read; `DataModel._prepare_dedup_key` writes it for every field whose hint renders its own type before a dedup key
 renders, so such a type keeps the None of the nullable model it named when duplicate deletion points it at a model
-without one) write it; msgspec's `_strip_null` writes it on its own copies at L7. A decision before render preparation reads
+without one) write it; msgspec's `_strip_null` writes it on the copies its render plans hold. A decision before render preparation reads
 `types.py:DataType.admits_none`, which computes the rendered nullability with
 `model/_decisions/nullability.py:rendered_nullability` without writing it. A field of every built-in output model
 (Pydantic `BaseModel`, `RootModel` and dataclass, msgspec `Struct`, stdlib dataclass, `TypedDict`, enum, type alias)
 renders from one frozen render plan (`model/_render_plan.py:FieldRenderPlan`): its annotation form, its calls
 (`Field()`, `field()`, msgspec `Meta()`) with each argument and the declared items it writes, its default, the imports
-the calls need and every declared item it does not write (`Omitted`, with its reason), each with a `Why`. The field's
+the calls need, every declared item it does not write (`Omitted`, with its reason), each with a `Why`, and for msgspec
+the copy of the field's type its annotation writes (its `Annotated` type, or its union with `UnsetType`), which
+imports, `annotated` and `type_hint` read. The field's
 backend builds it: `model/pydantic_base.py:DataModelField` (a Pydantic dataclass field adds the `Field(...)` of a
 forced assignment and the plain annotation of a call the dataclass must see, `model/pydantic_v2/dataclass.py`),
 `model/msgspec.py:DataModelField` (`Meta(...)` inside `Annotated`, then `field(...)` or the default alone),
@@ -583,7 +585,7 @@ of `parser/_pipeline.py`: a `PassSpec` runs one declared pass, when its conditio
 module by module; a `HookCall` calls an overridable method whose default runs a sub-table; a `Segment` enters a phase
 on the store (`GenerationStore.enter_phase`, read as `GenerationStore.phase`) and the boundary before it (`PARSED`, B1,
 `DECIDED`, B2), then runs its steps. The `Runner` is the only caller of a pass, inside `fact_pass(DECL)`
-(`parser/_finality.py`) with the models the finality check compares; steps call passes through the parser instance, so
+(`parser/_check_scopes.py`) with the models the finality check compares; steps call passes through the parser instance, so
 overrides and `--debug` tracing apply as to any method. The two diagnostics warnings that name the code calling
 `parse()` find that frame however deep the pipeline is (`stacklevel_at_parse_caller`).
 
@@ -949,7 +951,10 @@ they read) are derived values: the memo keeps each with the revisions it read, t
 for every model its type references, that model's own and its fields' (`ParseMemo.derived`). The store's mutations
 bump what they write (`bump_field`, `bump_node`, `bump_model`, and the invalidation methods above); a node bump reaches
 every field whose value read the node or its member list and the field that holds it. `rename_model` and
-`update_model_reference` bump the model, so the fields that reference it compute again. `DataModel.imports` joins the
+`update_model_reference` bump the model, so the fields that reference it compute again, and so does a model's
+constructor, which names the model the source of its reference. Every bump moves the memo's clock: a value whose
+revisions were seen to hold at the current clock is returned without comparing them again, and the references of a
+field's type walked at the current clock are not walked again. `DataModel.imports` joins the
 fields' kept imports with the model's own (`_additional_imports`) at each read; the snapshot of the IMPORTS phase is
 where they become final. Fields and models of classes outside the package, and every field of a parse by a parser
 class outside it, compute both at each read (`DataModel.clear_imports_cache` is a deprecated no-op).
@@ -1019,8 +1024,8 @@ accepts any guarded write, and the phase is not checked: which operation and pha
 to the finality checks. With the area off nothing is installed. The guard does
 not see writes through `object.__setattr__`, through `__dict__`, into dict attributes, or into a list an object got
 outside a store operation after L1. The guards, the guarded lists and the store-operation scopes belong to the checks
-of one parse (`parse_checks`, armed by `arm_parse_checks`), which the finality check shares: they are installed when
-either area is on, and the guard reports writes only when `STORE_WRITES` is on, while the finality check uses them to
+of one parse (`parse_checks`, armed by `arm_parse_checks`), which the finality check shares: `Parser.parse` imports
+`parser/_finality.py` and installs them only when either area is on, and the guard reports writes only when `STORE_WRITES` is on, while the finality check uses them to
 learn which models a pass touched.
 
 The test suite runs the guard in every test (`tests/conftest.py:StoreWritesCheck`): it reports into a file of the test
@@ -1317,11 +1322,12 @@ input-model, reference, model-composition, output-model, shared-model, schema gr
 constraint-table, and debug check flag files are classified explicitly. The composition root may select concrete
 backends, while shared-model modules must remain neutral: they cannot import a concrete backend or resolve one through
 `sys.modules`, including module-name constants and aliases. The requirement table may import only the standard library,
-`typing_extensions` and `enums`, the constraint table only those and the requirement table, `_checks.py`, which every
-layer reads for the debug check flags, only the standard library and `typing_extensions`, and the schema graph
-(`parser/_schema_graph.py`, L0) only those and `reference`: the parsers pass it their rules. Pass modules
+`typing_extensions`, `_records` and `enums`, the constraint table only those and the requirement table, `_checks.py`,
+which every layer reads for the debug check flags, only the standard library and `typing_extensions`, and the schema
+graph (`parser/_schema_graph.py`, L0) only those and `reference`: the parsers pass it their rules. Pass modules
 (`parser/_passes/`) follow the parser rules and import no parser module but the generation store, the import ledger,
-`_python_type_imports`, the leaf modules `_graph_ids` and `_model_shapes`, the finality checks of `_finality`, the
+`_python_type_imports`, the leaf modules `_graph_ids` and `_model_shapes`, the check hooks of `_check_scopes` (the
+finality checks of `_finality` load only when a check area is on), the
 pipeline steps of `_pipeline` with the declarations of `_pass_decls`, `_facts` and `_phases`, and each other, not even
 for typing: a pass of one layer is a function in that layer's module (`settle.py`, `structure.py`, `plans.py`,
 `modules.py`, `cross_module.py`, `decide.py`, `render_prep.py`, `imports.py`) that takes the parser through the layer's
@@ -1341,6 +1347,12 @@ registry access such as `sys.modules[model_type.__module__]`. Private parser lif
 backend policy therefore cannot hide in the shared layer. Its legacy allowlist is keyed by file, enclosing symbol, rule,
 and target; extra occurrences fail, and removed dependencies make stale entries fail so the exception cannot silently
 become permanent. The same check runs in pre-commit and pytest with actionable diagnostics.
+
+The generator's internal immutable records (the plans, facts, keys and rows of the pipeline, not public API and not the
+generated runtime) are declared with `@record` from `_records.py`: a slotted dataclass that `ty` treats as frozen, so
+every assignment to a field is a type error, while the run time adds no `__setattr__` guard to each `__init__`
+(hash and equality stay by value). A record whose tests expect the run time to reject an assignment
+(`PythonTypeAnnotation`, the schema feature sets of `parser/schema_version.py`) keeps `dataclass(frozen=True)`.
 
 ## Rendering And Formatting
 

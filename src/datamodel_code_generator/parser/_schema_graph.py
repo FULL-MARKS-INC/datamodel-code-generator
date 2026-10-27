@@ -2,16 +2,17 @@
 
 A document enters the graph when it loads, in the order L1 asks for it; the graph never loads one by itself.
 ``SchemaGraphBuilder.index_document`` makes the document a tree and indexes each of its JSON objects by identity in the
-location table, which ``JsonSchemaObject`` reads through ``SCHEMA_GRAPH`` while ``Parser.parse`` runs.
-``walk_schema_resources`` finds which absolute URI names which schema of the document (its root, every schema with an
-`$id` or draft-04 `id`, the implicit component resources of OpenAPI, `$anchor` and `$dynamicAnchor`), and
+location table, which ``JsonSchemaObject`` reads through ``SCHEMA_GRAPH`` while ``Parser.parse`` runs. The same walk
+makes each `$ref` and `$dynamicRef` keyword of the document a ``ResolvedRef``, the string as written that also carries
+its ``RefEdge`` (``SchemaGraphBuilder.with_ref_edges`` does it alone for a schema a reference names that the walk read
+as data). ``walk_schema_resources`` finds which absolute URI names which schema of the document (its root, every schema
+with an `$id` or draft-04 `id`, the implicit component resources of OpenAPI, `$anchor` and `$dynamicAnchor`), and
 ``ResourceRegistry.register`` fills the registry dicts L1 resolves references through from that record.
-``SchemaGraphBuilder.with_ref_edges`` makes each `$ref` and `$dynamicRef` keyword of the document a ``ResolvedRef``, the
-string as written that also carries its ``RefEdge``; ``SchemaGraphBuilder.edge_key`` keeps the ``RefKey`` each edge
-resolves to in its own document, and ``SchemaGraphBuilder.schema`` the object each JSON object of a loaded document
-validates to, which every reader of that object shares. ``SchemaGraphBuilder.node`` names a JSON object of a loaded
-document as the node walks visit once (``SchemaNodeId``), and a ``ReservedTarget`` the node a reference a document
-reserves names in it. ``SchemaGraphBuilder.mount_root`` gives a document a root of the graph's own, under which
+``SchemaGraphBuilder.edge_key`` keeps the ``RefKey`` each edge resolves to in its own document, and
+``SchemaGraphBuilder.schema`` the object each JSON object of a loaded document validates to, which every reader of that
+object shares. ``SchemaGraphBuilder.node`` names a JSON object of a loaded document as the node walks visit once
+(``SchemaNodeId``), and a ``ReservedTarget`` the node a reference a document reserves names in it.
+``SchemaGraphBuilder.mount_root`` gives a document a root of the graph's own, under which
 ``SchemaGraphBuilder.mount_in`` mounts the schemas the parser converts from values of the document, so the document
 itself is never written.
 """
@@ -25,15 +26,17 @@ from enum import Enum
 from functools import cached_property
 from operator import is_not
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, NewType, Protocol, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Final, NewType, Protocol, TypeAlias, TypeVar, cast
 from urllib.parse import unquote, urljoin
 
 from typing_extensions import ReadOnly, Self, TypedDict, final, override
 
+from datamodel_code_generator._records import record
 from datamodel_code_generator.reference import SchemaLocation
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from pathlib import Path
 
 __all__ = [
     "SCHEMA_GRAPH",
@@ -84,7 +87,7 @@ SchemaT = TypeVar("SchemaT")
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class RefReading:
     """How ``SchemaGraphBuilder.with_ref_edges`` reads the objects of a document, each reading named by a string."""
 
@@ -123,7 +126,7 @@ class RefOrigin(Enum):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class RefEdge:
     """A reference of a loaded document: a `$ref` or `$dynamicRef` keyword, or a reference the parser derives.
 
@@ -146,7 +149,7 @@ class RefEdge:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class RefKey:
     """What a reference resolves to: the reference key of its target, or the Python package a mapping names."""
 
@@ -159,7 +162,7 @@ class RefKey:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class ConvertedRefs:
     """How the references of a schema converted from another format name their targets."""
 
@@ -223,7 +226,7 @@ class ResourceIdentifier(Protocol):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class DocumentResources:
     """The schema resources of one loaded document and the absolute URIs that name its schemas.
 
@@ -411,8 +414,10 @@ class SchemaGraphBuilder:
     """
 
     __slots__ = (
+        "_directories",
         "_documents",
         "_edge_keys",
+        "_false_all_of_documents",
         "_mount_containers",
         "_mount_roots",
         "_mounted",
@@ -428,13 +433,23 @@ class SchemaGraphBuilder:
         self.locations: dict[int, SchemaLocation] = {}
         self.registry = ResourceRegistry()
         self._documents: list[object] = []
+        self._false_all_of_documents: set[str] = set()
         self._mounted: set[int] = set()
         self._mount_roots: set[int] = set()
         self._mount_containers: dict[int, Any] = {}
         self._edge_keys: dict[RefEdge, RefKey] = {}
+        self._directories: dict[str, Path] = {}
         self._ref_sites: dict[tuple[str, RefOrigin], list[int]] = {}
         self._schema_reads: dict[int, Any] = {}
         self._schemas: dict[tuple[int, type[Any]], tuple[Any, object]] = {}
+
+    @property
+    def holds_false_all_of(self) -> bool:
+        """Return whether a document indexed so far holds a JSON object whose ``allOf`` lists ``false``.
+
+        Only such a document gives a schema object an ``allOf`` member that is ``false``; the parser writes none.
+        """
+        return bool(self._false_all_of_documents)
 
     def count_ref(self, site: str, ref: str, plain_origin: RefOrigin) -> None:
         """Count a reference that reached a check ``site``, by its origin, with or without its edge.
@@ -461,6 +476,15 @@ class SchemaGraphBuilder:
         if (key := self._edge_keys.get(edge)) is None:
             key = self._edge_keys[edge] = compute(edge)
         return key
+
+    def document_directory(self, document: str, resolve: Callable[[], Path]) -> Path:
+        """Return the directory of a local document, which ``resolve`` reads from the file system at the first call.
+
+        ``document`` names the document as reference paths do. The directory is a fact of the document as it loads.
+        """
+        if (directory := self._directories.get(document)) is None:
+            directory = self._directories[document] = resolve()
+        return directory
 
     def schema(
         self, raw: object, kind: type[SchemaT], validate: Callable[[], SchemaT], *, fingerprint: bool
@@ -575,48 +599,100 @@ class SchemaGraphBuilder:
         """Return whether a converted schema was indexed at the location of the value it was converted from."""
         return id(value) in self._mounted
 
-    def index_document(self, raw: Any, root: SchemaLocation) -> Any:
+    def index_document(
+        self,
+        raw: Any,
+        root: SchemaLocation,
+        document: DocumentId | None = None,
+        reading: RefReading | None = None,
+        converted: ConvertedRefs | None = None,
+    ) -> Any:
         """Return a loaded document as a tree and index each of its JSON objects by identity.
 
         An object that already has another location (a YAML alias, an object the caller shares, a document served
         under several names) is copied for this position, and its holders are copied on write up to the root, so
         neither the loader's nor the caller's objects are written and each object has one location. A container that
         is its own ancestor is a cycle: it is copied once, the back edge points to the copy and is not descended.
-        Arrays are not indexed: an array shared between positions is copied when an object in it is.
-        """
-        document = root.document
-        locations = self.locations
-        ancestors: dict[int, Any] = {}
+        Arrays are not indexed: an array shared between positions is copied when an object in it is. A document with
+        a JSON object whose ``allOf`` lists ``false`` is recorded for ``holds_false_all_of``.
 
-        def visit(value: dict[Any, Any] | list[Any], tokens: tuple[str, ...]) -> Any:
+        With ``reading``, the same walk makes the `$ref` and `$dynamicRef` keywords of the schemas it reads
+        ``ResolvedRef``s of ``document``, as ``with_ref_edges`` reads them, and copies their objects on write.
+        """
+        locations = self.locations
+        false_all_of = self._false_all_of_documents
+        ancestors: dict[int, Any] = {}
+        mounted, home = (converted.mounted, converted.home) if converted is not None else (str, None)
+        reads_refs = set() if reading is None else {reading.objects, reading.root}
+
+        def write(value: dict[Any, Any] | list[Any], value_id: int, key: Any, updated: Any) -> None:
+            if (node := ancestors[value_id]) is value:
+                ancestors[value_id] = node = copy(value)
+            node[key] = updated
+
+        def visit(value: dict[Any, Any] | list[Any], tokens: tuple[str, ...], entries: str | None) -> Any:
             if (ancestor := ancestors.get(value_id := id(value))) is not None:
                 if ancestor is value:
                     ancestors[value_id] = ancestor = copy(value)
                 return ancestor
             location: SchemaLocation | None = None
+            children: Iterable[tuple[Any, Any]]
             if isinstance(value, dict):
-                location = SchemaLocation(document, tokens)
+                location = SchemaLocation(root.document, tokens)
                 seen = locations.get(value_id)
                 ancestors[value_id] = copy(value) if seen is not None and seen != location else value
+                if isinstance(all_of := value.get("allOf"), (list, tuple)) and any(item is False for item in all_of):
+                    false_all_of.add(root.document)
+                children = value.items()
             else:
                 ancestors[value_id] = value
-            for key, child in value.items() if isinstance(value, dict) else enumerate(value):
-                if isinstance(child, (dict, list)) and (updated := visit(child, (*tokens, str(key)))) is not child:
-                    if (node := ancestors[value_id]) is value:
-                        ancestors[value_id] = node = copy(value)
-                    node[key] = updated
+                children = enumerate(value)
+            for key, child in children:
+                if isinstance(child, (dict, list)):
+                    kind = (
+                        None
+                        if reading is None or entries is None
+                        else reading.child(entries, key)
+                        if location is not None
+                        else reading.objects
+                    )
+                    if (updated := visit(child, (*tokens, str(key)), kind)) is not child:
+                        write(value, value_id, key, updated)
+            if location is None:
+                return ancestors.pop(value_id)
+            if entries in reads_refs:
+                for keyword in REF_KEYWORDS:
+                    if type(ref := ancestors[value_id].get(keyword)) is str:
+                        edge = RefEdge(
+                            location,
+                            keyword,
+                            cast("DocumentId", document),
+                            mounted(ref),
+                            canonical_ref_spelling(ref),
+                            home=home,
+                        )
+                        write(value, value_id, keyword, ResolvedRef(ref, edge))
             node = ancestors.pop(value_id)
-            if location is not None:
-                locations[id(node)] = location
+            locations[id(node)] = location
             return node
 
-        result = visit(raw, root.tokens)
+        result = visit(raw, root.tokens, None if reading is None else reading.root)
         self._documents.append(result)
         return result
 
-    def mount(self, converted: dict[str, Any], location: SchemaLocation) -> dict[str, Any]:
-        """Index a schema converted from a value of a loaded document at the location of that value."""
-        mounted = self.index_document(converted, location)
+    def mount(
+        self,
+        converted: dict[str, Any],
+        location: SchemaLocation,
+        document: DocumentId | None = None,
+        reading: RefReading | None = None,
+        refs: ConvertedRefs | None = None,
+    ) -> dict[str, Any]:
+        """Index a schema converted from a value of a loaded document at the location of that value.
+
+        With ``reading``, its references become ``ResolvedRef``s in the same walk (``index_document``).
+        """
+        mounted = self.index_document(converted, location, document, reading, refs)
         self._mounted.add(id(mounted))
         return mounted
 

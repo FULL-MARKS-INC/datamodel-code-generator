@@ -13,7 +13,7 @@ import re
 from collections import Counter, defaultdict, deque
 from contextlib import ExitStack, contextmanager, nullcontext, suppress
 from copy import copy, deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from functools import cached_property, lru_cache, partial, reduce, wraps
 from itertools import chain, compress
 from operator import and_, is_not
@@ -75,6 +75,7 @@ from datamodel_code_generator._format_types import (
 )
 from datamodel_code_generator._json_schema import SCHEMA_MAP_KEYS, SCHEMA_VALUE_KEYS
 from datamodel_code_generator._model_keys import model_key_of
+from datamodel_code_generator._records import record
 from datamodel_code_generator._regex_syntax import (
     conjoin_patterns,
     is_portable_pattern,
@@ -1089,7 +1090,7 @@ def _get_discriminator_property_name(obj: JsonSchemaObject) -> str | None:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class _SchemaTagFacts:
     """The facts of a property schema that ``field_tag`` reads: its ``const``, its ``enum`` and its ``$ref``."""
 
@@ -2417,7 +2418,7 @@ def _unanchored_resource_ref(raw: dict[str, Any], parts: Sequence[str]) -> str |
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class _DynamicEdges:
     """What the `$dynamicRef` analysis reads of a referenced schema (``JsonSchemaParser._dynamic_ref_edges``)."""
 
@@ -2439,7 +2440,7 @@ class _DynamicSpecialization(NamedTuple):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class _DynamicTarget:
     """Where rule DS (``JsonSchemaParser._dynamic_scope_target``) resolves a reference in the dynamic scope."""
 
@@ -5131,8 +5132,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         )
 
     def _get_data_type(self, obj: JsonSchemaObject, *, localize_constraints: bool) -> DataType:
-        """Build scalar types while retaining constraints owned by their actual context."""
-        if self._null_facts(obj, "scalar").rule == "legacy-nullable-as-type-list":
+        """Build scalar types while retaining constraints owned by their actual context.
+
+        The null facts of the ``scalar`` site are read once: a ``type`` list returns before the null beside one
+        ``type`` is read, so the mark of ``legacy-nullable-as-type-list`` leaves the facts read for it as they are.
+        """
+        null_facts = self._null_facts(obj, "scalar")
+        if null_facts.rule == "legacy-nullable-as-type-list":
             obj.__dict__[_NULLABLE_TYPE_LIST_KEY] = True
         python_type_override = self._get_python_type_override(obj)
         if python_type_override:  # pragma: no cover
@@ -5157,7 +5163,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 ],
             )
         data_type = self._get_constrained_data_type(obj, schema_type, field_constraints=field_constraints)
-        if self._null_facts(obj, "scalar").admits_null:
+        if null_facts.admits_null:
             return build_union(self.data_type, [data_type], nullable=True)
         return data_type
 
@@ -6698,17 +6704,17 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         with self._ref_document_context(file_part):
             return self._ref_key(ref, embedded=False).key
 
-    @contextmanager
-    def _schema_document_context(self, path_parts: list[str]) -> Generator[None, None, None]:
+    def _schema_document_context(self, path_parts: list[str]) -> AbstractContextManager[None]:
         """Resolve references relative to the document identified by model resolver root parts."""
-        document = self.model_resolver.join_path(tuple(path_parts)).partition("#")[0]
-        remote = is_url(document)
-        with (
-            self.model_resolver.current_base_path_context(None if remote else Path(document).parent),
-            self.model_resolver.base_url_context(document if remote else None),
-            self.model_resolver.current_root_context(path_parts),
-        ):
-            yield
+        resolver = self.model_resolver
+        document = resolver.join_path(tuple(path_parts)).partition("#")[0]
+        if is_url(document):
+            return resolver.document_context(document, path_parts, None)
+        resolve = partial(resolver.document_directory, document)
+        graph = self._schema_graph
+        return resolver.document_context(
+            document, path_parts, resolve() if graph is None else graph.document_directory(document, resolve)
+        )
 
     @contextmanager
     def _ref_document_context(self, file_part: str) -> Generator[tuple[str, dict[str, Any]], None, None]:
@@ -10443,8 +10449,12 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         array no item past its prefixItems. Where no value is typed with it, it keeps its output. The positions of an
         array (``_read_false_all_of_array_positions``) and the patternProperties and propertyNames of a map
         (``_read_false_all_of_map_schemas``) are read the same way. ``lightweight`` reads the array positions as the
-        lightweight type of a TypedDict ``extra_items`` types them (``_build_lightweight_array_type``).
+        lightweight type of a TypedDict ``extra_items`` types them (``_build_lightweight_array_type``). A site reads
+        none of them while no loaded document holds an ``allOf`` that lists ``false``
+        (``SchemaGraphBuilder.holds_false_all_of``).
         """
+        if (graph := self._schema_graph) is None or not graph.holds_false_all_of:
+            return obj
         update: dict[str, object] = {}
         if (
             _is_false_all_of(obj.additionalProperties)
@@ -16249,13 +16259,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return raw
         root = SchemaLocation(self.model_resolver.join_path(tuple(path_parts)).partition("#")[0], ())
         indexed = graph.index_document(
-            graph.with_ref_edges(
-                raw,
-                root,
-                DocumentId(self._schema_resource_document(path_parts)),
-                self._ref_reading("root"),
-            ),
-            root,
+            raw, root, DocumentId(self._schema_resource_document(path_parts)), self._ref_reading("root")
         )
         if (entry := self._documents_as_written.get(id(raw))) is not None and entry[0] is raw:
             self._documents_as_written[id(indexed)] = indexed, entry[1]
@@ -16277,10 +16281,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return f"#{location.pointer}{ref.partition('#')[2].removeprefix(container)}"
 
         document = DocumentId(self._schema_resource_document([location.document]))
-        edged = graph.with_ref_edges(
-            converted, location, document, self._ref_reading("object"), ConvertedRefs(mounted_ref, home)
-        )
-        return graph.mount(edged, location)
+        return graph.mount(converted, location, document, self._ref_reading("object"), ConvertedRefs(mounted_ref, home))
 
     def _add_id_callback(self, obj: JsonSchemaObject, path: list[str]) -> None:
         """Add $id and $anchor to model resolver."""

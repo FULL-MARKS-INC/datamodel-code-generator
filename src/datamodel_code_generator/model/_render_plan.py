@@ -34,10 +34,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
 from operator import eq, is_
 from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, NewType, Protocol, TypeAlias, cast, final
 
+from datamodel_code_generator._records import record
 from datamodel_code_generator.python_literal import represent_python_value
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ AssignmentRule: TypeAlias = Literal[
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class AssignmentFacts:
     """What the class body writes for a field and what the field is in its model's constructor.
 
@@ -256,10 +256,6 @@ class CallArguments:
         """Return whether the call has an argument ``name``."""
         return name in self._entries
 
-    def __bool__(self) -> bool:
-        """Return whether the call has any argument."""
-        return bool(self._entries)
-
     def get(self, name: str) -> Any:
         """Return the value of the argument ``name``, or None."""
         return None if (entry := self._entries.get(name)) is None else entry.value
@@ -340,7 +336,7 @@ CallKind: TypeAlias = Literal["Field", "field", "Meta"]
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class CallPlan:
     """A call: its positional argument, its default factory and its other keyword arguments.
 
@@ -365,7 +361,7 @@ class CallPlan:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class FieldDefault:
     """The default a field writes: its value, or Pydantic's ``MISSING`` sentinel (``--use-missing-sentinel``).
 
@@ -383,7 +379,7 @@ AnnotationForm: TypeAlias = Literal["plain", "annotated", "classvar"]
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class FieldRenderPlan:
     """What the class body writes for one field, with the reason of every item; text is written when it is read.
 
@@ -395,7 +391,10 @@ class FieldRenderPlan:
 
     A msgspec field writes ``annotated_call`` (``Meta(...)``) inside ``Annotated`` and ``call`` (``field(...)``) after
     the annotation; a msgspec or stdlib dataclass field with ``bare_default`` writes its default alone after the
-    annotation. ``qualifiers`` wrap the type hint, innermost first (``TypedDict``'s ``ReadOnly[``, ``NotRequired[``).
+    annotation. ``written_type`` is the type a msgspec annotation writes when it writes a copy of the field's type: its
+    ``Annotated`` type, or its union with ``UnsetType``; the type writes its text when it is read. It is a ``DataType``,
+    typed ``object`` since importing ``types`` here would close an import cycle. ``qualifiers`` wrap the type hint,
+    innermost first (``TypedDict``'s ``ReadOnly[``, ``NotRequired[``).
     """
 
     annotation_form: AnnotationForm
@@ -408,6 +407,7 @@ class FieldRenderPlan:
     annotated_call: CallPlan | None = None
     bare_default: bool = False
     qualifiers: tuple[tuple[str, Why], ...] = ()
+    written_type: object = None
 
     def written_items(self) -> frozenset[str]:
         """Return the declared items the calls, or the default written alone, write."""
@@ -475,7 +475,7 @@ class PlannedField(Protocol):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class NestedFactoryMetadata:
     """What decides the default factory of an optional nested model, final when render preparation ends.
 
@@ -652,12 +652,19 @@ def _package_class(cls: type | None) -> bool:
     return known
 
 
+_DERIVING_CLASSES: Final[dict[tuple[type, type], bool]] = {}
+
+
 def _derives(field: Any) -> bool:
     """Return whether the derived values of ``field`` may be kept: its class and its model's are this package's.
 
-    A class outside the package may compute them from anything, so no revision covers what they read.
+    A class outside the package may compute them from anything, so no revision covers what they read. The answer is
+    kept for each pair of classes.
     """
-    return _package_class(type(field)) and _package_class(type(field.parent))
+    classes = type(field), type(field.parent)
+    if (known := _DERIVING_CLASSES.get(classes)) is None:
+        known = _DERIVING_CLASSES[classes] = _package_class(classes[0]) and _package_class(classes[1])
+    return known
 
 
 class _FieldRevision(NamedTuple):

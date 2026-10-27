@@ -5,7 +5,7 @@ pass (``parser/_pass_decls.py``);
 a ``ForEachModule`` runs passes once per output module; a ``HookCall`` calls an overridable parser method whose default
 runs a sub-table; a ``Segment`` runs the steps of one phase, entering the phase and the boundary before it. The
 ``Runner`` is the only caller of a pass: it skips a pass whose ``when`` is false and runs every other one inside
-``fact_pass`` (``parser/_finality.py``), with the models the finality check compares after it. A ``DecisionPhase``
+``fact_pass`` (``parser/_check_scopes.py``), with the models the finality check compares after it. A ``DecisionPhase``
 runs the decision passes of the parser's registry (``parser/_phases.py``), in the order ``decision_order`` computes.
 
 ``check_order`` is the order rule of the tables. For two passes of one segment, a pass that reads what an earlier pass
@@ -20,13 +20,13 @@ from __future__ import annotations
 import sys
 from contextlib import nullcontext
 from contextvars import ContextVar
-from dataclasses import dataclass
 from enum import Enum, unique
 from typing import TYPE_CHECKING, Any, Final, Generic, Protocol, TypeVar, cast
 
 from typing_extensions import ParamSpec, final
 
-from datamodel_code_generator.parser._finality import fact_pass, pass_scope
+from datamodel_code_generator._records import record
+from datamodel_code_generator.parser._check_scopes import fact_pass, pass_scope
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -108,7 +108,7 @@ def late(function: Callable[Q, R]) -> Callable[Q, R]:
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class PassSpec(Generic[P, S]):
     """One declared pass: ``run`` runs it on the state of its segment, when ``when`` (if any) is true.
 
@@ -130,7 +130,7 @@ class PassSpec(Generic[P, S]):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class ForEachModule(Generic[P, S, M]):
     """Passes run module by module, in module order: every pass of ``body`` for a module before the next module."""
 
@@ -150,7 +150,7 @@ class ForEachModule(Generic[P, S, M]):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class HookCall(Generic[P, S]):
     """A call of an overridable parser method whose default implementation runs ``body`` on a state of its own.
 
@@ -173,7 +173,7 @@ class HookCall(Generic[P, S]):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class DecisionPhase(Generic[P, S]):
     """The decision passes of the parser's registry: ``run`` seals the facts and runs them through the runner.
 
@@ -193,7 +193,7 @@ class DecisionPhase(Generic[P, S]):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class Segment(Generic[P, R, S]):
     """The steps of one phase over one view of the state.
 
@@ -226,7 +226,7 @@ class Segment(Generic[P, R, S]):
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class Runner:
     """Runs the steps of the tables in order; the only caller of ``PassSpec.run``.
 
@@ -294,7 +294,7 @@ def segment_bodies(
 
 
 @final
-@dataclass(frozen=True, slots=True)
+@record
 class OrderCheck:
     """What ``check_order`` found: the order, its problems, and the provisional reads the explicit edges record."""
 
