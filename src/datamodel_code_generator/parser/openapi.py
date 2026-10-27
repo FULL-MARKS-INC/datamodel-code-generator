@@ -404,8 +404,17 @@ class OpenAPIParser(JsonSchemaParser):
 
     @override
     def _document_self_context(self, document: str, raw: dict[str, Any]) -> AbstractContextManager[None]:
-        """Return the context in which an input specification names itself by its OpenAPI 3.2 `$self`."""
-        return self.openapi_self_context(raw) if document in self._specification_documents else nullcontext()
+        """Return the context in which an input specification names itself by its OpenAPI 3.2 `$self`.
+
+        A document loaded through a reference answers to its `$self` only for references spelled with it, and keeps the
+        location it was loaded from as the base of every other.
+        """
+        if document in self._specification_documents:
+            return self.openapi_self_context(raw)
+        if isinstance(openapi_self := raw.get("$self"), str) and self.schema_features.openapi_self:
+            scope = "/".join(self.model_resolver.current_root)
+            self.model_resolver.ids[scope].setdefault(openapi_self, f"{scope}#")
+        return nullcontext()
 
     def _key_error(self, key: object, kind: str, path: list[str]) -> SchemaParseError:  # noqa: PLR6301
         """Return the error at ``path`` for ``key``, which names a ``kind`` and is no string.

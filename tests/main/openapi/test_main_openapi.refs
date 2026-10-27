@@ -1315,6 +1315,11 @@ field_property_name_collision.yaml-pydantic_v2.dataclass-extra_args4-property_da
 	main/openapi/main_openapi/max_items_enum_without_option.py
 [test_main_openapi_max_min]
 	main/openapi/max_min_number.py
+[test_main_openapi_model_name_map_key_of_numbered_name]
+both-variants	main/openapi/openapi_model_name_map_key_of_numbered_name.py
+first-variant	main/openapi/openapi_model_name_map_key_of_numbered_name.py	= main/openapi/openapi_model_name_map_key_of_numbered_name~model_name_map_key_of_numbered_name[first-variant].py
+map-value-takes-released-name	main/openapi/openapi_model_name_map_key_of_numbered_name.py	= main/openapi/openapi_model_name_map_key_of_numbered_name~model_name_map_key_of_numbered_name[map-value-takes-released-name].py
+same-name-documents	main/openapi/openapi_model_name_map_key_of_numbered_name.py	= main/openapi/openapi_model_name_map_key_of_numbered_name~model_name_map_key_of_numbered_name[same-name-documents].py
 [test_main_openapi_module_class_name_collision_deep_exact_imports_pydantic_v2]
 	main/openapi/module_class_name_collision_deep_exact_imports//*.py
 [test_main_openapi_module_class_name_collision_deep_pydantic_v2]
@@ -1649,6 +1654,8 @@ modules-pydantic_v2	main/openapi/reuse_model_cross_module_users/modules_pydantic
 	main/openapi/schema_extensions.py
 [test_main_openapi_schema_extensions_enum]
 	main/openapi/schema_extensions_enum.py
+[test_main_openapi_self_spelled_external_reference]
+	main/openapi/openapi_self_spelled_external_reference.py
 [test_main_openapi_serialization_aliases_parameters_pydantic_v2]
 	main/openapi/openapi_serialization_aliases_parameters.py
 [test_main_openapi_serialize_as_any_module_import_alias_pydantic_v2]

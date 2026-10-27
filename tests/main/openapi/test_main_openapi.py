@@ -5248,6 +5248,103 @@ def test_main_openapi_nullable_map_value_model_name_map(
     )
 
 
+@pytest.mark.parametrize(
+    (
+        "input_path",
+        "input_file_type",
+        "model_name_map",
+        "extra_args",
+        "model_name",
+        "valid_json",
+        "invalid_json",
+        "error_type",
+    ),
+    [
+        pytest.param(
+            OPEN_API_DATA_PATH / "model_name_map_numbered_variants.yaml",
+            "openapi",
+            '{"Shape1": "Circle"}',
+            [],
+            "Shape",
+            '{"radius":1.5}',
+            "[]",
+            "model_type",
+            id="first-variant",
+        ),
+        pytest.param(
+            OPEN_API_DATA_PATH / "model_name_map_numbered_variants.yaml",
+            "openapi",
+            '{"Shape1": "Circle", "Shape2": "Rectangle"}',
+            [],
+            "Shape",
+            '{"width":1.5}',
+            "[]",
+            "model_type",
+            id="both-variants",
+        ),
+        pytest.param(
+            OPEN_API_DATA_PATH / "model_name_map_same_name_documents" / "openapi.yaml",
+            "openapi",
+            '{"Pet": "Cat"}',
+            [],
+            "Holder",
+            '{"first":{"first":"a"},"second":{"second":"b"}}',
+            '{"first":{"first":1}}',
+            "string_type",
+            id="same-name-documents",
+        ),
+        pytest.param(
+            JSON_SCHEMA_DATA_PATH / "model_name_map_key_of_map_value.json",
+            "jsonschema",
+            '{"Tag1": "Y"}',
+            ["--use-typed-nullable-map-values"],
+            "Model",
+            '{"a":{"tag":{"k":{"m":1}}}}',
+            '{"a":{"tag":{"k":{"m":"z"}}}}',
+            "int_parsing",
+            id="map-value-takes-released-name",
+        ),
+    ],
+)
+def test_main_openapi_model_name_map_key_of_numbered_name(
+    output_file: Path,
+    input_path: Path,
+    input_file_type: str,
+    model_name_map: str,
+    extra_args: list[str],
+    model_name: str,
+    valid_json: str,
+    invalid_json: str,
+    error_type: str,
+) -> None:
+    """Name the next model of a family without the name a class name key renamed, instead of matching the key again."""
+    run_main_and_assert(
+        input_path=input_path,
+        output_path=output_file,
+        input_file_type=input_file_type,
+        assert_func=assert_file_content,
+        extra_args=[
+            "--output-model-type",
+            DataModelType.PydanticV2BaseModel.value,
+            "--model-name-map",
+            model_name_map,
+            *extra_args,
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+        ],
+        force_exec_validation=True,
+    )
+    assert_generated_model_json_validation(
+        output_file,
+        module_name="generated_model_name_map_key_of_numbered_name",
+        model_name=model_name,
+        valid_json=valid_json,
+        invalid_json=invalid_json,
+        expected_error_type=error_type,
+    )
+
+
 @pytest.mark.parametrize("class_name", ["Tags", "Tags1"])
 def test_main_openapi_nullable_map_value_class_keyed_options(output_file: Path, class_name: str) -> None:
     """Apply options keyed by class name to the model with that final name, not to a map value named so before."""
@@ -14861,6 +14958,36 @@ def test_main_openapi_api_scope_external_boolean_schema(output_file: Path) -> No
             "builtin",
         ],
         force_exec_validation=True,
+    )
+
+
+def test_main_openapi_self_spelled_external_reference(output_file: Path) -> None:
+    """Resolve a reference spelled with the `$self` of a loaded document to that document, as the `api` scope does."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "self_spelled_external_ref" / "openapi.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        assert_func=assert_file_content,
+        extra_args=[
+            "--openapi-scopes",
+            "schemas",
+            "paths",
+            "parameters",
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--disable-timestamp",
+            "--formatters",
+            "builtin",
+        ],
+        force_exec_validation=True,
+    )
+    assert_generated_model_json_validation(
+        output_file,
+        module_name="generated_self_spelled_external_reference",
+        model_name="Pet",
+        valid_json='{"page":1}',
+        invalid_json='{"page":0}',
+        expected_error_type="greater_than_equal",
     )
 
 

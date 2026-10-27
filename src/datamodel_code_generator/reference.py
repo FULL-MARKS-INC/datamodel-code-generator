@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum, auto
-from functools import cached_property, lru_cache
+from functools import cached_property, lru_cache, partial
 from itertools import count, zip_longest
 from keyword import iskeyword
 from pathlib import Path, PurePath
@@ -882,7 +882,7 @@ class ModelResolver:  # noqa: PLR0904
     _MIN_STATEFUL_REDUCE_ITEMS: ClassVar[int] = 3
     _SLOTTED_STATE_ITEMS: ClassVar[int] = 2
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(  # noqa: PLR0913, PLR0915, PLR0917
         self,
         exclude_names: set[str] | None = None,
         duplicate_name_suffix: str | None = None,
@@ -982,6 +982,7 @@ class ModelResolver:  # noqa: PLR0904
         self._yielding_name_start_hints: dict[tuple[str, str, str, str], int] = {}
         self._matched_model_name_keys: set[str] = set()
         self._found_model_name_keys: set[str] = set()
+        self._released_model_names: set[str] = set()
         self.assigned_yielding_names: Mapping[str, tuple[str, str | None]] = {}
         self.final_yielding_names: dict[str, tuple[str, str | None]] = {}
         self.yielding_name_changes: set[str] = set()
@@ -1049,6 +1050,7 @@ class ModelResolver:  # noqa: PLR0904
         self.__dict__.setdefault("_yielding_name_start_hints", {})
         self.__dict__.setdefault("_matched_model_name_keys", set())
         self.__dict__.setdefault("_found_model_name_keys", set())
+        self.__dict__.setdefault("_released_model_names", set())
         self.__dict__.setdefault("assigned_yielding_names", {})
         self.__dict__.setdefault("final_yielding_names", {})
         self.__dict__.setdefault("yielding_name_changes", set())
@@ -1078,8 +1080,8 @@ class ModelResolver:  # noqa: PLR0904
 
     def _get_model_name_map_value(
         self, path: str, generated_name: str, original_name: str, *, match_names: bool = True
-    ) -> str | None:
-        """Return an explicit model rename for a source path or generated name.
+    ) -> tuple[str, str] | None:
+        """Return the key and the explicit model rename for a source path or generated name.
 
         A yielding reference matches only by path: its generated name is not final until parsing ends. The first
         matching candidate wins, and every matching key counts as found.
@@ -1090,20 +1092,30 @@ class ModelResolver:  # noqa: PLR0904
         _, separator, fragment = path.partition("#")
         paths = (path, f"#{fragment}") if separator else (path,)
         names = (generated_name, original_name) if match_names else ()
-        mapped_name: str | None = None
+        matched: tuple[str, str] | None = None
         for candidate in (*paths, *names):
             if (value := self.model_name_map.get(candidate)) is None:
                 continue
             self._found_model_name_keys.add(candidate)
-            if mapped_name is None:
-                mapped_name = value
+            if matched is None:
+                matched = candidate, value
                 if candidate in names:
                     self._matched_model_name_keys.add(candidate)
-        return mapped_name
+        return matched
 
     def unmatched_model_name_keys(self) -> set[str]:
         """Return the ``--model-name-map`` keys that matched no model."""
         return set(self.model_name_map) - self._found_model_name_keys
+
+    def _model_name_conflict(self, generated_name: str, mapped_name: str, reserved_name: str | None) -> str | None:
+        """Return why ``--model-name-map`` cannot give ``mapped_name`` to a model generated as ``generated_name``."""
+        if (
+            mapped_name != reserved_name
+            and mapped_name in self._get_reference_names()
+            and mapped_name not in self._yielding_names
+        ):
+            return "already used"
+        return "reserved" if mapped_name != generated_name and mapped_name in self.exclude_names else None
 
     def _ensure_model_name_map_value(
         self,
@@ -1116,17 +1128,7 @@ class ModelResolver:  # noqa: PLR0904
             msg = f"--model-name-map maps {redact_reference(path)!r} to invalid class name {mapped_name!r}"
             raise Error(msg)
 
-        reference_names = self._get_reference_names()
-        conflict_reason = (
-            "already used"
-            if mapped_name != reserved_name
-            and mapped_name in reference_names
-            and mapped_name not in self._yielding_names
-            else "reserved"
-            if mapped_name != generated_name and mapped_name in self.exclude_names
-            else None
-        )
-        if conflict_reason:
+        if conflict_reason := self._model_name_conflict(generated_name, mapped_name, reserved_name):
             msg = (
                 f"--model-name-map maps {redact_reference(path)!r} to {mapped_name!r}, "
                 f"but that model name is {conflict_reason}\n"
@@ -1134,7 +1136,7 @@ class ModelResolver:  # noqa: PLR0904
             )
             raise Error(msg)
 
-    def _apply_model_name_map(
+    def _apply_model_name_map(  # noqa: PLR0913
         self,
         path: str,
         original_name: str,
@@ -1142,12 +1144,39 @@ class ModelResolver:  # noqa: PLR0904
         *,
         reserved_name: str | None = None,
         match_names: bool = True,
+        regenerate: Callable[[], ClassName] | None = None,
     ) -> ClassName:
+        """Apply ``--model-name-map`` to a generated class name.
+
+        A class name key that renamed a model gave its name away, so the next model generated under that name matches
+        the key again and its rename is used. When ``regenerate`` is given, such a model is named without that name
+        instead: the generated name of the model the key renamed stays reserved from then on. A name that is not made
+        unique yet stays as it is.
+        """
+        previously_matched = class_name.name in self._matched_model_name_keys
         if (
-            mapped_name := self._get_model_name_map_value(path, class_name.name, original_name, match_names=match_names)
+            matched := self._get_model_name_map_value(path, class_name.name, original_name, match_names=match_names)
         ) is None:
             return class_name
 
+        key, mapped_name = matched
+        if (
+            previously_matched
+            and regenerate is not None
+            and key == class_name.name
+            and self._model_name_conflict(class_name.name, mapped_name, reserved_name) == "already used"
+        ):
+            self._released_model_names.add(key)
+            if (renamed := regenerate()).name == key:
+                return class_name
+            return self._apply_model_name_map(
+                path,
+                original_name,
+                renamed,
+                reserved_name=reserved_name,
+                match_names=match_names,
+                regenerate=regenerate,
+            )
         self._ensure_model_name_map_value(path, class_name.name, mapped_name, reserved_name)
         if mapped_name != class_name.name:
             self._model_name_map_paths.add(path)
@@ -1550,8 +1579,8 @@ class ModelResolver:  # noqa: PLR0904
         has_affix_config = bool(self.class_name_prefix or self.class_name_suffix)
         needs_scope = self.class_name_affix_scope != ClassNameAffixScope.All
         skip_affix = has_affix_config and needs_scope
-        class_name = self.get_class_name(original_name, unique=use_unique, skip_affix=skip_affix)
-        name = self._apply_model_name_map(path, original_name, class_name).name
+        generate = partial(self.get_class_name, original_name, unique=use_unique, skip_affix=skip_affix)
+        name = self._apply_model_name_map(path, original_name, generate(), regenerate=generate).name
         if self._yielding_names:
             self._evict_yielding_reference(name)
         reference = Reference(
@@ -1718,7 +1747,8 @@ class ModelResolver:  # noqa: PLR0904
                 # For primary definitions, try to use the clean name first
                 # If an external reference has the same name, rename it
                 self._rename_external_ref_with_same_name(name, joined_path)
-            generated_class_name = self.get_class_name(
+            generate = partial(
+                self.get_class_name,
                 name=name,
                 unique=unique,
                 reserved_name=reference.name if reference else None,
@@ -1729,12 +1759,14 @@ class ModelResolver:  # noqa: PLR0904
                 preserve_name=preserve_class_name,
                 **({"yields": True} if yields else {}),
             )
+            generated_class_name = generate()
             class_name_result = self._apply_model_name_map(
                 joined_path,
                 original_name,
                 generated_class_name,
                 reserved_name=reference.name if reference else None,
                 match_names=not yields,
+                regenerate=generate,
             )
             yields = yields and class_name_result is generated_class_name
             name, duplicate_name = class_name_result
@@ -1960,11 +1992,15 @@ class ModelResolver:  # noqa: PLR0904
         return unique_name
 
     def _is_taken(self, name: str) -> bool:
-        return name in self._reference_names_cache or name in self.exclude_names
+        return name in self._reference_names_cache or name in self.exclude_names or name in self._released_model_names
 
     def _is_taken_beside_yielding_names(self, name: str) -> bool:
         """Names of yielding references stay free for references that do not yield."""
-        return self._reference_names_cache.get(name, 0) > (name in self._yielding_names) or name in self.exclude_names
+        return (
+            self._reference_names_cache.get(name, 0) > (name in self._yielding_names)
+            or name in self.exclude_names
+            or name in self._released_model_names
+        )
 
     def _get_yielding_unique_name(self, name: str, suffix: str | None, delimiter: str, prefix: str) -> str:
         """Return a duplicate candidate free also in the module of a yielding reference, after those given before.
