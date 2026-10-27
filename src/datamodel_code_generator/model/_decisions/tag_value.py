@@ -61,6 +61,9 @@ if TYPE_CHECKING:
         def inherited_tag(self) -> Any:
             """Return the tag of a tag field the variant inherits, or None."""
 
+        def inline_tag(self) -> Any:
+            """Return the tag an inline variant inherits, or None where it is no inline variant or may not take it."""
+
         def mapped_tags(self) -> Sequence[str]:
             """Return the mapping keys naming the variant or its bases (``mapped_tags``)."""
 
@@ -168,7 +171,7 @@ VariantTagSource: TypeAlias = Literal["variant", "union", "nested"]
 """
 
 VariantTagRule: TypeAlias = Literal[
-    "own-field", "reused-schema-field", "inherited-field", "mapping", "path-segment", "none"
+    "own-field", "reused-schema-field", "inherited-field", "mapping", "inline-inherited-field", "path-segment", "none"
 ]
 """The rows of ``variant_tags``.
 
@@ -177,8 +180,10 @@ VariantTagRule: TypeAlias = Literal[
   base can carry the tag another union wrote.
 * ``inherited-field``: a tag field the variant inherits (``nested`` only).
 * ``mapping``: the mapping keys that name the variant or, failing that, its bases (``mapped_tags``).
-* ``path-segment``: the last segment of the variant's schema path: its name for a named schema, the internal segment
-  of an inline one (#4829).
+* ``inline-inherited-field``: the tag field an inline variant inherits, for a variant that has no name to be tagged by
+  (#4829): the last segment of its schema path is an internal marker, and no union it belongs to lists another variant
+  with that tag.
+* ``path-segment``: the last segment of the variant's schema path: its name for a named schema.
 * ``none``: a nested variant without a tag.
 """
 
@@ -330,11 +335,12 @@ def _value_tag(site: FieldTagSite, value: Any, rule: Literal["const", "one-membe
     return FieldTag(value, "value-of-another-kind") if site == "variant-field" else None
 
 
-def variant_tags(source: VariantTagSource, facts: VariantTagFacts, /) -> VariantTags:
+def variant_tags(source: VariantTagSource, facts: VariantTagFacts, /) -> VariantTags:  # noqa: PLR0911
     """Return the tags of a variant (``VariantTagSource``, ``VariantTagRule``).
 
     A variant takes its own tag, else that of the model it replaces; a nested one then the tag it inherits, if any.
-    Otherwise, and for ``union``, the mapping keys decide, else the replaced model's tag, else the path segment.
+    Otherwise, and for ``union``, the mapping keys decide, else the replaced model's tag, else the tag an inline
+    variant inherits, else the path segment.
     """
     if source != "union":
         if (own := facts.own_tag()) is not None:
@@ -348,6 +354,8 @@ def variant_tags(source: VariantTagSource, facts: VariantTagFacts, /) -> Variant
         return VariantTags(tuple(mapped), "mapping")
     if (reused := facts.reused_tag()) is not None:
         return VariantTags((reused,), "reused-schema-field")
+    if (inline := facts.inline_tag()) is not None:
+        return VariantTags((inline,), "inline-inherited-field")
     return VariantTags((facts.path_segment(),), "path-segment")
 
 

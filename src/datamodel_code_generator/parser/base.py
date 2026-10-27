@@ -1137,6 +1137,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._hidden_named_types: dict[tuple[ModelKey, str | None], bool] = {}
         self._hiding_field_names: dict[tuple[ModelKey, str | None], str] = {}
         self._variant_discriminator_tags: dict[tuple[int, str], _VariantDiscriminatorTags] = {}
+        self._inline_variant_models: frozenset[int] | None = None
+        """The inline variants that may take the tag they inherit, once the first union asks for them."""
         self._deferred_tagged_unions: list[_DiscriminatorUnion] = []
         self._defers_tagged_unions = False
         self._prepared_modules: list[_PreparedModule] = []

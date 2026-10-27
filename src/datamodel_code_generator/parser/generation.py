@@ -2346,8 +2346,8 @@ class GenerationStore:  # noqa: PLR0904
 
     @staticmethod
     @deprecated("Use GenerationStore.builder().set_type_discriminator() instead.", category=None)
-    def set_type_discriminator(data_type: DataType, discriminator: str) -> None:
-        """Write the discriminator of a data type, which every holder of the type sees."""
+    def set_type_discriminator(data_type: DataType, discriminator: str | None) -> None:
+        """Write the discriminator of a data type, or none, which every holder of the type sees."""
         data_type.discriminator = discriminator
         bump_node(data_type)
 
@@ -3162,8 +3162,8 @@ class GraphBuilder:
         """Replace nested data types and invalidate derived facts; the new sites under ``data_type`` are overridden."""
         self._store.set_nested_data_types(data_type, nested_data_types)  # ty: ignore[deprecated]
 
-    def set_type_discriminator(self, data_type: DataType, discriminator: str) -> None:
-        """Write the discriminator of a data type, which every holder of the type sees."""
+    def set_type_discriminator(self, data_type: DataType, discriminator: str | None) -> None:
+        """Write the discriminator of a data type, or none, which every holder of the type sees."""
         self._store.set_type_discriminator(data_type, discriminator)  # ty: ignore[deprecated]
 
     def swap_data_type(self, data_type: DataType, new_data_type: DataType, *, refresh: Refresh = "now") -> None:

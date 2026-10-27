@@ -72,6 +72,7 @@ class PlansHost(FlattenHost, Protocol):
     _emitting_module_lists: list[tuple[str, list[DataModel]]]
     _emitting_module_names: dict[int, str]
     _generic_base_model: DataModel | None
+    _inline_variant_models: frozenset[int] | None
     _recursion_facts: RecursionFacts
 
     @property
@@ -152,6 +153,7 @@ def reset_per_run_state(parser: PlansHost, _run: StructuredRun[Any]) -> None:
     parser._hidden_named_types.clear()  # noqa: SLF001
     parser._hiding_field_names.clear()  # noqa: SLF001
     parser._variant_discriminator_tags.clear()  # noqa: SLF001
+    parser._inline_variant_models = None  # noqa: SLF001
     parser._deferred_tagged_unions.clear()  # noqa: SLF001
     parser._prepared_modules.clear()  # noqa: SLF001
     parser._base_stand_ins.clear()  # noqa: SLF001
