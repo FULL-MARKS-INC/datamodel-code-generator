@@ -5304,6 +5304,17 @@ def test_main_openapi_nullable_map_value_model_name_map(
             "int_parsing",
             id="map-value-takes-released-name",
         ),
+        pytest.param(
+            JSON_SCHEMA_DATA_PATH / "model_name_map_key_of_nested_titles.json",
+            "jsonschema",
+            '{"Pet": "Cat"}',
+            ["--use-title-as-name"],
+            "Root",
+            '{"p1":{"pet":{"x":"a"}},"p2":{"pet":{"y":1}}}',
+            '{"p2":{"pet":{"y":"z"}}}',
+            "int_parsing",
+            id="nested-models-of-one-title",
+        ),
     ],
 )
 def test_main_openapi_model_name_map_key_of_numbered_name(
@@ -15086,6 +15097,22 @@ def test_main_openapi_self_spelled_external_reference(output_file: Path) -> None
         valid_json='{"page":1}',
         invalid_json='{"page":0}',
         expected_error_type="greater_than_equal",
+    )
+
+
+def test_main_openapi_self_of_json_schema_document_is_not_an_identity(
+    output_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fetch a reference spelled with the `$self` of a loaded JSON Schema document, which only an OpenAPI one names."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "self_of_json_schema_document" / "openapi.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        expected_exit=Exit.ERROR,
+        capsys=capsys,
+        extra_args=["--no-allow-remote-refs"],
+        expected_stderr_contains="Fetching remote $ref is disabled: https://schemas.example.com/pets/schema.json",
+        output_should_not_exist=True,
     )
 
 
