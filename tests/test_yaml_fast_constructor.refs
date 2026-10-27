@@ -226,6 +226,7 @@ openapi/discriminator_ref_variant_default.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_reuse_same_tags.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_reuse_tree_mappings.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_reuse_tree_same_tags.yaml	yaml_fast_constructor/parity.txt
+openapi/discriminator_reuse_variant_base_fields.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_reuse_variant_mapping.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_reuse_variant_tags.yaml	yaml_fast_constructor/parity.txt
 openapi/discriminator_same_name_documents/main.yaml	yaml_fast_constructor/parity.txt

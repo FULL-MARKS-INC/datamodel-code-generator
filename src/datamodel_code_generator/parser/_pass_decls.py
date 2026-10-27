@@ -695,10 +695,11 @@ TAG_FIELDS_OF_TAGGED_BASES = PassDecl(
     Scope.GLOBAL,
     PassKind.TRANSFORM,
     reads=_facts(Fact.BASES, Fact.DISCRIMINATOR_TAGS, Fact.FIELD_SET),
-    writes=_facts(Fact.DISCRIMINATOR_TAGS, Fact.FIELD_SET, Fact.FIELD_TYPES),
+    writes=_facts(Fact.BASES, Fact.DISCRIMINATOR_TAGS, Fact.FIELD_SET, Fact.FIELD_TYPES),
     summary=(
         "Tags the structs that declare the tag field of a tagged base, or opts them out of the tag, and opts out "
-        "the structs whose tag field a base keeps as a field, typing their tag field by its const again."
+        "the structs whose tag field a base keeps as a field, typing their tag field by its const again; a struct "
+        "that reuse made an empty subclass of that base declares the fields of its base instead and keeps its tag."
     ),
     condition="msgspec",
 )

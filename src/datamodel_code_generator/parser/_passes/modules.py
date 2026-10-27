@@ -1192,13 +1192,28 @@ def _iter_derived_fields(
 
 
 def _has_related_instance_field(
-    model: DataModel, source_name: str, tagged_fields: set[int], derived_models: Mapping[ModelKey, list[DataModel]]
+    model: DataModel,
+    source_name: str,
+    tagged_fields: set[int],
+    derived_models: Mapping[ModelKey, list[DataModel]],
+    *,
+    flattens_reused: bool,
 ) -> bool:
-    """Return whether a base or derived struct keeps an instance field of that name once the unions are tagged."""
+    """Return whether a base or derived struct keeps an instance field of that name once the unions are tagged.
+
+    With ``flattens_reused``, the base of a model that reuse made an empty subclass does not count: the model declares
+    the fields of its base when it is tagged beside other structs (``tag_fields_of_tagged_bases``).
+    """
     return any(
         id(field) not in tagged_fields and _keeps_instance_field(field, source_name)
         for field in chain(
-            (field for base_model in _find_base_classes(model) for field in base_model.iter_all_fields()),
+            (
+                field
+                for base_model in (
+                    () if flattens_reused and model.reused_reference is not None else _find_base_classes(model)
+                )
+                for field in base_model.iter_all_fields()
+            ),
             _iter_derived_fields(model, derived_models, _ModelKeys("derived fields")),
         )
     )
@@ -1246,7 +1261,9 @@ def _tag_discriminator_unions(
                     names := [
                         model.class_name
                         for model, _, _ in tags
-                        if _has_related_instance_field(model, tag_field, tagged_fields, derived_models)
+                        if _has_related_instance_field(
+                            model, tag_field, tagged_fields, derived_models, flattens_reused=len(tags) > 1
+                        )
                     ]
                 )
             }
@@ -2504,7 +2521,16 @@ def apply_discriminator_type(  # noqa: PLR0912, PLR0914, PLR0915
                             [discriminator_field], discriminator_model.reference, parser.field_name_model_type
                         )
                     record_reused_variant_tag_field(parser, discriminator_field, annotates_tag=annotates_new_tag)
-                    if tagged_unions and discriminator_model.REQUIRES_TAGGED_UNION_DISCRIMINATOR:
+                    if discriminator_model.REQUIRES_TAGGED_UNION_DISCRIMINATOR and (
+                        tagged_unions
+                        or (
+                            len(field.data_type.data_types) > 1
+                            and _find_reused_discriminator_value(
+                                discriminator_model, field_name, field_name_mode=field_name_mode
+                            )
+                            is not None
+                        )
+                    ):
                         tags.append((
                             discriminator_model,
                             discriminator_field,

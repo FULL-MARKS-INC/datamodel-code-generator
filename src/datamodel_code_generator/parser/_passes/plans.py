@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.reference import ModelType, Reference
 
 __all__ = [
+    "FlattenHost",
     "PlansHost",
     "flatten_conflicting_base_layouts",
     "record_emitting_modules",
@@ -57,7 +58,15 @@ class _Clearable(Protocol):
         """Remove every entry."""
 
 
-class PlansHost(InheritedFieldHost, Protocol):
+class FlattenHost(InheritedFieldHost, Protocol):
+    """What making a model declare the fields of its bases reads and writes of the parser."""
+
+    @property
+    def _graph_builder(self) -> GraphBuilder:
+        """The builder that changes the model graph through the generation store."""
+
+
+class PlansHost(FlattenHost, Protocol):
     """The options, run state and hooks of the parser that the plan passes read and write."""
 
     _emitting_module_lists: list[tuple[str, list[DataModel]]]
@@ -76,10 +85,6 @@ class PlansHost(InheritedFieldHost, Protocol):
     @property
     def _deferred_tagged_unions(self) -> _Clearable:
         """The tagged unions whose tags wait until every module is processed."""
-
-    @property
-    def _graph_builder(self) -> GraphBuilder:
-        """The builder that changes the model graph through the generation store."""
 
     @property
     def _hidden_named_types(self) -> _Clearable:
@@ -206,7 +211,7 @@ def flatten_conflicting_base_layouts(parser: PlansHost, module_models: ModuleMod
             visits.extend((base, False) for base in reversed(_find_base_classes(model)))
 
 
-def flatten_base_layouts(parser: PlansHost, model: DataModel) -> None:
+def flatten_base_layouts(parser: FlattenHost, model: DataModel) -> None:
     """Make a model declare the fields of its generated bases and drop them.
 
     The required names the model and its bases take from their own bases are resolved first, as only the bases

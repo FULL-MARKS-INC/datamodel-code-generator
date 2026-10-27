@@ -811,8 +811,8 @@ def test_main_openapi_discriminator_variant_tag_warnings(
 ) -> None:
     """Warn about variants whose generated tag differs from a tag that a discriminated union maps them to.
 
-    The reused msgspec variant ``Kitten`` inherits the tag field of ``Cat``, which msgspec refuses beside a tag, so
-    it stays untagged and keeps the field: the module imports.
+    The reused msgspec variant ``Kitten`` would inherit the tag field of ``Cat``, which msgspec refuses beside a tag,
+    so it declares the fields of ``Cat`` itself and is tagged like the other variants.
     """
     with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
@@ -866,6 +866,13 @@ def test_main_openapi_discriminator_variant_tag_warnings(
             "discriminator_shared_variant_tags",
             "reuse_pydantic_v2.dataclass",
             ["--output-model-type", "pydantic_v2.dataclass"],
+        ),
+        ("discriminator_reuse_variant_base_fields", "pydantic_v2.BaseModel", []),
+        ("discriminator_reuse_variant_base_fields", "msgspec.Struct", ["--output-model-type", "msgspec.Struct"]),
+        (
+            "discriminator_reuse_variant_base_fields",
+            "msgspec_tagged_unions",
+            ["--output-model-type", "msgspec.Struct", "--use-msgspec-tagged-unions"],
         ),
     ],
 )

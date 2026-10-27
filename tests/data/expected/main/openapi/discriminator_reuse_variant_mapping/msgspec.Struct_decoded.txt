@@ -11,5 +11,5 @@ Aquarium {"kind": "dog"}: TypeError
 Basket {"pet": {"kind": "kitty"}}: Basket
 Basket {"pet": {"kind": "cat"}}: rejected
 Basket {"pet": {"kind": "dog"}}: Basket
-Aviary {"kind": "bird", "wings": 2}: TypeError
-Aviary {"kind": "dog"}: TypeError
+Aviary {"kind": "bird", "wings": 2}: Parrot
+Aviary {"kind": "dog"}: Dog

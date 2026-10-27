@@ -55,8 +55,8 @@ class Bird(Struct):
     wings: int | UnsetType = UNSET
 
 
-class Parrot(Bird):
-    kind: Literal['bird']
+class Parrot(Struct, tag_field='kind', tag='bird'):
+    wings: int | UnsetType = UNSET
 
 
 Aviary: TypeAlias = Parrot | Dog
