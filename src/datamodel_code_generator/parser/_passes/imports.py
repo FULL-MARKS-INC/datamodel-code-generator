@@ -20,6 +20,7 @@ from datamodel_code_generator import DefaultValueTypeWarning, Error, ReuseScope
 from datamodel_code_generator._checks import CheckArea, check_mode
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._parse_memo import rendering_memo
+from datamodel_code_generator._python_target_names import PYTHON_BUILTIN_TYPE_NAMES
 from datamodel_code_generator._requirements import pydantic_floor
 from datamodel_code_generator._url_redaction import redact_reference
 from datamodel_code_generator.enums import DefaultValueType
@@ -29,7 +30,7 @@ from datamodel_code_generator.model._decisions.tag_value import struct_tag_clash
 from datamodel_code_generator.model._render_plan import RENDER_READY
 from datamodel_code_generator.model.base import BaseClassDataType, DataModel
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum, get_raw_enum_member_value
-from datamodel_code_generator.model.output import _model_field_name_collisions
+from datamodel_code_generator.model.output import _bare_name_loads, _model_field_name_collisions
 from datamodel_code_generator.model.type_alias import TypeAliasBase, TypeStatement
 from datamodel_code_generator.parser._graph_ids import keyed_models, unchecked
 from datamodel_code_generator.parser._imports_plan import (
@@ -43,6 +44,7 @@ from datamodel_code_generator.parser._imports_plan import (
     allocate_bindings,
 )
 from datamodel_code_generator.parser._passes._shared import (
+    BaseStandInHost,
     RecursionFactsHost,
     ReplacedRootsHost,
     _context_models,
@@ -65,6 +67,7 @@ from datamodel_code_generator.parser._passes._shared import (
 from datamodel_code_generator.parser._passes._state import _PYDANTIC_FLOORS, ConfigT, ContextT, ResultT
 from datamodel_code_generator.parser._passes._warnings import warn_as_parser_base
 from datamodel_code_generator.parser._passes.render_prep import _DECIMAL_WARNING_EXAMPLE_LIMIT
+from datamodel_code_generator.reference import ModelResolver
 from datamodel_code_generator.types import DataType, render_type_expr
 
 if TYPE_CHECKING:
@@ -90,7 +93,7 @@ if TYPE_CHECKING:
         _FinalizeState,
     )
     from datamodel_code_generator.parser.generation import GraphBuilder
-    from datamodel_code_generator.reference import ModelResolver, ModelType, Reference
+    from datamodel_code_generator.reference import ModelType, Reference
     from datamodel_code_generator.types import TypeExpr
 
 __all__ = [
@@ -98,6 +101,7 @@ __all__ = [
     "ImportsHost",
     "RenderHost",
     "add_root_init_result",
+    "alias_builtin_shadowing_module_imports",
     "append_model_imports",
     "bind_module_field_names",
     "change_module_imported_model_names",
@@ -257,11 +261,15 @@ class FinishHost(Protocol):
         """Return whether a model uses the configured root model representation."""
 
 
-class RenderHost(RecursionFactsHost, Protocol[ConfigT, ContextT, ResultT]):
+class RenderHost(RecursionFactsHost, BaseStandInHost, Protocol[ConfigT, ContextT, ResultT]):
     """The options, run state and rendering hooks of the parser that planning imports and rendering read and call."""
 
     model_metadata: ModelMetadata | None
     model_metadata_identities: tuple[str, ...]
+
+    @property
+    def _self_named_root_models(self) -> list[DataModel]:
+        """The root models that name themselves, which deduplication dropped from every module."""
 
     @property
     def _generic_base_model(self) -> DataModel | None:
@@ -332,6 +340,9 @@ _IMPORT_CONFLICTS: Final = ImportProducer("import-conflicts")
 
 
 _FIELD_NAME_BINDINGS: Final = ImportProducer("field-name-bindings")
+
+
+_BUILTIN_MODULE_BINDINGS: Final = ImportProducer("builtin-module-bindings")
 
 
 _REUSED_VARIANT_LITERAL: Final = ImportProducer("reused-variant-literal")
@@ -410,9 +421,84 @@ def _forward_defined_models(contexts: Iterable[ModuleContextView], forwarder_map
     """
     defined = {ctx.module_key: {model.class_name for model in ctx.models} for ctx in contexts}
     return {
-        module: (internal_module, kept)
-        for module, (internal_module, class_mappings) in forwarder_map.items()
-        if (kept := [mapping for mapping in class_mappings if mapping[1] in defined[internal_module]])
+        module: dataclasses.replace(forwarder, names=kept)
+        for module, forwarder in forwarder_map.items()
+        if (kept := tuple(name for name in forwarder.names if name[1] in defined[name[0]]))
+    }
+
+
+def _released_name_imports(  # noqa: PLR0914
+    parser: RenderHost[Any, Any, Any], contexts: Sequence[ModuleContextView], forwarder_map: ForwarderMap
+) -> ForwarderMap:
+    """Add to the forwarder of each module that a grown merge moved the models it imported by name before.
+
+    Such a module binds in the released layout (``Forwarder.released``) its models and the models of other modules
+    that it imports by name; the forwarder imports the latter, from the modules that write them now, under the same
+    names. ``change_from_import`` names an import with ``reference_import_target`` and the module's resolver, in the
+    order of its models and their data types: this replays it for the module's models with the place and class name
+    each model has in the released layout, from the final names, so the names come out as that layout gave them. A
+    module import (``from . import pets`` for ``pets.Pet``) takes its name and binds no model.
+    """
+    if not any(forwarder.released for forwarder in forwarder_map.values()):
+        return forwarder_map
+    contexts_by_module = {ctx.module_key: ctx for ctx in contexts}
+    placement = {
+        model_key_of(model.reference): (ctx.module_key, model.class_name) for ctx in contexts for model in ctx.models
+    }
+    released_placement = {
+        (forwarder.internal_module, name): (module, released_name)
+        for module, forwarder in forwarder_map.items()
+        for released_name, name in forwarder.released
+    }
+    unimported = {
+        *parser._base_stand_in_imports,  # noqa: SLF001
+        *(model_key_of(model.reference) for model in parser._self_named_root_models),  # noqa: SLF001
+    }
+    names: dict[ModulePath, tuple[tuple[ModulePath, str, str], ...]] = {}
+    for module, forwarder in forwarder_map.items():
+        if not forwarder.released:
+            continue
+        defined = {model.class_name: model for model in contexts_by_module[forwarder.internal_module].models}
+        models = [(released_name, model) for released_name, name in forwarder.released if (model := defined.get(name))]
+        members = {model_key_of(model.reference) for _, model in models}
+        resolver = ModelResolver(
+            exclude_names={field.name for _, model in models for field in model.fields if field.name is not None},
+            target_python_version=parser.target_python_version,
+        )
+        for released_name, model in models:
+            resolver.add([model.path], released_name)
+        ctx = contexts_by_module[module]
+        module_name = _module_name_from_module_path(module)
+        imported: dict[tuple[ModulePath, str, str], None] = {}
+        for data_type in (data_type for _, model in models for data_type in _named_data_types(model)):
+            if (
+                (reference := data_type.reference) is None
+                or (key := model_key_of(reference)) in members
+                or key in unimported
+                or (final := placement.get(key)) is None
+            ):
+                continue
+            released_module, released_name = released_placement.get(final, final)
+            released_module_name = _module_name_from_module_path(released_module)
+            target = reference_import_target(
+                released_name,
+                module_name,
+                f"{released_module_name}.{released_name}" if released_module_name else released_name,
+                use_exact=ctx.imports.use_exact,
+                init=ctx.is_init,
+                internal_modules=forwarder.released_internal_modules,
+                base_class=isinstance(data_type, BaseClassDataType),
+                treat_dot_as_module=parser.treat_dot_as_module,
+            )
+            binding = resolver.add(target.full_path, target.import_).name
+            if target.import_ == released_name:
+                imported[(*final, binding)] = None
+        names[module] = tuple(imported)
+    return {
+        module: dataclasses.replace(forwarder, names=(*forwarder.names, *names[module]))
+        if module in names
+        else forwarder
+        for module, forwarder in forwarder_map.items()
     }
 
 
@@ -1221,6 +1307,79 @@ def resolve_module_import_conflicts(parser: ImportsHost[Any], state: _FinalizeSt
             parser.data_model_type.resolve_module_import_conflicts(ctx.models, state.model_imports, ctx.imports)
 
 
+def _module_binding(expression: str | None) -> str | None:
+    """Return the module binding of an expression ``<binding>.<Class>``, or None for another expression."""
+    return expression.partition(".")[0] if expression and "." in expression else None
+
+
+def _alias_builtin_shadowing_module_imports(parser: ImportsHost[Any], ctx: ModuleContextView) -> None:
+    """Alias the module imports named like a builtin that the module also writes bare, e.g. ``list[str]``.
+
+    ``from . import list``, which names the models of the module ``list`` (``list.Pop``), hides the builtin from the
+    whole module. Such an import takes the name the module's resolver gives it once the builtin holds its own name
+    (``list_1``), as module imports whose names clash with other names do, and every ``list.X`` the module writes
+    follows. A name is a builtin by the static table of the target (``PYTHON_BUILTIN_TYPE_NAMES``), and the module
+    writes it bare when a rendered model loads it other than as the module of an attribute. The class of an enum
+    member literal is written before (``import_enum_member_literal_classes``), so a binding it names keeps its name.
+    A package's own submodule keeps its name too: importing it binds the name in the package whatever the import
+    is named.
+    """
+    references = [
+        data_type for model in ctx.models for data_type in _named_data_types(model) if data_type.reference is not None
+    ]
+    if not (
+        bindings := {
+            binding
+            for data_type in references
+            if (binding := _module_binding(data_type.alias)) in PYTHON_BUILTIN_TYPE_NAMES
+        }
+    ):
+        return
+    bindings.difference_update(
+        _module_binding(enum_class)
+        for model in ctx.models
+        for data_type in model.all_data_types
+        for enum_class, _ in data_type.enum_member_literals
+    )
+    imported = {
+        ctx.imports.get_effective_name(from_, name): (from_, name)
+        for from_, names in ctx.imports.items()
+        for name in names
+    }
+    resolver = ctx.scoped_model_resolver
+    held = {reference.name: reference for reference in resolver.references.values()}
+    if not (
+        shadowing := {
+            binding
+            for binding in bindings
+            if binding in imported and binding in held and not (ctx.is_init and imported[binding][0] == ".")
+        }
+    ):
+        return
+    ledger = parser._import_ledger  # noqa: SLF001
+    aliases: dict[str, str] = {}
+    for binding in sorted(_bare_name_loads(ctx.models, shadowing)):
+        reference = held[binding]
+        ledger.release_names(ctx.imports, resolver, {binding})
+        ledger.add_name(ctx.imports, resolver, get_special_path("builtin", [binding]), binding)
+        alias = aliases[binding] = ledger.add_name(
+            ctx.imports, resolver, [reference.path], reference.original_name
+        ).name
+        from_, import_ = imported[binding]
+        ledger.apply_alias(ctx.imports, Import(from_=from_, import_=import_, alias=alias), _BUILTIN_MODULE_BINDINGS)
+    for data_type in references:
+        if (binding := _module_binding(data_type.alias)) in aliases:
+            parser._graph_builder.name_reference(  # noqa: SLF001
+                data_type, f"{aliases[binding]}{cast('str', data_type.alias)[len(binding) :]}"
+            )
+
+
+def alias_builtin_shadowing_module_imports(parser: ImportsHost[Any], state: _FinalizeState[Any]) -> None:
+    """Alias the module imports named like a builtin that their module also writes bare."""
+    for ctx in state.contexts:
+        _alias_builtin_shadowing_module_imports(parser, ctx)
+
+
 def bind_module_field_names(parser: ImportsHost[Any], state: _FinalizeState[Any]) -> None:
     """Bind the field names of each module that its imports shadow."""
     for ctx in state.contexts:
@@ -1472,7 +1631,7 @@ def render_modules(  # noqa: PLR0913
     future_imports = parser._import_ledger.extract_future(parser.imports, _FUTURE_IMPORTS)  # noqa: SLF001
     future_imports_str = str(future_imports)
     if forwarder_map:
-        forwarder_map = _forward_defined_models(contexts, forwarder_map)
+        forwarder_map = _forward_defined_models(contexts, _released_name_imports(parser, contexts, forwarder_map))
 
     # Export depth and collision prefixes must follow the final package layout.
     if (

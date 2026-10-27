@@ -530,7 +530,9 @@ model_options.add_argument(
     "of msgspec.Struct models by the defaults they write, so under --strip-default-none an optional field whose None "
     "default is stripped still writes UNSET and goes after the required fields with the other optional fields; "
     "without it the field keeps its schema place among the required fields, and the struct is reordered only when a "
-    "required field would then follow a default.",
+    "required field would then follow a default. A pydantic.dataclass field whose stripped None default stays "
+    "written for a type that admits None counts as that default in a subclass too: a required field redeclaring it "
+    "is written Field(...); without it the subclass field inherits the None default, as before.",
     choices=[constructor_field_order.value for constructor_field_order in ConstructorFieldOrder],
     nargs="+",
     default=None,
@@ -917,6 +919,14 @@ typing_options.add_argument(
     "--use-decimal-for-multiple-of",
     help="Use condecimal instead of confloat for float/number fields with multipleOf constraint "
     "(Pydantic only). Avoids floating-point precision issues in validation.",
+    action="store_true",
+    default=None,
+)
+typing_options.add_argument(
+    "--use-decimal-in-field-forms",
+    help="Under --use-decimal-for-multiple-of, also write Decimal for a number with multipleOf in the field forms "
+    "(--field-constraints, --use-annotated), with the constraints in Field(), and make the Decimal strict under "
+    "--strict-types float (Pydantic only)",
     action="store_true",
     default=None,
 )
@@ -1542,7 +1552,8 @@ openapi_options.add_argument(
     "--openapi-as-definitions",
     help="Give each given kind of OpenAPI schema the model a definitions entry of the same schema gets. paths-bodies: "
     "the request and response bodies of the paths and webhooks scopes, so an object body with a type array such as "
-    "[object, null], or with map keywords and no type, becomes a model instead of an inline type. ref-components: a "
+    "[object, null], or with map keywords and no type, becomes a model instead of an inline type, and an object body "
+    "with patternProperties or propertyNames becomes the root model of a map. ref-components: a "
     "component written as a $ref to a recursive schema with sibling keywords, which gets the root model; without it "
     "such a component gets no model, and a reference to it is typed by the schema its $ref names",
     choices=[as_definitions.value for as_definitions in OpenAPIAsDefinitions],
