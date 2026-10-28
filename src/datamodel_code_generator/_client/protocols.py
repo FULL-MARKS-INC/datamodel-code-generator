@@ -27,7 +27,7 @@ from typing_extensions import Self
 
 from datamodel_code_generator._api_types import Diagnostic, OperationRef, SchemaRef
 from datamodel_code_generator._client.naming import folded, helper_name_problem, token
-from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import normalized
 from datamodel_code_generator._runtime.protocols.records import (
     BodySelector,
     BodyTarget,
@@ -152,11 +152,10 @@ def _line(value: object) -> object:
 
 
 def _media(value: object) -> object:
-    try:
-        return normalize_media_type(value)  # ty: ignore[invalid-argument-type]
-    except (TypeError, ValueError):
-        msg = "must be a media type"
-        raise Refusal(msg) from None
+    if isinstance(value, str) and (media_type := normalized(value)) is not None:
+        return media_type
+    msg = "must be a media type"
+    raise Refusal(msg)
 
 
 def _seconds(value: object) -> float:

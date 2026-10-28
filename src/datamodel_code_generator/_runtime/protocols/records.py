@@ -12,6 +12,7 @@ from typing_extensions import Self, TypeVar
 
 from ..client.responses import ResponseInfo
 from ..model_codecs.media import (
+    TOKEN,
     JSONValue,
     json_bytes,
 )
@@ -50,7 +51,6 @@ PROGRESS_KEYS: Final = get_args(ProgressKey)
 _OCCURRENCES: Final = ("single", "all")
 _PARAMETER_LOCATIONS: Final = ("path", "query", "header", "cookie")
 _POINTER: Final = re.compile(r"(?:/(?:[^~/]|~[01])*)*")
-_TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 
 
 def record_string(value: object, name: str) -> str:
@@ -119,7 +119,7 @@ class HeaderSelector:
 
     def __post_init__(self) -> None:
         """Require an HTTP token name, kept as given, and a declared occurrence."""
-        _matching(self.name, "name", _TOKEN)
+        _matching(self.name, "name", TOKEN)
         _choice(self.occurrence, "occurrence", _OCCURRENCES)
 
 
@@ -142,7 +142,7 @@ class ParameterTarget:
         """Require a declared location and a nonempty name, an HTTP token for headers and cookies."""
         _choice(self.location, "location", _PARAMETER_LOCATIONS)
         if self.location in {"header", "cookie"}:
-            _matching(self.name, "name", _TOKEN)
+            _matching(self.name, "name", TOKEN)
         else:
             _nonempty(self.name, "name")
 

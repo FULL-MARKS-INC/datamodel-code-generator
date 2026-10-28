@@ -13,7 +13,7 @@ from typing_extensions import Self
 from datamodel_code_generator._api_types import Diagnostic
 from datamodel_code_generator._client.naming import namespace_problem, token
 from datamodel_code_generator._runtime.client.options import is_base_url
-from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type, normalized
 from datamodel_code_generator._target_config import Node, Refusal, Refused, Selector, TargetConfig, valid, version
 from datamodel_code_generator._target_naming import explicit_name
 
@@ -39,11 +39,7 @@ def absolute(value: object) -> bool:
 
 
 def _media(value: object) -> bool:
-    try:
-        normalize_media_type(value)  # ty: ignore[invalid-argument-type]
-    except (TypeError, ValueError):
-        return False
-    return True
+    return isinstance(value, str) and normalized(value) is not None
 
 
 def _namespace(value: object, info: ValidationInfo) -> object:
