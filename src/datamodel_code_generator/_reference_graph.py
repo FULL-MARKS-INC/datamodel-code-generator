@@ -87,6 +87,8 @@ class GraphSnapshot(Enum):
     """L5, per module: the aliases on a cycle of container items."""
     NESTED_MODEL_DEFAULT_FACTORIES = "nested model default factories"
     """L6: the models on a reference cycle, whose default factories recurse."""
+    TAGGED_BASES = "tagged bases"
+    """L6: the msgspec structs below tagged bases, each after the bases among the processed models it inherits from."""
     ALIAS_LOOPS = "alias loops"
     """IMPORTS: the type aliases of a ``$ref`` chain that loops back without reaching a schema."""
     INHERITED_FIELDS = "inherited fields"
