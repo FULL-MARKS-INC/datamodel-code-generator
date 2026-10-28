@@ -14,6 +14,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -319,6 +320,8 @@ ALLOWLIST_CASES = {
     "valid": ("0.86.0", [PROPERTY_NAMES_ENTRY]),
     "missing_input": ("0.86.0", [{k: v for k, v in PROPERTY_NAMES_ENTRY.items() if k != "input"}]),
     "missing_decision": ("0.86.0", [{**PROPERTY_NAMES_ENTRY, "decision": ""}]),
+    "private_decision": ("0.86.0", [{**PROPERTY_NAMES_ENTRY, "decision": "owner chat 2026-10-26"}]),
+    "decisions": ("0.86.0", [{**PROPERTY_NAMES_ENTRY, "decision": "#5291, #5283"}]),
     "other_base": ("0.85.0", [PROPERTY_NAMES_ENTRY]),
     "empty_other_base": ("0.85.0", []),
 }
@@ -326,9 +329,46 @@ ALLOWLIST_CASES = {
 
 @pytest.mark.parametrize("case", sorted(ALLOWLIST_CASES))
 def test_allowlist_problems(case: str) -> None:
-    """An entry needs a decision, and a table with entries belongs to one base release."""
+    """An entry needs public decision references, and a table with entries belongs to one base release."""
     base, entries = ALLOWLIST_CASES[case]
     assert_output("\n".join(Allowlist(base, entries).problems("0.86.0")) + "\n")
+
+
+REPORT_ENTRY = {**PROPERTY_NAMES_ENTRY, "input": "tests/data/*.json", "decision": "#5017"}
+REPORT_CASES = {
+    "pr_covered_unused": ("pr", [REPORT_ENTRY], "tests/data/a.json", "1/1"),
+    "pr_covers_no_cell": ("pr", [REPORT_ENTRY], "tests/data/a.yaml", "1/1"),
+    "nightly_covered_unused": ("nightly", [REPORT_ENTRY], "tests/data/a.json", "1/1"),
+    "release_covered_unused": ("release", [REPORT_ENTRY], "tests/data/a.json", "1/1"),
+    "release_covers_no_cell": ("release", [REPORT_ENTRY], "tests/data/a.yaml", "1/1"),
+    "release_shard_covers_no_cell": ("release", [REPORT_ENTRY], "tests/data/a.yaml", "1/2"),
+    "pr_malformed_entry": ("pr", [{**REPORT_ENTRY, "decision": ""}], "tests/data/a.json", "1/1"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(REPORT_CASES))
+def test_report_stale_entries_by_tier(case: str) -> None:
+    """The PR tier is a sample and judges no staleness; the full tiers do; malformed entries fail every tier."""
+    tier, entries, label, shard = REPORT_CASES[case]
+    allowlist = Allowlist("0.86.0", entries)
+    cell = SimpleNamespace(label=label, backend="pydantic_v2.BaseModel")
+    result = SimpleNamespace(cell=cell, verdict=SimpleNamespace(cls="same", accepted_by=set(), notes=[]))
+    gate = SimpleNamespace(allowlist=allowlist, loaded_allowlist=allowlist, cache=SimpleNamespace(hits=0))
+    index, _, total = shard.partition("/")
+    ns = SimpleNamespace(
+        base="0.86.0",
+        tier=tier,
+        shard=shard,
+        shard_index=int(index),
+        shard_total=int(total),
+        select=[],
+        check=True,
+        json=None,
+    )
+    stdout = StringIO()
+    with redirect_stdout(stdout):
+        code = behaviour_diff._report([result], gate, ns)
+    assert_output(f"exit={code}\n{stdout.getvalue()}")
 
 
 OPT_IN_CASES = {
@@ -352,6 +392,29 @@ INVENTORY = {
 def test_opt_in_reason(case: str) -> None:
     """A cell is opt-in when the release lacks one of its options or option values."""
     assert_output(f"{behaviour_diff.opt_in_reason(OPT_IN_CASES[case], INVENTORY)}\n")
+
+
+WITHOUT_OPTION_CASES = {
+    "new_flag": (
+        ["--snake-case-field", "--pin-aliases-with-alias-generator", "--target-pydantic-version", "2"],
+        "--pin-aliases-with-alias-generator",
+    ),
+    "new_preset_value": (["--preset", "standard-py314-20261027"], "--preset standard-py314-20261027"),
+    "new_valued_option": (["--use-annotated", "--naming-strategy", "full-path"], "--naming-strategy"),
+    "new_inline_value": (["--naming-strategy=full-path", "--use-annotated"], "--naming-strategy"),
+    "new_value_of_known_option": (
+        ["--target-python-version", "3.10", "--output-datetime-class", "AwareDatetime"],
+        "--output-datetime-class AwareDatetime",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(WITHOUT_OPTION_CASES))
+def test_without_option(case: str) -> None:
+    """The baseline of a new option's example keeps every other option of the cell."""
+    options, reason = WITHOUT_OPTION_CASES[case]
+    flags = {"--snake-case-field", "--pin-aliases-with-alias-generator", "--use-annotated"}
+    assert_output(" ".join(behaviour_diff.without_option(options, reason, flags)) + "\n")
 
 
 def test_preset_option_sets() -> None:
@@ -517,10 +580,10 @@ def test_signature(case: str, tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="behaviour_diff.py forks its workers")
 def test_gate(tmp_path: Path) -> None:
-    """The gate generates the selected fixtures on both sides; with --check a stale allowlist entry fails the run."""
+    """The gate generates the selected fixtures on both sides; the PR tier judges no stale entry."""
     allowlist = tmp_path / "allowlist.toml"
     allowlist.write_text(
-        'base = "0.0.0"\n[[accepted]]\ninput = "tests/data/jsonschema/person.json"\nreason = "r"\ndecision = "d"\n',
+        'base = "0.0.0"\n[[accepted]]\ninput = "tests/data/jsonschema/person.json"\nreason = "r"\ndecision = "#1"\n',
         encoding="utf-8",
     )
     outputs = []
