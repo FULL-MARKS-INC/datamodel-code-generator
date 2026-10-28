@@ -60,6 +60,6 @@ def scheme_resolver(  # noqa: PLR0913
                 "custom_class_name_generator": _keep_name,
                 "duplicate_name_suffix_map": duplicate_name_suffix_map,
             }
-        case "field-type":
+        case _:  # "field-type": the resolver defaults
             pass
     return ModelResolver(exclude_names=exclude_names, target_python_version=target_python_version, **options)
