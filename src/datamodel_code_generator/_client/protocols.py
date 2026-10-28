@@ -598,12 +598,16 @@ class _EventTypeDiscriminator(Node):
 Schemas = dict[Nonempty, _SchemaNode]
 
 
-class _EventMapping(Node):
-    discriminator: _BodyDiscriminator
+class _EventMappingBase(Node):
+    discriminator: Any
     mapping: Annotated[Schemas, Field(min_length=1)]
 
 
-class _SseEventMapping(_EventMapping):
+class _EventMapping(_EventMappingBase):
+    discriminator: _BodyDiscriminator
+
+
+class _SseEventMapping(_EventMappingBase):
     discriminator: Annotated[_EventTypeDiscriminator | _BodyDiscriminator, Field(discriminator="from_")]
 
 
@@ -666,21 +670,21 @@ SseResume = Annotated[
 ]
 
 
-class _Sse(Node):
-    kind: Literal["sse"]
+class _Stream(Node):
+    kind: str
     enabled: Flag = True
     operation: Operation
     media: Media
-    event_schema: SseEventSchema
-    completion: Annotated[_Eof | _Sentinel | _EventType, Field(discriminator="kind")]
+    event_schema: Any
+    completion: Any
     unknown: Literal["error", "raw"] = "error"
     error_events: Schemas = Field(default_factory=dict)
-    resume: SseResume = _ResumeOff()
+    resume: Any = _ResumeOff()
 
     @_after
     def _events(self) -> Self:
         """Refuse raw and error events without a discriminator, and an error event that is also an event."""
-        mapping = self.event_schema.mapping if isinstance(self.event_schema, _EventMapping) else None
+        mapping = self.event_schema.mapping if isinstance(self.event_schema, _EventMappingBase) else None
         if self.unknown == "raw" and mapping is None:
             msg = "can be 'raw' only with a discriminator"
             raise _conflict(msg, ".unknown")
@@ -693,7 +697,14 @@ class _Sse(Node):
         return self
 
 
-class _Ndjson(_Sse):
+class _Sse(_Stream):
+    kind: Literal["sse"]
+    event_schema: SseEventSchema
+    completion: Annotated[_Eof | _Sentinel | _EventType, Field(discriminator="kind")]
+    resume: SseResume = _ResumeOff()
+
+
+class _Ndjson(_Stream):
     kind: Literal["ndjson"]
     event_schema: EventSchema
     completion: Annotated[_Eof | _LineSentinel, Field(discriminator="kind")]
