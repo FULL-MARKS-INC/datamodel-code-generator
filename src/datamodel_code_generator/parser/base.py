@@ -85,6 +85,15 @@ from datamodel_code_generator._source import (
 from datamodel_code_generator._target_unicode import title
 from datamodel_code_generator._template_data import copy_extra_template_data
 from datamodel_code_generator._url_redaction import redact_reference
+from datamodel_code_generator._user_keys import (
+    ConstructionKeys,
+    class_field_key,
+    field_keys,
+    first_given,
+    first_present,
+    mapped_base_class,
+    model_level_type_override,
+)
 from datamodel_code_generator.enums import (
     ConstructorFieldOrder,
     DefaultValueType,
@@ -148,6 +157,7 @@ from datamodel_code_generator.parser._passes._keys import (
     _MODEL_MODULE_PREFIX,
     _RAW_SCHEMA_DEFAULT_KEY,
 )
+from datamodel_code_generator.parser._passes._name_allocation import scheme_resolver
 from datamodel_code_generator.parser._passes._shared import (
     _TYPE_DEPENDENT_CONSTRAINTS_KEY,
     DiscriminatorValue,
@@ -1362,6 +1372,10 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             copy_extra_template_data(data) if (data := config.extra_template_data) else defaultdict(dict)
         )
         self.validators = config.validators
+        self._construction_keys = ConstructionKeys.of(
+            (config.base_class_map, config.extra_template_data, config.validators),
+            (config.aliases, config.serialization_aliases, config.default_value_overrides),
+        )
         self.generate_schema_validators: bool = config.generate_schema_validators
         self.check_pattern_maps_strictly: bool = config.check_pattern_maps_strictly
         self._set_typed_extra_annotation_mode(use_deferred_annotations=True)
@@ -1491,7 +1505,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             for key, value in self.type_overrides.items()
         }
         self._model_type_override_imports: dict[str, Import] = {
-            key: import_ for key, import_ in self._type_override_imports.items() if "." not in key
+            key: import_ for key, import_ in self._type_override_imports.items() if model_level_type_override(key)
         }
         self._base_stand_in_imports: dict[ModelKey, Import] = {}
         """The import of the class each stand-in model stands for, by model key: a schema that a base names and the
@@ -1612,14 +1626,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Get an explicit serialization alias for a field."""
         if not self.serialization_aliases:
             return None
-        keys = []
-        if class_name is not None:  # pragma: no branch
-            keys.extend((f"{class_name}.{original_field_name}", f"{class_name}.{field_name}"))
-        keys.extend((original_field_name, field_name))
-        for key in keys:
-            if key in self.serialization_aliases:
-                return self.serialization_aliases[key]
-        return None
+        return first_present(self.serialization_aliases, field_keys(class_name, original_field_name, field_name))[0]
 
     def _apply_final_class_field_aliases(
         self, fields: list[DataModelFieldBase], class_name: str, original_class_name: str
@@ -1627,14 +1634,14 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Apply final class scopes after name allocation, retaining already resolved fallback aliases."""
         if class_name == original_class_name or not (aliases := self.config.aliases):
             return
-        prefix = f"{class_name}."
+        prefix = class_field_key(class_name, "")
         if not any(key.startswith(prefix) for key in aliases):
             return
         scoped_aliases = {
             field.original_name
             for field in fields
             if field.original_name is not None
-            and (isinstance(alias_value := aliases.get(f"{class_name}.{field.original_name}"), str) or alias_value)
+            and first_given(aliases, (class_field_key(class_name, field.original_name),)) is not None
         }
         if not scoped_aliases:
             return
@@ -1658,8 +1665,10 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 self.serialization_aliases
                 and (
                     field.serialization_alias is None
-                    or f"{class_name}.{original_name}" in self.serialization_aliases
-                    or f"{class_name}.{field.name}" in self.serialization_aliases
+                    or not self.serialization_aliases.keys().isdisjoint((
+                        class_field_key(class_name, original_name),
+                        class_field_key(class_name, field.name),
+                    ))
                 )
                 and (serialization_alias := self.get_serialization_alias(original_name, field.name, class_name))
                 is not None
@@ -1795,8 +1804,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 return result[0] if len(result) == 1 else result
             return value or None
 
-        if self.base_class_map and class_name in self.base_class_map:
-            return normalize(self.base_class_map[class_name])
+        mapped, found = mapped_base_class(self.base_class_map, class_name)
+        if found:
+            return normalize(mapped)
         if custom_base_path:
             return normalize(custom_base_path)
         return self.base_class or None
@@ -1864,20 +1874,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     def _model_shapes(self, row: ShapeRow) -> ModelShapes[DataModel, Reference]:
         """Return the keys of one comparison pass of the dedup or reuse user of a row."""
         return ModelShapes(row, _ModelShapeSource(self.target_python_version), self._reuse_union_tags)
-
-    def _names_have_class_keyed_options(self, names: set[str]) -> bool:
-        """Return whether an option keyed by class name, or by a class-scoped field, names one of ``names``.
-
-        These options are looked up while models are created, under the names models have then.
-        """
-        config = self.config
-        class_keys = {*(config.base_class_map or ()), *(config.extra_template_data or ()), *(config.validators or ())}
-        scoped_keys = (
-            *(config.aliases or ()),
-            *(config.serialization_aliases or ()),
-            *(config.default_value_overrides or ()),
-        )
-        return bool(names & class_keys) or any(key.rpartition(".")[0] in names for key in scoped_keys)
 
     def _site_models_last(self, models: list[DataModel]) -> list[DataModel]:
         """Order the site models a reference with more assertions gets after the others, which then stay canonical.
@@ -2956,10 +2952,9 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             model.class_name for model in live_models if id(model) not in affected_model_ids
         }
         unavailable_names.update(import_.alias or import_.import_ for model in live_models for import_ in model.imports)
-        scoped_resolver = ModelResolver(
+        scoped_resolver = scheme_resolver(
+            "flattened-module",
             exclude_names=unavailable_names,
-            duplicate_name_suffix="Model",
-            custom_class_name_generator=lambda name: name,
             duplicate_name_suffix_map=resolver.duplicate_name_suffix_map,
             target_python_version=self.target_python_version,
         )

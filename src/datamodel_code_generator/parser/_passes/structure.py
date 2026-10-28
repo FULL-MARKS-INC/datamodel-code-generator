@@ -28,6 +28,7 @@ from datamodel_code_generator.model.base import (
 from datamodel_code_generator.model.enum import Enum
 from datamodel_code_generator.parser._graph_ids import keyed_models, unchecked
 from datamodel_code_generator.parser._model_shapes import COLLAPSE_REUSE, SAME_NAME, TREE_SCOPE, skips_root_model
+from datamodel_code_generator.parser._passes._name_allocation import scheme_resolver
 from datamodel_code_generator.parser._passes._shared import (
     BaseStandInHost,
     _get_mapping_discriminator_values,
@@ -39,7 +40,6 @@ from datamodel_code_generator.parser._passes._shared import (
     require_update_action,
 )
 from datamodel_code_generator.parser._passes._state import Forwarder, RecursionFacts, _ModuleNames
-from datamodel_code_generator.reference import ModelResolver
 from datamodel_code_generator.util import camel_to_snake
 
 if TYPE_CHECKING:
@@ -541,10 +541,10 @@ def replace_duplicate_name_in_module(parser: StructureHost, models: list[DataMod
             if base_class.reference is not None
             and (import_ := stand_ins.get(model_key_of(base_class.reference))) is not None
         )
-    scoped_model_resolver = ModelResolver(
+    scoped_model_resolver = scheme_resolver(
+        "module",
         exclude_names=exclude_names,
-        duplicate_name_suffix="Model",
-        custom_class_name_generator=(lambda name: name) if parser.custom_class_name_generator else None,
+        keeps_names=bool(parser.custom_class_name_generator),
         target_python_version=parser.target_python_version,
     )
 
