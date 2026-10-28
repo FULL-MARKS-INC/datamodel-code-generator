@@ -684,7 +684,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 decls.UNCONSTRAIN_UNION_MEMBERS,
                 late(plans.unconstrain_union_members_in_modules),
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
             ),
             PassSpec(
                 decls.SET_CIRCULAR_ROOT_MODEL_PATHS,
@@ -736,7 +736,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 decls.SETTLE_DISCRIMINATED_UNIONS,
                 late(modules.settle_discriminated_unions),
-                when=lambda self, _: self.data_model_field_type.SUPPORTS_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.writes_argument,
                 checked_models=lambda _, run: _context_models(run.contexts),
             ),
         ),
@@ -749,13 +749,13 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 decls.TAG_FIELDS_OF_TAGGED_BASES,
                 cross_module.tag_fields_of_tagged_bases,
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
                 checked_models=lambda _, run: _context_models(run.contexts),
             ),
             PassSpec(
                 decls.WRITE_ENUM_MEMBER_TAGS_AS_VALUES,
                 cross_module.write_enum_member_tags_as_values,
-                when=lambda self, _: not self.data_model_type._LITERAL_HOLDS_ENUM_MEMBERS,  # noqa: SLF001
+                when=lambda self, _: not self._tag_capabilities.literal_holds_members,
                 checked_models=lambda _, run: _context_models(run.contexts),
             ),
             PassSpec(
@@ -842,7 +842,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
                 lambda self, run: render_prep.fix_tag_opt_out_field_ordering(
                     self._tag_plan.opted_out, _context_models(run.contexts)
                 ),
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
                 checked_models=lambda _, run: _context_models(run.contexts),
             ),
             HookCall(

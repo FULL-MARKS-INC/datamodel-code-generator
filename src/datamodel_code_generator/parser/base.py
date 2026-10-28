@@ -166,7 +166,6 @@ from datamodel_code_generator.parser._passes._shared import (
     _has_root_field_constraints,
     _hidden_type_names,
     _InheritedTypeModifiers,
-    _iter_discriminator_data_types,
     _iter_import_bindings,
     _ModelPositions,
     _module_name_from_module_path,
@@ -174,7 +173,6 @@ from datamodel_code_generator.parser._passes._shared import (
     _parsed_rule_data_types,
     _ReuseOptimizationContext,
     _string_or_identifier_pattern,
-    _tag_field_matches,
     add_model_path_to_list,  # noqa: F401  # Preserve the established parser.base export.
     alias_shadowed_imports,
     apply_inherited_field_default,
@@ -219,7 +217,7 @@ from datamodel_code_generator.parser._pipeline import (
     release_parse_caller,
 )
 from datamodel_code_generator.parser._schema_graph import SCHEMA_GRAPH
-from datamodel_code_generator.parser._tag_plan import TagPlan
+from datamodel_code_generator.parser._tag_plan import TagCapabilities, TagPlan, tag_capabilities
 from datamodel_code_generator.parser.generation import GenerationStore
 from datamodel_code_generator.parser.schema_version import SchemaFeaturesT
 from datamodel_code_generator.reference import (
@@ -969,6 +967,11 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     def _graph_builder(self) -> GraphBuilder:
         """The capability through which the passes change the graph of the generation store."""
         return self.generation_store.builder()
+
+    @property
+    def _tag_capabilities(self) -> TagCapabilities:
+        """The rows of the output's model and field classes that the tag passes read."""
+        return tag_capabilities(self.data_model_type, self.data_model_field_type)
 
     @property
     def run_context(self) -> ParserRunContext:
@@ -1867,34 +1870,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     @staticmethod
     def _get_enum_discriminator_literal(enum_source: Enum, value: DiscriminatorValue) -> DiscriminatorValue:
         return enum_discriminator_literal(enum_source, value)
-
-    def _get_discriminator_field_name(
-        self, data_types: Iterable[DataType], property_name: str, default_name: str
-    ) -> str:
-        """Resolve the shared Python field name without changing wire aliases."""
-        common_name: str | None = None
-        for data_type, _, _ in _iter_discriminator_data_types(data_types):
-            if not data_type.reference:
-                continue
-            variant = cast("DataModel", data_type.reference.source)
-            for variant_field in chain(variant.fields, variant.iter_all_fields()):
-                if _tag_field_matches(
-                    variant_field, "original-or-unaliased-python-name", property_name, python_name=default_name
-                ):
-                    variant_name = variant_field.name
-                    break
-            else:
-                variant_name, _ = self.model_resolver.get_valid_field_name_and_alias(
-                    property_name, model_type=self.field_name_model_type, class_name=variant.class_name
-                )
-            if common_name is not None and common_name != variant_name:
-                msg = (
-                    f"Discriminator {property_name!r} resolves to different field names "
-                    f"{common_name!r} and {variant_name!r}; use the same alias for all variants."
-                )
-                raise Error(msg)
-            common_name = variant_name
-        return common_name or default_name
 
     def _create_set_from_list(self, data_type: DataType) -> DataType | None:
         """Return a set copy of a list type, or ``data_type`` after its nested lists became sets in place.
