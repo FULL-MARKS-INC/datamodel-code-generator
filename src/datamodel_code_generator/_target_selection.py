@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from enum import Enum
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -70,7 +69,7 @@ def target_of(
 
 
 def _server(config: Any, base: Callable[[str], Path], output: Path) -> tuple[FastAPITarget, FastAPIConfig]:
-    from datamodel_code_generator._fastapi.config import FastAPIConfig, ResponseChoice  # noqa: PLC0415
+    from datamodel_code_generator._fastapi.config import FastAPIConfig  # noqa: PLC0415
     from datamodel_code_generator._fastapi.target import FastAPITarget  # noqa: PLC0415
 
     values: dict[str, Any] = {
@@ -85,7 +84,7 @@ def _server(config: Any, base: Callable[[str], Path], output: Path) -> tuple[Fas
     if (responses := _json(config, "server_primary_responses")) is not None:
         root = base("server_primary_responses")
         values["primary_responses"] = {
-            _operation(key, root): ResponseChoice(status_code=choice.status_code, media_type=choice.media_type)
+            _operation(key, root): {"status_code": choice.status_code, "media_type": choice.media_type}
             for key, choice in responses.items()
         }
     return FastAPITarget(), FastAPIConfig(
@@ -94,20 +93,17 @@ def _server(config: Any, base: Callable[[str], Path], output: Path) -> tuple[Fas
 
 
 def _client(config: Any, base: Callable[[str], Path], output: Path) -> tuple[ClientTarget, ClientGenerationConfig]:
-    from datamodel_code_generator._client.config import (  # noqa: PLC0415
-        ClientGenerationConfig,
-        ResourceName,
-        operation_configs,
-    )
+    from datamodel_code_generator._client.config import ClientGenerationConfig  # noqa: PLC0415
     from datamodel_code_generator._client.target import ClientTarget  # noqa: PLC0415
 
     values: dict[str, Any] = {
         name: _plain(value) for name in _CLIENT_CHOICES if (value := getattr(config, f"client_{name}")) is not None
     }
     if (names := _json(config, "client_resource_names")) is not None:
-        values["resource_names"] = tuple(ResourceName(tag=tag, namespace=name) for tag, name in names.items())
+        values["resource_names"] = [{"tag": tag, "namespace": name} for tag, name in names.items()]
     if (entries := _json(config, "client_operations")) is not None:
-        values["operations"] = operation_configs(entries, partial(_operation, base=base("client_operations")))
+        root = base("client_operations")
+        values["operations"] = [{**entry, "@ref": _operation(key, root)} for key, entry in entries.items()]
     return ClientTarget(base("client_protocols")), ClientGenerationConfig(
         output=output,
         package=config.client_package,
@@ -150,7 +146,11 @@ def keyed(error: Exception, config: Any) -> Exception:
                 else [f"[{media!r}][{name!r}]" for media, fields in names.items() for name in fields]
             )
             spelled += f".{member}{members[int(found[4])]}"
-        return replace(item, option_path=f"{spelled}{path[found.end() :]}")
+        return replace(
+            item,
+            option_path=f"{spelled}{path[found.end() :]}",
+            message=item.message.replace(path[: found.end()], spelled, 1),
+        )
 
     if (diagnostics := tuple(map(named, error.diagnostics))) == error.diagnostics:
         return error

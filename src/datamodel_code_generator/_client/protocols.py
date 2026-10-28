@@ -8,70 +8,67 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
-from functools import partial
 from math import isfinite
-from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Literal, TypeAlias
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    Discriminator,
+    Field,
+    Strict,
+    Tag,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
+from typing_extensions import Self
 
 from datamodel_code_generator._api_types import Diagnostic, OperationRef, SchemaRef
 from datamodel_code_generator._client.naming import folded, helper_name_problem, token
 from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type
-from datamodel_code_generator._target_config import _diagnostic  # pyright: ignore[reportPrivateUsage]
+from datamodel_code_generator._runtime.protocols.records import (
+    BodySelector,
+    BodyTarget,
+    HeaderSelector,
+    ParameterTarget,
+    QuerystringTarget,
+)
+from datamodel_code_generator._target_config import Node, Refusal, diagnostics, valid
 from datamodel_code_generator._target_documents import canonical_bytes
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from datamodel_code_generator._api_types import DiagnosticStage
     from datamodel_code_generator._format_types import PythonVersion
 
 __all__ = (
-    "Converter",
     "Helper",
     "HelperKind",
     "Link",
-    "Spec",
-    "Tree",
     "validate",
 )
 
 HelperKind: TypeAlias = Literal[
     "pagination", "polling", "sse", "ndjson", "websocket", "webhook", "cache", "resumable_upload"
 ]
-Converter: TypeAlias = "Callable[[object, str], object]"
-Spec: TypeAlias = "Mapping[str, tuple[Converter, object]]"
 Tree: TypeAlias = "dict[str, Any]"
 
-KINDS: Final = (
-    "pagination",
-    "polling",
-    "sse",
-    "ndjson",
-    "websocket",
-    "webhook",
-    "cache",
-    "resumable_upload",
-)
-_PUBLIC_KEY_SIGNATURES: Final = ("ed25519", "rsa-pss-sha256")
-_SOURCES: Final = ("input", "initial", "previous")
-_ROOT: Final = "protocols"
-_EMPTY_STRING: Final = {"kind": "value", "value": ""}
 _STATE_SETS: Final = ("pending", "succeeded", "failed", "cancelled")
+_RENAMED: Final = {"in_": "location"}
 _FRAMES: Final = {"json": None, "utf8": "text", "bytes": "binary"}
-_VALIDATOR_KINDS: Final = ("etag", "last_modified", "both")
+_after = model_validator(mode="after")
 
 
-class _Mark(Enum):
-    REQUIRED = "required"
-    OMITTED = "omitted"
+class _Omitted:
+    def __deepcopy__(self, memo: object) -> _Omitted:
+        return self
 
 
-class _Invalid(Enum):
-    INVALID = "invalid"
-
-
-REQUIRED: Final = _Mark.REQUIRED
-OMITTED: Final = _Mark.OMITTED
-INVALID: Final = _Invalid.INVALID
+OMITTED: Final[Any] = _Omitted()
+NONE: Final[Any] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -96,16 +93,18 @@ class Helper:
     schemas: tuple[tuple[str, SchemaRef], ...]
 
 
-def _encodable(text: str) -> bool:
+def _encodable(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
     try:
-        text.encode("utf-8")
+        value.encode("utf-8")
     except UnicodeEncodeError:
         return False
     return True
 
 
-def _literal_problem(value: object) -> str | None:
-    """Return why a value is no JSON literal: another type, or text with a lone surrogate."""
+def _literal(value: object) -> object:
+    """Return a JSON literal, refusing other types, non-finite numbers, and text that is not UTF-8."""
     pending = [value]
     while pending:
         match item := pending.pop():
@@ -113,20 +112,709 @@ def _literal_problem(value: object) -> str | None:
                 continue
             case float() if isfinite(item):
                 continue
-            case str():
-                if not _encodable(item):
-                    return "has text that is not UTF-8"
+            case str() if _encodable(item):
                 continue
+            case str():
+                problem = "has text that is not UTF-8"
             case list():
                 pending.extend(item)
                 continue
-            case dict() if all(isinstance(key, str) and _encodable(key) for key in item):
+            case dict() if all(_encodable(key) for key in item):
                 pending.extend(item.values())
                 continue
             case _:
-                pass
-        return "must be a JSON value"
-    return None
+                problem = "must be a JSON value"
+        raise Refusal(problem)
+    return value
+
+
+def _pointer(value: object) -> object:
+    try:
+        BodySelector(pointer=value)  # ty: ignore[invalid-argument-type]
+    except (TypeError, ValueError):
+        msg = "must be an RFC 6901 pointer"
+        raise Refusal(msg) from None
+    if not _encodable(value):
+        msg = "must be a UTF-8 string"
+        raise Refusal(msg)
+    return value
+
+
+def _shorthand(value: object) -> object:
+    return {"pointer": _pointer(value)} if isinstance(value, str) else value
+
+
+def _line(value: object) -> object:
+    if isinstance(value, str) and "\n" in value:
+        msg = "must not contain a line feed"
+        raise Refusal(msg)
+    return value
+
+
+def _media(value: object) -> object:
+    try:
+        return normalize_media_type(value)  # ty: ignore[invalid-argument-type]
+    except (TypeError, ValueError):
+        msg = "must be a media type"
+        raise Refusal(msg) from None
+
+
+def _seconds(value: object) -> float:
+    if isinstance(value, int | float) and not isinstance(value, bool) and isfinite(value) and value > 0:
+        return float(value)
+    msg = "must be positive finite seconds"
+    raise Refusal(msg)
+
+
+def _vary(value: object) -> object:
+    if value == "*":
+        msg = "must name a header, not '*'"
+        raise Refusal(msg)
+    return value
+
+
+def _distinct(what: str, *, fold: bool = False) -> AfterValidator:
+    """Refuse a list that repeats an item, compared by its JSON form, and by its lowercase form when it folds."""
+
+    def check(values: list[Any]) -> list[Any]:
+        seen: set[bytes] = set()
+        for index, item in enumerate(values):
+            plain = item.model_dump(by_alias=True) if isinstance(item, BaseModel) else item
+            if (known := canonical_bytes(plain.lower() if fold else plain)) in seen:
+                msg = f"repeats {what}"
+                raise Refusal(msg, at=f"[{index}]")
+            seen.add(known)
+        return values
+
+    return AfterValidator(check)
+
+
+def _record(record: Callable[..., object], **values: object) -> None:
+    try:
+        record(**values)
+    except ValueError as error:
+        raise Refusal(str(error)) from None
+
+
+def _conflict(message: str, at: str = "") -> Refusal:
+    return Refusal(message, at=at, code="E_CONFIG_CONFLICT")
+
+
+def _tagged(names: tuple[str, ...], present: str, absent: str, other: str | None = None) -> Discriminator:
+    """Tell the union member of a mapping by whether it holds one of the names; `other` is the tag of non-mappings."""
+    return Discriminator(
+        lambda value: (
+            (present if any(name in value for name in names) else absent) if isinstance(value, Mapping) else other
+        )
+    )
+
+
+Flag = Annotated[Any, valid(lambda value: type(value) is bool, "must be a boolean")]
+Yes = Annotated[Any, valid(lambda value: value is True, "must be true")]
+Text = Annotated[Any, valid(_encodable, "must be a UTF-8 string")]
+Nonempty = Annotated[Any, valid(lambda value: _encodable(value) and value, "must be a nonempty UTF-8 string")]
+Line = Annotated[Nonempty, AfterValidator(_line)]
+Visible = Annotated[
+    Any,
+    valid(
+        lambda value: isinstance(value, str) and value and all("!" <= char <= "~" for char in value),
+        "must be nonempty visible ASCII text",
+    ),
+]
+Prefix = Annotated[
+    Any,
+    valid(
+        lambda value: isinstance(value, str) and all("!" <= char <= "~" for char in value), "must be visible ASCII text"
+    ),
+]
+Header = Annotated[Any, valid(token, "must be a header name")]
+MaybeHeader = Annotated[Any, valid(lambda value: value is None or token(value), "must be a header name")]
+Subprotocol = Annotated[Any, valid(token, "must be a subprotocol token")]
+VaryName = Annotated[Any, AfterValidator(_vary), valid(token, "must be a header name")]
+Media = Annotated[Any, AfterValidator(_media)]
+Natural = Annotated[Any, valid(lambda value: type(value) is int and value >= 0, "must be an integer of at least 0")]
+Positive = Annotated[Any, valid(lambda value: type(value) is int and value > 0, "must be a positive integer")]
+Seconds = Annotated[Any, AfterValidator(_seconds)]
+Status = Annotated[
+    Any,
+    valid(lambda value: type(value) is int and 100 <= value <= 599, "must be a status from 100 to 599"),  # noqa: PLR2004
+]
+Pointer = Annotated[Any, AfterValidator(_pointer)]
+Value = Annotated[Any, AfterValidator(_literal)]
+
+
+class _Reference(Node):
+    pointer: Pointer
+    document: Text = OMITTED
+
+
+class _OperationNode(_Reference):
+    """An operation reference."""
+
+
+class _SchemaNode(_Reference):
+    """A schema reference."""
+
+
+Operation = Annotated[_OperationNode, BeforeValidator(_shorthand)]
+
+
+class _Recorded(Node):
+    """A selector or request target that the runtime record of the same form also checks."""
+
+    record: ClassVar[Callable[..., object]]
+
+    @_after
+    def _form(self) -> Self:
+        fields = self.record.__dataclass_fields__  # ty: ignore[unresolved-attribute]
+        _record(self.record, **{name: value for key, value in self if (name := _RENAMED.get(key, key)) in fields})
+        return self
+
+
+class _Body(_Recorded):
+    record: ClassVar = BodySelector
+    from_: Literal["body"] = Field(alias="from")
+    pointer: Text
+
+
+class _BoundHeader(_Recorded):
+    record: ClassVar = HeaderSelector
+    from_: Literal["header"] = Field(alias="from")
+    name: Text
+    occurrence: Literal["single", "all"] = "single"
+
+
+class _Header(_BoundHeader):
+    @_after
+    def _single(self) -> Self:
+        if self.occurrence == "all":
+            msg = "can be 'all' only in a binding value"
+            raise Refusal(msg, at=".occurrence")
+        return self
+
+
+class _Status(Node):
+    from_: Literal["status"] = Field(alias="from")
+
+
+Selector = Annotated[_Body | _Header | _Status, Field(discriminator="from_")]
+BoundSelector = Annotated[_Body | _BoundHeader | _Status, Field(discriminator="from_")]
+
+
+class _Parameter(_Recorded):
+    record: ClassVar = ParameterTarget
+    in_: Literal["path", "query", "header", "cookie"] = Field(alias="in")
+    name: Text
+
+
+class _Querystring(_Recorded):
+    record: ClassVar = QuerystringTarget
+    in_: Literal["querystring"] = Field(alias="in")
+    name: Text
+    pointer: Text
+
+
+class _BodyTarget(_Recorded):
+    record: ClassVar = BodyTarget
+    in_: Literal["body"] = Field(alias="in")
+    pointer: Text
+
+
+Target = Annotated[_Parameter | _Querystring | _BodyTarget, Field(discriminator="in_")]
+
+
+class _Literal(Node):
+    literal: Value
+
+
+class _Sourced(Node):
+    source: Literal["input", "initial", "previous"]
+    selector: BoundSelector
+
+
+Bound = Annotated[
+    Annotated[_Literal, Tag("bound-literal")] | Annotated[_Sourced, Tag("bound-source")],
+    _tagged(("literal",), "bound-literal", "bound-source"),
+]
+
+
+class _Binding(Node):
+    target: Target
+    value: Bound
+
+
+Bindings = Annotated[list[_Binding], Strict()]
+
+
+class _Missing(Node):
+    kind: Literal["missing"]
+
+
+class _Null(Node):
+    kind: Literal["null"]
+
+
+class _EndValue(Node):
+    kind: Literal["value"]
+    value: Value
+
+    @_after
+    def _not_null(self) -> Self:
+        if self.value is None:
+            msg = "is null; use kind 'null'"
+            raise Refusal(msg, at=".value")
+        return self
+
+
+End = Annotated[_Missing | _Null | _EndValue, Field(discriminator="kind")]
+Ends = Annotated[list[End], Strict(), Field(min_length=1), _distinct("an end condition")]
+Statuses = Annotated[list[Status], Strict(), Field(min_length=1), _distinct("a status")]
+States = Annotated[list[Value], Strict(), _distinct("a state")]
+RequiredStates = Annotated[States, Field(min_length=1)]
+
+
+class _Cursor(Node):
+    kind: Literal["cursor"]
+    read: Selector
+    write: Target
+    end: Ends
+    empty_string: Literal["value", "end"]
+
+    @_after
+    def _not_empty(self) -> Self:
+        for index, end in enumerate(self.end):
+            if isinstance(end, _EndValue) and end.value == "":  # noqa: PLC1901
+                msg = "ends at the empty string, which empty_string decides alone"
+                raise _conflict(msg, f".end[{index}]")
+        return self
+
+
+class _Step(Node):
+    literal: Positive = OMITTED
+    page_items_count: Yes = OMITTED
+
+    @_after
+    def _one(self) -> Self:
+        if len(self.model_fields_set) != 1:
+            msg = "needs exactly one of 'literal' and 'page_items_count'"
+            raise Refusal(msg)
+        return self
+
+
+class _Counted(Node):
+    kind: Literal["offset", "page"]
+    write: Target
+    first: Natural
+    step: _Step
+    has_more: Selector = OMITTED
+    total: Selector = OMITTED
+
+    @_after
+    def _one_end(self) -> Self:
+        if "has_more" in self.model_fields_set and "total" in self.model_fields_set:
+            msg = "needs has_more or total, not both"
+            raise _conflict(msg)
+        if not {"has_more", "total"} & self.model_fields_set:
+            msg = "needs has_more or total"
+            raise Refusal(msg)
+        return self
+
+
+class _NextUrl(Node):
+    kind: Literal["next_url"]
+    read: Selector
+    end: Ends
+    repeat_request_body: Flag = False
+
+
+class _Link(Node):
+    kind: Literal["link"]
+    header: Header
+    rel: Nonempty = "next"
+
+
+Continuation = Annotated[_Cursor | _Counted | _NextUrl | _Link, Field(discriminator="kind")]
+
+
+class _Pagination(Node):
+    kind: Literal["pagination"]
+    enabled: Flag = True
+    operation: Operation
+    items: _Body
+    item_schema: _SchemaNode
+    continuation: Continuation
+    bindings: Bindings = NONE
+
+
+class _RemoteCancel(Node):
+    operation: Operation
+    bindings: Bindings = NONE
+
+
+class _Interval(Node):
+    seconds: Seconds = 1.0
+    retry_after_header: MaybeHeader = None
+
+
+class _Immediate(Node):
+    statuses: Statuses
+    selector: Selector
+    schema_: _SchemaNode = Field(alias="schema")
+
+
+class _Inline(Node):
+    kind: Literal["inline"]
+    selector: Selector
+    schema_: _SchemaNode = Field(alias="schema")
+
+
+class _OperationResult(Node):
+    kind: Literal["operation"]
+    operation: Operation
+    bindings: Bindings = NONE
+
+
+class _NoResult(Node):
+    kind: Literal["none"]
+
+
+Result = Annotated[_Inline | _OperationResult | _NoResult, Field(discriminator="kind")]
+
+
+class _Polling(Node):
+    kind: Literal["polling"]
+    enabled: Flag = True
+    create: Operation
+    accepted_statuses: Statuses
+    poll: Operation
+    bindings: Bindings
+    state: Selector
+    pending: RequiredStates
+    succeeded: RequiredStates
+    failed: States = NONE
+    cancelled: States = NONE
+    result: Result
+    interval: _Interval = _Interval()
+    remote_cancel: _RemoteCancel = OMITTED
+    immediate_result: _Immediate = OMITTED
+    expires_at: Selector = OMITTED
+
+    @_after
+    def _disjoint(self) -> Self:
+        """Refuse state sets that share a value, and immediate statuses the helper accepts."""
+        owners: dict[bytes, str] = {}
+        for name in _STATE_SETS:
+            for index, state in enumerate(getattr(self, name)):
+                if (other := owners.setdefault(canonical_bytes(state), name)) != name:
+                    msg = f"is a state that the {other} states also list"
+                    raise _conflict(msg, f".{name}[{index}]")
+        if self.immediate_result is not OMITTED and (
+            shared := sorted(set(self.immediate_result.statuses) & set(self.accepted_statuses))
+        ):
+            msg = f"lists the accepted statuses {shared}"
+            raise _conflict(msg, ".immediate_result.statuses")
+        return self
+
+
+class _UploadCreate(Node):
+    operation: Operation
+    size: Target = OMITTED
+    session_url: Selector = OMITTED
+    expires_at: Selector = OMITTED
+
+
+class _UploadProbe(Node):
+    operation: Operation
+    bindings: Bindings = NONE
+    remote_offset: Selector
+
+
+class _Checksum(Node):
+    target: Target
+    algorithm: Literal["md5", "sha1", "sha256", "sha512"]
+    encoding: Literal["base64", "hex"] = "base64"
+    algorithm_prefix: Flag = False
+
+
+class _UploadAppend(Node):
+    operation: Operation
+    bindings: Bindings = NONE
+    offset: Target
+    length: Target = OMITTED
+    checksum: _Checksum = OMITTED
+
+
+class _ByLength(Node):
+    kind: Literal["length"]
+
+
+class _ByOperation(Node):
+    kind: Literal["operation"]
+    operation: Operation
+    bindings: Bindings = NONE
+    result_schema: _SchemaNode
+
+
+class _Upload(Node):
+    kind: Literal["resumable_upload"]
+    enabled: Flag = True
+    profile: Literal["offset"]
+    create: _UploadCreate
+    probe: _UploadProbe
+    append: _UploadAppend
+    partial_commit: Literal["allowed", "forbidden"]
+    completion: Annotated[_ByLength | _ByOperation, Field(discriminator="kind")]
+    abort: _RemoteCancel = OMITTED
+
+
+class _Eof(Node):
+    kind: Literal["eof"]
+
+
+class _Sentinel(Node):
+    kind: Literal["sentinel"]
+    value: Nonempty
+
+
+class _LineSentinel(Node):
+    kind: Literal["sentinel"]
+    value: Line
+
+
+class _EventType(Node):
+    kind: Literal["event_type"]
+    value: Nonempty
+
+
+class _BodyDiscriminator(Node):
+    from_: Literal["body"] = Field(alias="from")
+    pointer: Pointer
+
+
+class _EventTypeDiscriminator(Node):
+    from_: Literal["event_type"] = Field(alias="from")
+
+
+Schemas = dict[Nonempty, _SchemaNode]
+
+
+class _EventMapping(Node):
+    discriminator: _BodyDiscriminator
+    mapping: Annotated[Schemas, Field(min_length=1)]
+
+
+class _SseEventMapping(_EventMapping):
+    discriminator: Annotated[_EventTypeDiscriminator | _BodyDiscriminator, Field(discriminator="from_")]
+
+
+EventSchema = Annotated[
+    Annotated[_EventMapping, Tag("event-mapping")] | Annotated[_SchemaNode, Tag("event-schema")],
+    _tagged(("discriminator", "mapping"), "event-mapping", "event-schema", "event-schema"),
+]
+SseEventSchema = Annotated[
+    Annotated[_SseEventMapping, Tag("event-mapping")] | Annotated[_SchemaNode, Tag("event-schema")],
+    _tagged(("discriminator", "mapping"), "event-mapping", "event-schema", "event-schema"),
+]
+
+
+class _ResumeOff(Node):
+    enabled: Annotated[Any, valid(lambda value: value is False, "must be a boolean")] = False
+
+
+class _ResumeOn(Node):
+    enabled: Literal[True]
+    write: Target
+    reopen_operation: Operation
+    delivery: Literal["at_least_once"]
+    bindings: Bindings = NONE
+    reconnect_on: Annotated[
+        list[Literal["transport_interruption", "incomplete_eof"]],
+        Strict(),
+        Field(min_length=1),
+        _distinct("a reconnect reason"),
+    ] = ("transport_interruption",)  # ty: ignore[invalid-assignment]
+    expires_at: Selector = OMITTED
+
+
+class _ResumeEventId(_ResumeOn):
+    cursor: Literal["event_id"]
+
+
+class _ResumeCursor(_ResumeOn):
+    cursor: Selector
+    missing: Literal["inherit", "error"]
+    null: Literal["clear", "error"]
+
+
+def _resume_tag(*, ids: bool) -> Discriminator:
+    def tag(value: object) -> str:
+        if not isinstance(value, Mapping) or value.get("enabled", False) is not True:
+            return "resume-off"
+        return "resume-id" if ids and value.get("cursor") == "event_id" else "resume-cursor"
+
+    return Discriminator(tag)
+
+
+Resume = Annotated[
+    Annotated[_ResumeOff, Tag("resume-off")] | Annotated[_ResumeCursor, Tag("resume-cursor")], _resume_tag(ids=False)
+]
+SseResume = Annotated[
+    Annotated[_ResumeOff, Tag("resume-off")]
+    | Annotated[_ResumeCursor, Tag("resume-cursor")]
+    | Annotated[_ResumeEventId, Tag("resume-id")],
+    _resume_tag(ids=True),
+]
+
+
+class _Sse(Node):
+    kind: Literal["sse"]
+    enabled: Flag = True
+    operation: Operation
+    media: Media
+    event_schema: SseEventSchema
+    completion: Annotated[_Eof | _Sentinel | _EventType, Field(discriminator="kind")]
+    unknown: Literal["error", "raw"] = "error"
+    error_events: Schemas = Field(default_factory=dict)
+    resume: SseResume = _ResumeOff()
+
+    @_after
+    def _events(self) -> Self:
+        """Refuse raw and error events without a discriminator, and an error event that is also an event."""
+        mapping = self.event_schema.mapping if isinstance(self.event_schema, _EventMapping) else None
+        if self.unknown == "raw" and mapping is None:
+            msg = "can be 'raw' only with a discriminator"
+            raise _conflict(msg, ".unknown")
+        if self.error_events and mapping is None:
+            msg = "need a discriminator"
+            raise _conflict(msg, ".error_events")
+        if mapping and (shared := next((key for key in self.error_events if key in mapping), None)):
+            msg = "is also an event of the event_schema mapping"
+            raise _conflict(msg, f".error_events[{shared!r}]")
+        return self
+
+
+class _Ndjson(_Sse):
+    kind: Literal["ndjson"]
+    event_schema: EventSchema
+    completion: Annotated[_Eof | _LineSentinel, Field(discriminator="kind")]
+    final_line: Literal["require_newline", "allow_eof"]
+    resume: Resume = _ResumeOff()
+
+
+class _Message(Node):
+    codec: Literal["json", "utf8", "bytes"]
+    frame: Literal["text", "binary"] = OMITTED
+    schema_: _SchemaNode = Field(alias="schema", default=OMITTED)
+
+    @_after
+    def _framed(self) -> Self:
+        """Give the message the frame its codec defaults to, and refuse a schema beyond JSON and a mismatched frame."""
+        if (self.codec == "json") != ("schema_" in self.model_fields_set):
+            if self.codec == "json":
+                msg = "needs 'schema' for JSON messages"
+                raise Refusal(msg)
+            msg = "applies only to JSON messages"
+            raise _conflict(msg, ".schema")
+        fixed = _FRAMES[self.codec]
+        if "frame" not in self.model_fields_set:
+            self.__dict__["frame"] = fixed or "text"
+        elif fixed is not None and self.frame != fixed:
+            msg = f"must be {fixed!r} for {self.codec} messages"
+            raise _conflict(msg, ".frame")
+        return self
+
+
+class _WebSocket(Node):
+    kind: Literal["websocket"]
+    enabled: Flag = True
+    operation: Operation
+    subprotocols: Annotated[list[Subprotocol], Strict(), _distinct("a subprotocol")] = NONE
+    send: _Message
+    receive: _Message
+
+
+class _Cache(Node):
+    kind: Literal["cache"]
+    enabled: Flag = True
+    operation: Operation
+    validator: Literal["etag", "last_modified", "both"]
+    authenticated: Flag
+    statuses: Statuses = (200,)  # ty: ignore[invalid-assignment]
+    vary_allowlist: Annotated[list[VaryName], Strict(), _distinct("a header name", fold=True)] = NONE
+
+
+class _Standard(Node):
+    kind: Literal["standard_webhooks"]
+
+
+class _Stripe(Node):
+    kind: Literal["stripe_style"]
+    header: Header = "Stripe-Signature"
+
+
+class _BodyHmac(Node):
+    kind: Literal["body_hmac"]
+    header: Header
+    encoding: Literal["hex", "base64"] = "hex"
+    prefix: Prefix = ""
+    algorithm: Literal["hmac-sha256", "hmac-sha512"] = "hmac-sha256"
+
+
+class _PublicKey(Node):
+    kind: Literal["ed25519", "rsa-pss-sha256"]
+    header: Header
+    encoding: Literal["hex", "base64", "base64url"] = "hex"
+    prefix: Prefix = ""
+
+
+class _Adapter(Node):
+    kind: Literal["adapter"]
+    timestamp: Literal["required", "none"]
+    delivery_id: Literal["required", "none"]
+
+
+class _Unsigned(Node):
+    kind: Literal["none"]
+
+
+class _Webhook(Node):
+    kind: Literal["webhook"]
+    enabled: Flag = True
+    event_schema: EventSchema
+    signature: Annotated[
+        _Standard | _Stripe | _BodyHmac | _PublicKey | _Adapter | _Unsigned, Field(discriminator="kind")
+    ]
+
+
+_HELPERS: Final = TypeAdapter(
+    Annotated[
+        _Pagination | _Polling | _Sse | _Ndjson | _WebSocket | _Webhook | _Cache | _Upload, Field(discriminator="kind")
+    ]
+)
+
+
+def _tree(value: object, at: str, schemas: list[tuple[str, SchemaRef]]) -> object:
+    """Spell a validated helper as its normalized settings, collecting the schema references it holds."""
+    match value:
+        case _OperationNode():
+            return OperationRef(pointer=value.pointer, document=None if value.document is OMITTED else value.document)
+        case _SchemaNode():
+            schemas.append((
+                at,
+                ref := SchemaRef(pointer=value.pointer, document=None if value.document is OMITTED else value.document),
+            ))
+            return ref
+        case BaseModel():
+            return {
+                key: _tree(item, f"{at}.{key}", schemas)
+                for name, field in type(value).model_fields.items()
+                if (item := getattr(value, name)) is not OMITTED and (key := field.alias or name)
+            }
+        case list() | tuple():
+            return type(value)(_tree(item, f"{at}[{index}]", schemas) for index, item in enumerate(value))
+        case dict():
+            return {key: _tree(item, f"{at}[{key!r}]", schemas) for key, item in value.items()}
+    return value
 
 
 def validate(
@@ -136,736 +824,50 @@ def validate(
 
     Helper names are checked as identifiers of the target Python version.
     """
-    validator = _Validator(target_python_version)
-    helpers = validator.helpers(tree, _ROOT)
-    return helpers, validator.problems
-
-
-def _choices(values: tuple[str, ...]) -> str:
-    quoted = [repr(value) for value in values]
-    return quoted[0] if len(quoted) == 1 else f"{', '.join(quoted[:-1])} or {quoted[-1]}"
+    names: list[tuple[str, str]] = []
+    helpers: list[Helper] = []
+    problems: list[Diagnostic] = []
+    for name, body in tree.items():
+        here = f"protocols[{name!r}]"
+        if (problem := helper_name_problem(name, target_python_version)) is not None:
+            problems.append(_problem("E_CONFIG_VALUE", here, problem))
+        elif other := next(
+            (other for key, other in names if _collides(folded(name, target_python_version), key)), None
+        ):
+            problems.append(_problem("E_NAME_COLLISION", here, f"The helper names {other!r} and {name!r} collide"))
+        else:
+            names.append((folded(name, target_python_version), name))
+        if isinstance(body, Mapping) and body.get("kind") == "resumable_upload" and body.get("profile") == "parts":
+            message = f"The parts profile of the resumable_upload helper {name!r} is not supported yet"
+            problems.append(_problem("E_CLIENT_UNSUPPORTED", f"{here}.profile", message, stage="target"))
+            continue
+        try:
+            model = _HELPERS.validate_python(body)
+        except ValidationError as error:
+            problems.extend(diagnostics(error, body, here))
+            continue
+        schemas: list[tuple[str, SchemaRef]] = []
+        settings: Tree = _tree(model, here, schemas)  # ty: ignore[invalid-assignment]
+        helpers.append(
+            Helper(
+                name=name,
+                kind=model.kind,
+                enabled=model.enabled,
+                at=here,
+                tree=settings,
+                links=tuple(_links(model.kind, settings, here)),
+                schemas=tuple(schemas),
+            )
+        )
+    return tuple(helpers), problems
 
 
 def _collides(name: str, other: str) -> bool:
     return name == other or name.startswith(f"{other}.") or other.startswith(f"{name}.")
 
 
-class _Validator:  # noqa: PLR0904
-    """Validate helper configuration trees, collecting problems and the schema references of the current helper."""
-
-    def __init__(self, target_python_version: PythonVersion) -> None:
-        self.target_python_version = target_python_version
-        self.problems: list[Diagnostic] = []
-        self.schemas: list[tuple[str, SchemaRef]] = []
-
-    def value(self, at: str, message: str) -> _Invalid:
-        self.problems.append(_diagnostic("E_CONFIG_VALUE", at, message))
-        return INVALID
-
-    def conflict(self, at: str, message: str) -> None:
-        self.problems.append(_diagnostic("E_CONFIG_CONFLICT", at, message))
-
-    def record(self, value: object, at: str, spec: Spec, noun: str) -> Tree | _Invalid:
-        """Convert a mapping by the spec, refusing unknown and missing keys; any invalid member invalidates it."""
-        if not isinstance(value, Mapping):
-            return self.value(at, f"{at} must be {noun}")
-        for key in value:
-            if key not in spec:
-                self.problems.append(_diagnostic("E_CONFIG_UNKNOWN", f"{at}.{key}", f"{at} has no key {key!r}"))
-        result: Tree = {}
-        for key, (convert, default) in spec.items():
-            if key in value:
-                result[key] = convert(value[key], f"{at}.{key}")
-            elif default is REQUIRED:
-                result[key] = self.value(f"{at}.{key}", f"{at} needs {key!r}")
-            elif default is not OMITTED:
-                result[key] = default
-        known = all(key in spec for key in value)
-        return result if known and all(item is not INVALID for item in result.values()) else INVALID
-
-    def tagged(self, value: object, at: str, key: str, variants: Mapping[str, Spec], noun: str) -> Tree | _Invalid:
-        """Convert a mapping whose tag key selects the spec of its other keys."""
-        if not isinstance(value, Mapping):
-            return self.value(at, f"{at} must be {noun}")
-        if key not in value:
-            return self.value(f"{at}.{key}", f"{at} needs {key!r}")
-        if not isinstance(tag := value[key], str) or tag not in variants:
-            return self.value(f"{at}.{key}", f"{at}.{key} must be {_choices(tuple(variants))}")
-        return self.record(value, at, {key: (_keep, REQUIRED), **variants[tag]}, noun)
-
-    def items(self, value: object, at: str, convert: Converter, *, nonempty: bool = False) -> object:
-        if not isinstance(value, list) or (nonempty and not value):
-            return self.value(at, f"{at} must be a {'nonempty ' if nonempty else ''}list")
-        result = [convert(item, f"{at}[{index}]") for index, item in enumerate(value)]
-        return INVALID if any(item is INVALID for item in result) else result
-
-    def distinct(self, at: str, values: object, what: str) -> object:
-        if not isinstance(values, list):
-            return values
-        seen: set[bytes] = set()
-        for index, item in enumerate(values):
-            if (key := canonical_bytes(item)) in seen:
-                return self.value(f"{at}[{index}]", f"{at}[{index}] repeats {what}")
-            seen.add(key)
-        return values
-
-    def boolean(self, value: object, at: str) -> object:
-        return value if type(value) is bool else self.value(at, f"{at} must be a boolean")
-
-    def text(self, value: object, at: str) -> object:
-        valid = isinstance(value, str) and _encodable(value)
-        return value if valid else self.value(at, f"{at} must be a UTF-8 string")
-
-    def nonempty(self, value: object, at: str) -> object:
-        valid = isinstance(value, str) and value and _encodable(value)
-        return value if valid else self.value(at, f"{at} must be a nonempty UTF-8 string")
-
-    def line(self, value: object, at: str) -> object:
-        if isinstance(value, str) and "\n" in value:
-            return self.value(at, f"{at} must not contain a line feed")
-        return self.nonempty(value, at)
-
-    def header(self, value: object, at: str) -> object:
-        return value if token(value) else self.value(at, f"{at} must be a header name")
-
-    def optional_header(self, value: object, at: str) -> object:
-        return None if value is None else self.header(value, at)
-
-    def media(self, value: object, at: str) -> object:
-        if isinstance(value, str):
-            try:
-                return normalize_media_type(value)
-            except ValueError:
-                pass
-        return self.value(at, f"{at} must be a media type")
-
-    def natural(self, value: object, at: str) -> object:
-        valid = type(value) is int and value >= 0
-        return value if valid else self.value(at, f"{at} must be an integer of at least 0")
-
-    def positive(self, value: object, at: str) -> object:
-        return value if type(value) is int and value > 0 else self.value(at, f"{at} must be a positive integer")
-
-    def true(self, value: object, at: str) -> object:
-        return value if value is True else self.value(at, f"{at} must be true")
-
-    def seconds(self, value: object, at: str) -> object:
-        if isinstance(value, int | float) and not isinstance(value, bool) and isfinite(value) and value > 0:
-            return float(value)
-        return self.value(at, f"{at} must be positive finite seconds")
-
-    def literal(self, value: object, at: str) -> object:
-        return value if (problem := _literal_problem(value)) is None else self.value(at, f"{at} {problem}")
-
-    def pointer(self, value: object, at: str) -> object:
-        from datamodel_code_generator._runtime.protocols.records import BodySelector  # noqa: PLC0415
-
-        try:
-            BodySelector(pointer=value)  # ty: ignore[invalid-argument-type]
-        except (TypeError, ValueError):
-            return self.value(at, f"{at} must be an RFC 6901 pointer")
-        return value if self.text(value, at) is not INVALID else INVALID
-
-    def choice(self, *choices: str) -> Converter:
-        def convert(value: object, at: str) -> object:
-            valid = isinstance(value, str) and value in choices
-            return value if valid else self.value(at, f"{at} must be {_choices(choices)}")
-
-        return convert
-
-    def operation(self, value: object, at: str) -> object:
-        if isinstance(value, str):
-            return INVALID if self.pointer(value, at) is INVALID else OperationRef(pointer=value)
-        spec = {"pointer": (self.pointer, REQUIRED), "document": (self.text, OMITTED)}
-        reference = self.record(value, at, spec, "an operation reference")
-        return INVALID if reference is INVALID else OperationRef(**reference)
-
-    def schema(self, value: object, at: str) -> object:
-        spec = {"pointer": (self.pointer, REQUIRED), "document": (self.text, OMITTED)}
-        if (reference := self.record(value, at, spec, "a schema reference")) is INVALID:
-            return INVALID
-        self.schemas.append((at, schema := SchemaRef(**reference)))
-        return schema
-
-    def selector(self, value: object, at: str, *, every: bool = False, body: bool = False) -> object:
-        """Convert a selector, which may select every occurrence of a header only in a binding value."""
-        from datamodel_code_generator._runtime.protocols.records import BodySelector, HeaderSelector  # noqa: PLC0415
-
-        variants: dict[str, Spec] = {"body": {"pointer": (self.text, REQUIRED)}}
-        if not body:
-            variants["header"] = {
-                "name": (self.text, REQUIRED),
-                "occurrence": (self.choice("single", "all"), "single"),
-            }
-            variants["status"] = {}
-        if (selected := self.tagged(value, at, "from", variants, "a selector")) is INVALID:
-            return INVALID
-        if selected.get("occurrence") == "all" and not every:
-            return self.value(f"{at}.occurrence", f"{at}.occurrence can be 'all' only in a binding value")
-        try:
-            if selected["from"] == "body":
-                BodySelector(pointer=selected["pointer"])
-            elif selected["from"] == "header":
-                HeaderSelector(name=selected["name"], occurrence=selected["occurrence"])
-        except ValueError as error:
-            return self.value(at, f"{at}: {error}")
-        return selected
-
-    def target(self, value: object, at: str) -> object:
-        from datamodel_code_generator._runtime.protocols.records import (  # noqa: PLC0415
-            BodyTarget,
-            ParameterTarget,
-            QuerystringTarget,
-        )
-
-        named: Spec = {"name": (self.text, REQUIRED)}
-        selected = self.tagged(
-            value,
-            at,
-            "in",
-            {
-                "path": named,
-                "query": named,
-                "header": named,
-                "cookie": named,
-                "querystring": {"name": (self.text, REQUIRED), "pointer": (self.text, REQUIRED)},
-                "body": {"pointer": (self.text, REQUIRED)},
-            },
-            "a request target",
-        )
-        if selected is INVALID:
-            return INVALID
-        try:
-            match selected["in"]:
-                case "querystring":
-                    QuerystringTarget(name=selected["name"], pointer=selected["pointer"])
-                case "body":
-                    BodyTarget(pointer=selected["pointer"])
-                case _:
-                    ParameterTarget(location=selected["in"], name=selected["name"])
-        except ValueError as error:
-            return self.value(at, f"{at}: {error}")
-        return selected
-
-    def bindings(self, value: object, at: str) -> object:
-        return self.items(value, at, self.binding)
-
-    def binding(self, value: object, at: str) -> object:
-        return self.record(value, at, {"target": (self.target, REQUIRED), "value": (self.bound, REQUIRED)}, "a binding")
-
-    def bound(self, value: object, at: str) -> object:
-        if isinstance(value, Mapping) and "literal" in value:
-            return self.record(value, at, {"literal": (self.literal, REQUIRED)}, "a binding value")
-        spec: Spec = {
-            "source": (self.choice(*_SOURCES), REQUIRED),
-            "selector": (partial(self.selector, every=True), REQUIRED),
-        }
-        return self.record(value, at, spec, "a binding value")
-
-    def end(self, value: object, at: str) -> object:
-        condition = self.tagged(
-            value, at, "kind", {"missing": {}, "null": {}, "value": {"value": (self.literal, REQUIRED)}}, "an end"
-        )
-        if condition is not INVALID and condition["kind"] == "value" and condition["value"] is None:
-            return self.value(f"{at}.value", f"{at}.value is null; use kind 'null'")
-        return condition
-
-    def ends(self, value: object, at: str) -> object:
-        return self.distinct(at, self.items(value, at, self.end, nonempty=True), "an end condition")
-
-    def statuses(self, value: object, at: str) -> object:
-        def status(item: object, where: str) -> object:
-            valid = type(item) is int and 100 <= item <= 599  # noqa: PLR2004
-            return item if valid else self.value(where, f"{where} must be a status from 100 to 599")
-
-        return self.distinct(at, self.items(value, at, status, nonempty=True), "a status")
-
-    def states(self, *, nonempty: bool) -> Converter:
-        def convert(value: object, at: str) -> object:
-            return self.distinct(at, self.items(value, at, self.literal, nonempty=nonempty), "a state")
-
-        return convert
-
-    def helpers(self, value: Mapping[str, object], at: str) -> tuple[Helper, ...]:
-        """Validate each helper in declaration order, refusing invalid and colliding names."""
-        names: list[tuple[str, str]] = []
-        helpers: list[Helper] = []
-        for name, body in value.items():
-            here = f"{at}[{name!r}]"
-            target = self.target_python_version
-            if (problem := helper_name_problem(name, target)) is not None:
-                self.value(here, problem)
-            elif other := next((other for key, other in names if _collides(folded(name, target), key)), None):
-                message = f"The helper names {other!r} and {name!r} collide"
-                self.problems.append(_diagnostic("E_NAME_COLLISION", here, message))
-            else:
-                names.append((folded(name, target), name))
-            if (helper := self.helper(name, body, here)) is not None:
-                helpers.append(helper)
-        return tuple(helpers)
-
-    def helper(self, name: str, value: object, at: str) -> Helper | None:
-        """Validate one helper and its kind-specific settings."""
-        if not isinstance(value, Mapping):
-            self.value(at, f"{at} must be a helper definition")
-            return None
-        if "kind" not in value:
-            self.value(f"{at}.kind", f"{at} needs 'kind'")
-            return None
-        if not isinstance(kind := value["kind"], str) or kind not in KINDS:
-            self.value(f"{at}.kind", f"{at}.kind must be {_choices(KINDS)}")
-            return None
-        self.schemas = []
-        match kind:
-            case "pagination":
-                tree = self.pagination(value, at)
-            case "polling":
-                tree = self.polling(value, at)
-            case "webhook":
-                tree = self.webhook(value, at)
-            case "websocket":
-                tree = self.websocket(value, at)
-            case "cache":
-                tree = self.cache(value, at)
-            case "resumable_upload":
-                tree = self.upload(value, at, name)
-            case _:
-                tree = self.stream(value, at, sse=kind == "sse")
-        if tree is INVALID:
-            return None
-        return Helper(
-            name=name,
-            kind=kind,
-            enabled=tree["enabled"],
-            at=at,
-            tree=tree,
-            links=tuple(_links(kind, tree, at)),
-            schemas=tuple(self.schemas),
-        )
-
-    def pagination(self, value: object, at: str) -> Tree | _Invalid:
-        return self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "operation": (self.operation, REQUIRED),
-                "items": (partial(self.selector, body=True), REQUIRED),
-                "item_schema": (self.schema, REQUIRED),
-                "continuation": (self.continuation, REQUIRED),
-                "bindings": (self.bindings, ()),
-            },
-            "a helper definition",
-        )
-
-    def continuation(self, value: object, at: str) -> object:
-        """Convert a continuation, refusing an end at the empty string and counts without exactly one end evidence."""
-        count: Spec = {
-            "write": (self.target, REQUIRED),
-            "first": (self.natural, REQUIRED),
-            "step": (self.step, REQUIRED),
-            "has_more": (self.selector, OMITTED),
-            "total": (self.selector, OMITTED),
-        }
-        variants: dict[str, Spec] = {
-            "cursor": {
-                "read": (self.selector, REQUIRED),
-                "write": (self.target, REQUIRED),
-                "end": (self.ends, REQUIRED),
-                "empty_string": (self.choice("value", "end"), REQUIRED),
-            },
-            "offset": count,
-            "page": count,
-            "next_url": {
-                "read": (self.selector, REQUIRED),
-                "end": (self.ends, REQUIRED),
-                "repeat_request_body": (self.boolean, False),
-            },
-            "link": {"header": (self.header, REQUIRED), "rel": (self.nonempty, "next")},
-        }
-        if (selected := self.tagged(value, at, "kind", variants, "a continuation")) is INVALID:
-            return INVALID
-        if selected["kind"] == "cursor" and _EMPTY_STRING in selected["end"]:
-            where = f"{at}.end[{selected['end'].index(_EMPTY_STRING)}]"
-            self.conflict(where, f"{where} ends at the empty string, which empty_string decides alone")
-            return INVALID
-        if selected["kind"] in {"offset", "page"} and ("has_more" in selected) == ("total" in selected):
-            if "total" in selected:
-                self.conflict(at, f"{at} needs has_more or total, not both")
-                return INVALID
-            return self.value(at, f"{at} needs has_more or total")
-        return selected
-
-    def step(self, value: object, at: str) -> object:
-        spec: Spec = {"literal": (self.positive, OMITTED), "page_items_count": (self.true, OMITTED)}
-        if (step := self.record(value, at, spec, "a step")) is not INVALID and len(step) != 1:
-            return self.value(at, f"{at} needs exactly one of 'literal' and 'page_items_count'")
-        return step
-
-    def polling(self, value: object, at: str) -> Tree | _Invalid:
-        """Convert a polling helper, refusing state sets that share a value and immediate statuses it accepts."""
-        polling = self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "create": (self.operation, REQUIRED),
-                "accepted_statuses": (self.statuses, REQUIRED),
-                "poll": (self.operation, REQUIRED),
-                "bindings": (self.bindings, REQUIRED),
-                "state": (self.selector, REQUIRED),
-                "pending": (self.states(nonempty=True), REQUIRED),
-                "succeeded": (self.states(nonempty=True), REQUIRED),
-                "failed": (self.states(nonempty=False), ()),
-                "cancelled": (self.states(nonempty=False), ()),
-                "result": (self.result, REQUIRED),
-                "interval": (self.interval, {"seconds": 1.0, "retry_after_header": None}),
-                "remote_cancel": (self.remote_cancel, OMITTED),
-                "immediate_result": (self.immediate, OMITTED),
-                "expires_at": (self.selector, OMITTED),
-            },
-            "a helper definition",
-        )
-        if polling is INVALID:
-            return INVALID
-        owners: dict[bytes, str] = {}
-        for name in _STATE_SETS:
-            for index, state in enumerate(polling[name]):
-                if (other := owners.setdefault(canonical_bytes(state), name)) != name:
-                    where = f"{at}.{name}[{index}]"
-                    self.conflict(where, f"{where} is a state {at}.{other} also lists")
-                    return INVALID
-        if shared := sorted(
-            set(polling.get("immediate_result", {}).get("statuses", ())) & set(polling["accepted_statuses"])
-        ):
-            where = f"{at}.immediate_result.statuses"
-            self.conflict(where, f"{where} lists the accepted statuses {shared}")
-            return INVALID
-        return polling
-
-    def result(self, value: object, at: str) -> object:
-        variants: dict[str, Spec] = {
-            "inline": {"selector": (self.selector, REQUIRED), "schema": (self.schema, REQUIRED)},
-            "operation": {"operation": (self.operation, REQUIRED), "bindings": (self.bindings, ())},
-            "none": {},
-        }
-        return self.tagged(value, at, "kind", variants, "a result")
-
-    def interval(self, value: object, at: str) -> object:
-        spec: Spec = {"seconds": (self.seconds, 1.0), "retry_after_header": (self.optional_header, None)}
-        return self.record(value, at, spec, "an interval")
-
-    def remote_cancel(self, value: object, at: str) -> object:
-        spec: Spec = {"operation": (self.operation, REQUIRED), "bindings": (self.bindings, ())}
-        return self.record(value, at, spec, "a remote cancel")
-
-    def immediate(self, value: object, at: str) -> object:
-        spec: Spec = {
-            "statuses": (self.statuses, REQUIRED),
-            "selector": (self.selector, REQUIRED),
-            "schema": (self.schema, REQUIRED),
-        }
-        return self.record(value, at, spec, "an immediate result")
-
-    def upload(self, value: Mapping[object, object], at: str, name: str) -> Tree | _Invalid:
-        """Convert a resumable upload helper of the offset profile; the parts profile is not supported yet."""
-        if value.get("profile") == "parts":
-            message = f"The parts profile of the resumable_upload helper {name!r} is not supported yet"
-            self.problems.append(_unsupported(f"{at}.profile", message))
-            return INVALID
-        return self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "profile": (self.choice("offset"), REQUIRED),
-                "create": (self.upload_create, REQUIRED),
-                "probe": (self.upload_probe, REQUIRED),
-                "append": (self.upload_append, REQUIRED),
-                "partial_commit": (self.choice("allowed", "forbidden"), REQUIRED),
-                "completion": (self.upload_completion, REQUIRED),
-                "abort": (self.remote_cancel, OMITTED),
-            },
-            "a helper definition",
-        )
-
-    def upload_create(self, value: object, at: str) -> object:
-        spec: Spec = {
-            "operation": (self.operation, REQUIRED),
-            "size": (self.target, OMITTED),
-            "session_url": (self.selector, OMITTED),
-            "expires_at": (self.selector, OMITTED),
-        }
-        return self.record(value, at, spec, "an upload create")
-
-    def upload_probe(self, value: object, at: str) -> object:
-        spec: Spec = {
-            "operation": (self.operation, REQUIRED),
-            "bindings": (self.bindings, ()),
-            "remote_offset": (self.selector, REQUIRED),
-        }
-        return self.record(value, at, spec, "an upload probe")
-
-    def upload_append(self, value: object, at: str) -> object:
-        spec: Spec = {
-            "operation": (self.operation, REQUIRED),
-            "bindings": (self.bindings, ()),
-            "offset": (self.target, REQUIRED),
-            "length": (self.target, OMITTED),
-            "checksum": (self.upload_checksum, OMITTED),
-        }
-        return self.record(value, at, spec, "an upload append")
-
-    def upload_checksum(self, value: object, at: str) -> object:
-        spec: Spec = {
-            "target": (self.target, REQUIRED),
-            "algorithm": (self.choice("md5", "sha1", "sha256", "sha512"), REQUIRED),
-            "encoding": (self.choice("base64", "hex"), "base64"),
-            "algorithm_prefix": (self.boolean, False),
-        }
-        return self.record(value, at, spec, "an upload checksum")
-
-    def upload_completion(self, value: object, at: str) -> object:
-        variants: dict[str, Spec] = {
-            "length": {},
-            "operation": {
-                "operation": (self.operation, REQUIRED),
-                "bindings": (self.bindings, ()),
-                "result_schema": (self.schema, REQUIRED),
-            },
-        }
-        return self.tagged(value, at, "kind", variants, "a completion")
-
-    def stream(self, value: object, at: str, *, sse: bool) -> Tree | _Invalid:
-        """Convert an SSE or NDJSON helper, refusing raw and error events without a discriminator."""
-        final: Spec = {} if sse else {"final_line": (self.choice("require_newline", "allow_eof"), REQUIRED)}
-        stream = self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "operation": (self.operation, REQUIRED),
-                "media": (self.media, REQUIRED),
-                "event_schema": (partial(self.event_schema, sse=sse), REQUIRED),
-                "completion": (partial(self.completion, sse=sse), REQUIRED),
-                **final,
-                "unknown": (self.choice("error", "raw"), "error"),
-                "error_events": (self.event_schemas, {}),
-                "resume": (partial(self.resume, sse=sse), {"enabled": False}),
-            },
-            "a helper definition",
-        )
-        if stream is INVALID:
-            return INVALID
-        mapping = stream["event_schema"]["mapping"] if isinstance(stream["event_schema"], dict) else None
-        if stream["unknown"] == "raw" and mapping is None:
-            self.conflict(f"{at}.unknown", f"{at}.unknown can be 'raw' only with a discriminator")
-            return INVALID
-        if not (events := stream["error_events"]):
-            return stream
-        if mapping is None:
-            self.conflict(f"{at}.error_events", f"{at}.error_events need a discriminator")
-            return INVALID
-        if shared := next((key for key in events if key in mapping), None):
-            where = f"{at}.error_events[{shared!r}]"
-            self.conflict(where, f"{where} is also an event of {at}.event_schema.mapping")
-            return INVALID
-        return stream
-
-    def event_schema(self, value: object, at: str, *, sse: bool) -> object:
-        if isinstance(value, Mapping) and ("discriminator" in value or "mapping" in value):
-            spec: Spec = {
-                "discriminator": (partial(self.discriminator, sse=sse), REQUIRED),
-                "mapping": (partial(self.event_schemas, nonempty=True), REQUIRED),
-            }
-            return self.record(value, at, spec, "an event schema")
-        return self.schema(value, at)
-
-    def discriminator(self, value: object, at: str, *, sse: bool) -> object:
-        variants: dict[str, Spec] = {"event_type": {}} if sse else {}
-        variants["body"] = {"pointer": (self.pointer, REQUIRED)}
-        return self.tagged(value, at, "from", variants, "a discriminator")
-
-    def event_schemas(self, value: object, at: str, *, nonempty: bool = False) -> object:
-        if not isinstance(value, Mapping) or (nonempty and not value):
-            return self.value(at, f"{at} must be a {'nonempty ' if nonempty else ''}mapping")
-        schemas: dict[str, object] = {}
-        for key, item in value.items():
-            if isinstance(key, str) and key and _encodable(key):
-                schemas[key] = self.schema(item, f"{at}[{key!r}]")
-            else:
-                schemas[""] = self.value(at, f"{at} has the key {key!r}, which is not a nonempty UTF-8 string")
-        return INVALID if any(item is INVALID for item in schemas.values()) else schemas
-
-    def completion(self, value: object, at: str, *, sse: bool) -> object:
-        """Convert a completion; an NDJSON sentinel is a whole line, so it cannot contain a line feed."""
-        sentinel = self.nonempty if sse else self.line
-        variants: dict[str, Spec] = {"eof": {}, "sentinel": {"value": (sentinel, REQUIRED)}}
-        if sse:
-            variants["event_type"] = {"value": (self.nonempty, REQUIRED)}
-        return self.tagged(value, at, "kind", variants, "a completion")
-
-    def resume(self, value: object, at: str, *, sse: bool) -> object:
-        """Convert a resume setting; a disabled one takes no other key, and an event ID cursor is SSE only."""
-        if not isinstance(value, Mapping):
-            return self.value(at, f"{at} must be a mapping")
-        if (enabled := value.get("enabled", False)) is False:
-            for key in (extra := [key for key in value if key != "enabled"]):
-                self.conflict(f"{at}.{key}", f"{at}.{key} applies only when resume is enabled")
-            return INVALID if extra else {"enabled": False}
-        if enabled is not True:
-            return self.value(f"{at}.enabled", f"{at}.enabled must be a boolean")
-        event_id = sse and value.get("cursor") == "event_id"
-        cursor: Spec = (
-            {}
-            if event_id
-            else {
-                "missing": (self.choice("inherit", "error"), REQUIRED),
-                "null": (self.choice("clear", "error"), REQUIRED),
-            }
-        )
-        spec: Spec = {
-            "enabled": (_keep, REQUIRED),
-            "cursor": (_keep if event_id else self.selector, REQUIRED),
-            "write": (self.target, REQUIRED),
-            "reopen_operation": (self.operation, REQUIRED),
-            "delivery": (self.choice("at_least_once"), REQUIRED),
-            "bindings": (self.bindings, ()),
-            **cursor,
-            "reconnect_on": (self.reasons, ("transport_interruption",)),
-            "expires_at": (self.selector, OMITTED),
-        }
-        return self.record(value, at, spec, "a resume")
-
-    def reasons(self, value: object, at: str) -> object:
-        reasons = self.items(value, at, self.choice("transport_interruption", "incomplete_eof"), nonempty=True)
-        return self.distinct(at, reasons, "a reconnect reason")
-
-    def websocket(self, value: object, at: str) -> Tree | _Invalid:
-        return self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "operation": (self.operation, REQUIRED),
-                "subprotocols": (self.subprotocols, ()),
-                "send": (self.message, REQUIRED),
-                "receive": (self.message, REQUIRED),
-            },
-            "a helper definition",
-        )
-
-    def subprotocols(self, value: object, at: str) -> object:
-        def subprotocol(item: object, where: str) -> object:
-            return item if token(item) else self.value(where, f"{where} must be a subprotocol token")
-
-        return self.distinct(at, self.items(value, at, subprotocol), "a subprotocol")
-
-    def message(self, value: object, at: str) -> object:
-        """Convert a message definition, giving it the frame its codec defaults to and refusing a mismatched one."""
-        spec: Spec = {
-            "codec": (self.choice(*_FRAMES), REQUIRED),
-            "frame": (self.choice("text", "binary"), OMITTED),
-            "schema": (self.schema, OMITTED),
-        }
-        if (message := self.record(value, at, spec, "a message definition")) is INVALID:
-            return INVALID
-        codec, fixed = message["codec"], _FRAMES[message["codec"]]
-        if (codec == "json") != ("schema" in message):
-            where = f"{at}.schema"
-            if codec == "json":
-                return self.value(where, f"{at} needs 'schema' for JSON messages")
-            self.conflict(where, f"{where} applies only to JSON messages")
-            return INVALID
-        frame = message.setdefault("frame", fixed or "text")
-        if fixed is not None and frame != fixed:
-            self.conflict(f"{at}.frame", f"{at}.frame must be {fixed!r} for {codec} messages")
-            return INVALID
-        return message
-
-    def cache(self, value: object, at: str) -> Tree | _Invalid:
-        return self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "operation": (self.operation, REQUIRED),
-                "validator": (self.choice(*_VALIDATOR_KINDS), REQUIRED),
-                "authenticated": (self.boolean, REQUIRED),
-                "statuses": (self.statuses, [200]),
-                "vary_allowlist": (self.vary_names, []),
-            },
-            "a helper definition",
-        )
-
-    def vary_names(self, value: object, at: str) -> object:
-        """Convert Vary header names, refusing `*` and a name repeated in another case."""
-        names = self.items(value, at, self.vary_name)
-        seen: set[str] = set()
-        for index, name in enumerate(names if isinstance(names, list) else ()):
-            if (folded := name.lower()) in seen:
-                return self.value(f"{at}[{index}]", f"{at}[{index}] repeats a header name")
-            seen.add(folded)
-        return names
-
-    def vary_name(self, value: object, at: str) -> object:
-        return self.value(at, f"{at} must name a header, not '*'") if value == "*" else self.header(value, at)
-
-    def webhook(self, value: object, at: str) -> Tree | _Invalid:
-        """Convert a webhook helper with a fixed signature preset or application verifier."""
-        return self.record(
-            value,
-            at,
-            {
-                "kind": (_keep, REQUIRED),
-                "enabled": (self.boolean, True),
-                "event_schema": (partial(self.event_schema, sse=False), REQUIRED),
-                "signature": (self.signature, REQUIRED),
-            },
-            "a helper definition",
-        )
-
-    def signature(self, value: object, at: str) -> object:
-        """Convert fixed signature settings without interpreting arbitrary signed parts."""
-        body: Spec = {
-            "header": (self.header, REQUIRED),
-            "encoding": (self.choice("hex", "base64"), "hex"),
-            "prefix": (partial(self.visible, empty=True), ""),
-        }
-        public: Spec = {**body, "encoding": (self.choice("hex", "base64", "base64url"), "hex")}
-        fact = self.choice("required", "none")
-        return self.tagged(
-            value,
-            at,
-            "kind",
-            {
-                "standard_webhooks": {},
-                "stripe_style": {"header": (self.header, "Stripe-Signature")},
-                "body_hmac": {**body, "algorithm": (self.choice("hmac-sha256", "hmac-sha512"), "hmac-sha256")},
-                **dict.fromkeys(_PUBLIC_KEY_SIGNATURES, public),
-                "adapter": {"timestamp": (fact, REQUIRED), "delivery_id": (fact, REQUIRED)},
-                "none": {},
-            },
-            "a signature",
-        )
-
-    def visible(self, value: object, at: str, *, empty: bool = False) -> object:
-        valid = isinstance(value, str) and (empty or value) and all("!" <= char <= "~" for char in value)
-        return value if valid else self.value(at, f"{at} must be {'' if empty else 'nonempty '}visible ASCII text")
-
-
-def _keep(value: object, _: str) -> object:
-    return value
-
-
-def _unsupported(at: str, message: str) -> Diagnostic:
-    return Diagnostic(code="E_CLIENT_UNSUPPORTED", severity="error", stage="target", message=message, option_path=at)
+def _problem(code: str, at: str, message: str, *, stage: DiagnosticStage = "config") -> Diagnostic:
+    return Diagnostic(code=code, severity="error", stage=stage, message=message, option_path=at)
 
 
 def _targets(bindings: list[Tree], at: str) -> tuple[tuple[str, Tree], ...]:

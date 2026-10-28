@@ -1,2 +1,2 @@
 generate()
-  Error: --client-operations['/paths/~1pets/get'].runtime has no key 'unknown'
+  Error: --client-operations['/paths/~1pets/get'].runtime has no key 1; --client-operations['/paths/~1pets/get'].runtime has no key 'unknown'

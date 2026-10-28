@@ -1,1 +1,1 @@
-Error: --server-operation-names has an invalid entry; --server-parameter-names has an invalid entry; --server-router-names must map group keys to identifiers
+Error: --server-operation-names['/paths/~1pets/get'] must be a Python identifier; --server-router-names['tag:pets'] must be a Python identifier; --server-parameter-names['/paths/~1pets/get'].limit must be a location, ':', and a name
