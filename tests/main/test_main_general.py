@@ -764,11 +764,21 @@ def test_model_graph_check_reports_a_copied_reference(
         assert_output(report_path.read_text(encoding="utf-8"), name="report")
 
 
-def test_a_deep_copied_type_keeps_the_null_its_reference_site_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A custom parser that types a field with a deep copy of its type keeps the None the site recorded.
+@pytest.mark.parametrize(
+    ("input_name", "options"),
+    [
+        pytest.param("ref_type_has_null.json", {"omit_redundant_reference_null": True}, id="null"),
+        pytest.param("numeric_constraint_precision/non_finite_multiple_of.json", {}, id="dropped-multiple-of"),
+    ],
+)
+def test_a_deep_copied_type_keeps_what_its_site_recorded(
+    monkeypatch: pytest.MonkeyPatch, recwarn: pytest.WarningsRecorder, input_name: str, options: dict[str, bool]
+) -> None:
+    """A custom parser that types a field with a deep copy of its type keeps what the site recorded on the type.
 
-    ``--omit-redundant-reference-null`` marks the None of ``nullOnlyRef`` as the one the schema it references admits;
-    the copy carries that record, so the output is the one without the copy.
+    ``--omit-redundant-reference-null`` marks the None of ``nullOnlyRef`` as the one the schema it references admits,
+    and a ``multipleOf`` of 1e400 that Pydantic refuses is recorded on its type for the warning of the field; the copy
+    carries those records, so the output and the warnings are the ones without the copy.
     """
     from copy import deepcopy
 
@@ -782,12 +792,15 @@ def test_a_deep_copied_type_keeps_the_null_its_reference_site_recorded(monkeypat
                     self.generation_store.replace_field_type(field, deepcopy(field.data_type))
 
     monkeypatch.setenv(CHECK_MODEL_GRAPH_ENV, "0")
-    parser = CopyingParser(
-        JSON_SCHEMA_DATA_PATH / "ref_type_has_null.json",
-        omit_redundant_reference_null=True,
-        formatters=[Formatter.BUILTIN],
-    )
+    parser = CopyingParser(JSON_SCHEMA_DATA_PATH / input_name, formatters=[Formatter.BUILTIN], **options)
     assert_output(cast("str", parser.parse()))
+    assert_output(
+        "".join(
+            f"{message}\n"
+            for message in dict.fromkeys(str(warning.message) for warning in recwarn if warning.category is UserWarning)
+        ),
+        name="warnings",
+    )
 
 
 @pytest.mark.parametrize("flag", ["check", "report", "off"])
