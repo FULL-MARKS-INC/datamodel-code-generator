@@ -1255,7 +1255,7 @@ def _declared(module: Module, media: MediaSpec | None, *, null: bool) -> str:
         entries.append(f"media_type={media.media_type!r}")
         if media.kind != "json":
             entries.append(f"kind={media.kind!r}")
-        if (encoding := charset(media.media_type)) != "utf-8":
+        if (encoding := charset(media.media_type, as_written=True)) != "utf-8":
             entries.append(f"charset={encoding!r}")
         if (value := _checked(media)) is not None:
             entries.append(f"model={module.annotation(value)}")

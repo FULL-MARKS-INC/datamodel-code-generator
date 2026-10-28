@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Final, Generic, Literal, TypeAl
 
 from typing_extensions import Self, TypeIs, TypeVar
 
-from ..model_codecs.media import json_value
+from ..model_codecs.media import charset, json_value
 from .content import CHUNK
 from .errors import (
     ConfigurationError,
@@ -27,7 +27,6 @@ from .errors import (
     response_failure,
 )
 from .logical import Ready, in_thread, run_sync
-from .media import charset
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Generator, Iterator

@@ -63,7 +63,7 @@ parameter-errors	main/generation_platform/fastapi/packages/parameter-errors/
 parameter-errors	main/generation_platform/fastapi/parameter-errors.txt
 parameters	main/generation_platform/fastapi/packages/parameters/
 parameters	main/generation_platform/fastapi/parameters.txt
-pets	main/generation_platform/fastapi/packages/pets/
+pets	main/generation_platform/fastapi/packages/pets/	= main/generation_platform/fastapi/packages/pets~fastapi_render[pets]/
 pets	main/generation_platform/fastapi/pets.txt
 primary-errors	main/generation_platform/fastapi/packages/primary-errors/
 primary-errors	main/generation_platform/fastapi/primary-errors.txt
@@ -118,7 +118,7 @@ empty-True	main/generation_platform/fastapi/empty.txt
 empty-True	main/generation_platform/fastapi/packages/empty/
 native-True	main/generation_platform/fastapi/native.txt
 native-True	main/generation_platform/fastapi/packages/native/
-pets-True	main/generation_platform/fastapi/packages/pets/
+pets-True	main/generation_platform/fastapi/packages/pets/	= main/generation_platform/fastapi/packages/pets~fastapi_render[pets]/
 pets-True	main/generation_platform/fastapi/pets.txt
 scheme-names-True	main/generation_platform/fastapi/packages/scheme-names/
 scheme-names-True	main/generation_platform/fastapi/scheme-names.txt
@@ -128,5 +128,5 @@ self-references-False	main/generation_platform/fastapi/packages/references/
 self-references-False	main/generation_platform/fastapi/references.txt
 single-True	main/generation_platform/fastapi/packages/single/
 single-True	main/generation_platform/fastapi/single.txt
-template-missing-False	main/generation_platform/fastapi/packages/pets/
+template-missing-False	main/generation_platform/fastapi/packages/pets/	= main/generation_platform/fastapi/packages/pets~fastapi_render[pets]/
 template-missing-False	main/generation_platform/fastapi/pets.txt

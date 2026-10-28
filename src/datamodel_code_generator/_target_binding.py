@@ -24,7 +24,7 @@ from typing_extensions import Sentinel, override
 
 from datamodel_code_generator import Error, SchemaParseError
 from datamodel_code_generator._generation_contract import AttemptId
-from datamodel_code_generator._runtime.model_codecs.media import media_kind, normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import media_kind, normalized
 from datamodel_code_generator._target_contract import (
     BackendFieldFacts,
     BackendModelFacts,
@@ -791,10 +791,7 @@ class _SchemaRecord:
 
 
 def _media_kind(media: str) -> MediaKind | None:
-    try:
-        return media_kind(normalize_media_type(media))
-    except ValueError:
-        return None
+    return None if (found := normalized(media)) is None else media_kind(found)
 
 
 def _default(value: YamlValue) -> LiteralScalar | None:
