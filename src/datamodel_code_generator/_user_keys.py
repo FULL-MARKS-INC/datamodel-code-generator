@@ -61,7 +61,7 @@ _ValueT = TypeVar("_ValueT")
 _SCOPE_SEPARATOR: Final = "."
 
 
-def class_field_key(class_name: str, field_name: str) -> str:
+def class_field_key(class_name: str, field_name: str | None) -> str:
     """Return the key of the field ``field_name`` of the class ``class_name`` (``Class.field``)."""
     return f"{class_name}{_SCOPE_SEPARATOR}{field_name}"
 
