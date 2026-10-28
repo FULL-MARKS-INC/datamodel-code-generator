@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
+from dataclasses import replace
 from itertools import chain, islice
 from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypeAlias, cast
 
@@ -32,6 +33,7 @@ from datamodel_code_generator._reference_graph import (
     ReferenceGraph,
     graph_answer,
     reference_graph,
+    walk_graph,
 )
 from datamodel_code_generator._requirements import python_target_meets
 from datamodel_code_generator._scc import strongly_connected_components
@@ -40,6 +42,12 @@ from datamodel_code_generator._url_redaction import redact_reference
 from datamodel_code_generator._user_keys import class_field_key
 from datamodel_code_generator.enums import DefaultValueType
 from datamodel_code_generator.imports import IMPORT_OPTIONAL, IMPORT_UNION, Import
+from datamodel_code_generator.model._decisions.collapse_eligibility import (
+    CollapseSiteFacts,
+    LaterHolderFacts,
+    keeps_root_model_named,
+    later_holders_follow,
+)
 from datamodel_code_generator.model._decisions.enum_kind import decide_enum_kind, holds_inherited_member_value
 from datamodel_code_generator.model._decisions.literal_default import decide_literal_default
 from datamodel_code_generator.model._decisions.tag_value import (
@@ -59,6 +67,7 @@ from datamodel_code_generator.model.base import (
     DataModelFieldBase,
     _find_base_classes,
     _keyed_answer,
+    _model_key_of_model,
     _ModelKeys,
     _reference_names_model,
     _share_path_identity,
@@ -480,9 +489,6 @@ class CollapseHost(
 
     def _is_root_model(self, model: DataModel) -> bool:
         """Return whether a model uses the configured root model representation."""
-
-    def _keeps_root_model_named(self, model: DataModel, circular_root_models: Collection[ModelKey]) -> bool:
-        """Return whether collapsing keeps a root model named wherever it is referenced."""
 
 
 class DiscriminatorHost(InlineVariantHost, Protocol):
@@ -1858,6 +1864,90 @@ def collapse_root_models(  # noqa: PLR0913, PLR0917
         )
 
 
+def _root_type_models(model: DataModel) -> list[DataModel]:
+    """Return the models that the type of the root field of ``model`` names."""
+    if not model.fields:
+        return []
+    return [
+        source_model
+        for data_type in model.fields[0].data_type.all_data_types
+        if data_type.reference and isinstance(source_model := data_type.reference.source, DataModel)
+    ]
+
+
+def _constrains_root_field(model: DataModel) -> bool:
+    """Return whether the root field of ``model`` carries a constraint other than ``unique_items``."""
+    if not model.fields:
+        return False
+    constraints = model.fields[0].constraints
+    return isinstance(constraints, ConstraintsBase) and any(
+        value is not None for name, value in constraints.model_dump().items() if name != "unique_items"
+    )
+
+
+def _has_preservable_root_constraints(model: DataModel) -> bool:
+    """Return whether flattening a root wrapper would discard field-owned constraints.
+
+    True when ``model``, or a model the snapshot of root types reaches from it, constrains its root field.
+    """
+    walk = walk_graph(
+        GraphSnapshot.ROOT_CONSTRAINTS, EdgeKind.ROOT_TYPE, (model,), _model_key_of_model, _root_type_models
+    )
+    return graph_answer(
+        GraphSnapshot.ROOT_CONSTRAINTS,
+        any(map(_constrains_root_field, walk.node_of.values())),
+        lambda: _walks_to_preservable_root_constraints(model, seen_models=set()),
+    )
+
+
+def _walks_to_preservable_root_constraints(model: DataModel, *, seen_models: set[int]) -> bool:
+    """Return whether flattening a root wrapper would discard field-owned constraints, by walking the root types."""
+    if not model.fields or id(model) in seen_models:
+        return False
+    seen_models.add(id(model))
+    return _constrains_root_field(model) or any(
+        _walks_to_preservable_root_constraints(source_model, seen_models=seen_models)
+        for source_model in _root_type_models(model)
+    )
+
+
+def collapse_site_facts(
+    parser: CollapseHost,
+    model_field: DataModelFieldBase,
+    data_type: DataType,
+    root_model: DataModel,
+    circular_root_models: Collection[ModelKey],
+) -> CollapseSiteFacts:
+    """Return the facts ``keeps_root_model_named`` reads about a site of ``model_field`` that names ``root_model``.
+
+    The walk over the root types and the containers of the holder's type are read only where a rule reads them.
+    """
+    if not root_model.fields:
+        return CollapseSiteFacts()
+    field_constraints = parser.field_constraints
+    root_field = root_model.fields[0]
+    root_data_type = root_field.data_type
+    constrained_root = _has_root_field_constraints(root_field)
+    return CollapseSiteFacts(
+        has_root_field=True,
+        circular=model_key_of(root_model.reference) in circular_root_models,
+        runtime_object_validation=root_model.has_runtime_object_validation,
+        field_constraints=field_constraints,
+        constrains_through_root_types=not field_constraints and _has_preservable_root_constraints(root_model),
+        constrained_root_field=isinstance(constraints := root_field.constraints, ConstraintsBase)
+        and bool(constraints.has_constraints),
+        constrained_root=constrained_root,
+        root_type_is_map=root_data_type.is_dict or root_data_type.is_mapping,
+        root_type_names_model=root_data_type.reference is not None,
+        names_inner_models=parser.collapse_root_models_name_strategy is not None,
+        holder_has_container=field_constraints
+        and constrained_root
+        and any(member.is_dict or member.is_union or member.is_list for member in model_field.data_type.all_data_types),
+        list_item=isinstance(parent := data_type.parent, DataType) and parent.is_list,
+        collapses_list_items=parser._collapses_list_item_root_models,  # noqa: SLF001
+    )
+
+
 def has_other_root_references(parser: CollapseHost, reference: Reference, data_type: DataType) -> bool:
     """Return whether data types other than ``data_type`` name the root model of ``reference``.
 
@@ -1899,7 +1989,7 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
     referenced that model directly. Under the ``parent`` strategy that model takes the root model's name in its
     own module and replaces the root model, decided at the root model's first holder from the references the
     schema gives, so that every holder follows the same decision; where a later pass can still rename the root model
-    apart from that model (``keeps_root_for_later_holders``), the later holders keep naming the root model until
+    apart from that model (``later_holders_follow``), the later holders keep naming the root model until
     ``settle_kept_parent_roots`` decides it once every module is processed. A root model that a schema validator rule
     names stays written after its holders inline it: the rule checks values through its class. A root model that its
     inner model replaces leaves; once every module is processed, the rules name the inner model instead
@@ -1916,7 +2006,6 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
         if (reference := rule_data_type.reference) is not None
     )
     is_root_model = parser._is_root_model  # noqa: SLF001
-    collapses_list_item_root_models = parser._collapses_list_item_root_models  # noqa: SLF001
     redirected_holders: list[tuple[DataModel, DataType, Import | None]] = []
 
     for model in models:  # noqa: PLR1702
@@ -1926,24 +2015,14 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
                 if (
                     not reference
                     or not is_root_model(root_type_model := cast("DataModel", reference.source))
-                    or parser._keeps_root_model_named(root_type_model, circular_root_models)  # noqa: SLF001
+                    or keeps_root_model_named(
+                        collapse_site_facts(parser, model_field, data_type, root_type_model, circular_root_models)
+                    )
+                    is not None
                 ):
                     continue
                 root_type_field = root_type_model.fields[0]
-                if (
-                    parser.field_constraints
-                    and _has_root_field_constraints(root_type_field)
-                    and any(
-                        data_type.is_dict or data_type.is_union or data_type.is_list
-                        for data_type in model_field.data_type.all_data_types
-                    )
-                ):
-                    continue
-
                 if root_type_field.data_type.reference:
-                    if parser.collapse_root_models_name_strategy is None:
-                        continue
-
                     inner_reference = root_type_field.data_type.reference
                     inner_model = cast("DataModel", inner_reference.source)
 
@@ -1992,11 +2071,17 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
                         parser, root_type_model.reference, data_type
                     )
                     if first_parent_holder:
-                        if has_remaining_root_references and keeps_root_for_later_holders(
-                            parser, root_type_model, inner_model, model_path_to_module_name
+                        if (
+                            has_remaining_root_references
+                            and later_holders_follow(
+                                later_holder_facts := first_holder_facts(
+                                    parser, root_type_model, inner_model, model_path_to_module_name
+                                )
+                            )
+                            is None
                         ):
                             parser._kept_parent_roots[id(root_type_model)] = _KeptParentRoot(  # noqa: SLF001
-                                root_type_model, inner_model, []
+                                root_type_model, inner_model, [], later_holder_facts
                             )
                         else:
                             retire_root(parser, root_type_model, inner_model, model_path_to_module_name)
@@ -2014,13 +2099,6 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
                     ):
                         unused_models.append(root_type_model)
 
-                    continue
-
-                if (
-                    not collapses_list_item_root_models
-                    and isinstance(list_data_type := data_type.parent, DataType)
-                    and list_data_type.is_list
-                ):
                     continue
 
                 # set copied data_type
@@ -2252,24 +2330,25 @@ def retire_root(
     )
 
 
-def keeps_root_for_later_holders(
+def first_holder_facts(
     parser: CollapseHost,
     root_model: DataModel,
     inner_model: DataModel,
     model_path_to_module_name: dict[str, str],
-) -> bool:
-    """Return whether the later holders of a root model that its first holder collapsed keep naming it, as in 0.86.0.
+) -> LaterHolderFacts:
+    """Return the facts ``later_holders_follow`` reads at the first holder of a root model that it collapsed.
 
-    They do where a later pass can still give the root model a name of its own beside the inner model that took its
-    name: both are written in one module and the run renames a type that a field is named like.
-    ``settle_kept_parent_roots`` makes them follow the first holder once every module is processed if no pass did.
-    ``--collapse-shared-parent-wrappers`` makes them follow it always.
+    The modules are looked up only where the options leave the decision open.
     """
-    return (
-        not parser.collapse_shared_parent_wrappers
-        and renames_colliding_types(parser)
+    shared = parser.collapse_shared_parent_wrappers
+    renames = renames_colliding_types(parser)
+    return LaterHolderFacts(
+        shared_parent_wrappers=shared,
+        renames_colliding_types=renames,
+        same_module=not shared
+        and renames
         and emitting_module_name(parser, root_model, model_path_to_module_name)
-        == emitting_module_name(parser, inner_model, model_path_to_module_name)
+        == emitting_module_name(parser, inner_model, model_path_to_module_name),
     )
 
 
@@ -2289,7 +2368,9 @@ def settle_kept_parent_roots(parser: CollapseHost, run: ModulesRun) -> None:
     graph_builder = parser._graph_builder  # noqa: SLF001
     for kept_root in parser._kept_parent_roots.values():  # noqa: SLF001
         root_model, inner_model = kept_root.root, kept_root.inner
-        if root_model.class_name != inner_model.class_name:
+        if not later_holders_follow(
+            replace(kept_root.facts, renamed_apart=root_model.class_name != inner_model.class_name)
+        ):
             for holder in kept_root.holders:
                 warn_as_parser_base(
                     f"Cannot apply 'parent' strategy for '{holder.inner_class_name}' - "
