@@ -2324,8 +2324,9 @@ class TemplateBase(ABC):
 class BaseClassDataType(DataType):
     """DataType subclass for base class references."""
 
+    @property
     @override
-    def _reference_adds_null(self) -> bool:
+    def adds_reference_null(self) -> bool:
         """Keep nullable model references out of class inheritance clauses."""
         return False
 
