@@ -140,6 +140,7 @@ from datamodel_code_generator.parser._imports_plan import (
 from datamodel_code_generator.parser._model_shapes import (
     KeySlot,
     ModelShapes,
+    ReuseGroups,
     ShapeRow,
     stdout_fingerprint,
 )
@@ -1246,7 +1247,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             "target_python_version": self.target_python_version,
         }
         self.reuse_model: bool = config.reuse_model
-        self._typed_map_value_reference_ids: set[int] = set()
+        self._reuse_groups = ReuseGroups()
         self._const_narrowed_references: list[tuple[Reference, _ConstNarrowing]] = []
         self._const_narrowed_values: dict[int, tuple[DataType, _ConstNarrowing]] = {}
         self._enum_admits_other_values: list[tuple[DataModelFieldBase, _ConstNarrowing]] = []
@@ -1821,21 +1822,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
     def _model_shapes(self, row: ShapeRow) -> ModelShapes[DataModel, Reference]:
         """Return the keys of one comparison pass of the dedup or reuse user of a row."""
         return ModelShapes(row, _ModelShapeSource(self.target_python_version), self._tag_plan.reuse_snapshot)
-
-    def _site_models_last(self, models: list[DataModel]) -> list[DataModel]:
-        """Order the site models a reference with more assertions gets after the others, which then stay canonical.
-
-        A site model of the same name and rendering as another model is removed for it and takes no name of its own.
-        """
-        if site_models := self._site_model_reference_ids:
-            return sorted(models, key=lambda model: id(model.reference) in site_models)
-        return models
-
-    def _typed_map_values_last(self, models: list[DataModel]) -> list[DataModel]:
-        """Order models of typed map values after the others, so the others stay canonical and keep their names."""
-        if typed_map_values := self._typed_map_value_reference_ids:
-            return sorted(models, key=lambda model: id(model.reference) in typed_map_values)
-        return models
 
     def _create_discriminator_data_type(
         self,
@@ -2835,8 +2821,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
     def _model_inventory(self, models: list[DataModel]) -> tuple[str, ...]:
         """Return the paths of the models other than typed map values, which a retry with untyped values omits."""
-        typed_map_values = self._typed_map_value_reference_ids
-        return tuple(sorted(model.path for model in models if id(model.reference) not in typed_map_values))
+        groups = self._reuse_groups
+        return tuple(sorted(model.path for model in models if not groups.is_typed_map_value(model)))
 
     def _flatten_invalid_modules(
         self,

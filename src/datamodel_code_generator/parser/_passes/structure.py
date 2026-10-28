@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.config import ParserConfig
     from datamodel_code_generator.format import CodeFormatter, Formatter
     from datamodel_code_generator.model.base import BaseClassDataType
-    from datamodel_code_generator.parser._model_shapes import ModelShapes, ShapeRow
+    from datamodel_code_generator.parser._model_shapes import ModelShapes, ReuseGroups, ShapeRow
     from datamodel_code_generator.parser._passes._shared import _ReuseOptimizationContext
     from datamodel_code_generator.parser._passes._state import (
         ConfigT,
@@ -126,8 +126,8 @@ class StructureHost(BaseStandInHost, Protocol):
         """The root models naming themselves that the deduplication of root models dropped, whose users name them."""
 
     @property
-    def _typed_map_value_reference_ids(self) -> set[int]:
-        """The ids of the references of typed map values."""
+    def _reuse_groups(self) -> ReuseGroups:
+        """The plan of which model of a group of duplicates stays canonical."""
 
     @property
     def collapse_reuse_models(self) -> bool:
@@ -224,12 +224,6 @@ class StructureHost(BaseStandInHost, Protocol):
 
     def _should_preserve_explicit_root_class_name(self, class_name: str) -> bool:
         """Return whether a class name of an explicit root keeps its leading underscore."""
-
-    def _site_models_last(self, models: list[DataModel]) -> list[DataModel]:
-        """Order the site models a reference with more assertions gets after the others."""
-
-    def _typed_map_values_last(self, models: list[DataModel]) -> list[DataModel]:
-        """Order models of typed map values after the others."""
 
 
 def _module_key(
@@ -388,7 +382,7 @@ def delete_duplicate_models(parser: StructureHost, models: list[DataModel]) -> N
         if parser._reuse_optimization_context.constrains  # noqa: SLF001
         else None
     )
-    for model in parser._site_models_last(models):  # noqa: SLF001
+    for model in parser._reuse_groups.site_models_last(models):  # noqa: SLF001
         if model in models_to_remove:  # pragma: no cover
             continue
         reuse_allowed = reuse_constraint is None or reuse_constraint(model)
@@ -456,7 +450,7 @@ def delete_duplicate_models(parser: StructureHost, models: list[DataModel]) -> N
                     for group in content_key_to_models.values()
                     if len(group) > 1
                     for canonical, dup in shapes.iter_matching_duplicates(
-                        parser._typed_map_values_last(group),  # noqa: SLF001
+                        parser._reuse_groups.typed_map_values_last(group),  # noqa: SLF001
                         keyed=False,
                     )
                     if dup not in models_to_remove
@@ -495,7 +489,7 @@ def replace_duplicate_name_in_module(parser: StructureHost, models: list[DataMod
     keeps a name from the others, and the class it stands for binds its name as an import of each model that
     inherits it.
     """
-    models = all_models = parser._typed_map_values_last(models)  # noqa: SLF001
+    models = all_models = parser._reuse_groups.typed_map_values_last(models)  # noqa: SLF001
     for model in models:
         model._write_pre_render_nullability()  # noqa: SLF001
         remember_nested_factory_order_before_nullability(model)
@@ -566,7 +560,7 @@ def find_duplicate_models_across_modules(
     return [
         (model_modules[model], model, model_modules[canonical], canonical)
         for canonical, model in shapes.iter_matching_duplicates(
-            parser._typed_map_values_last(list(model_modules)),  # noqa: SLF001
+            parser._reuse_groups.typed_map_values_last(list(model_modules)),  # noqa: SLF001
             keyed=True,
         )
     ]
@@ -581,12 +575,12 @@ def replace_typed_map_value_duplicates(
 
     Those other models stay where they are, as they did before map values were typed.
     """
-    typed_map_values = parser._typed_map_value_reference_ids  # noqa: SLF001
+    groups = parser._reuse_groups  # noqa: SLF001
     module_lists = dict(module_models)
     remaining = []
     for duplicate in duplicates:
         duplicate_module, duplicate_model, _, canonical = duplicate
-        if id(duplicate_model.reference) in typed_map_values and id(canonical.reference) not in typed_map_values:
+        if groups.yields_to(duplicate_model, canonical):
             parser._graph_builder.redirect_reference_users(  # noqa: SLF001
                 duplicate_model.reference, canonical.reference, merged=True
             )
@@ -718,7 +712,7 @@ def reuse_model_tree_scope(
         return None
 
     duplicates = find_duplicate_models_across_modules(parser, module_models)
-    if parser._typed_map_value_reference_ids:  # noqa: SLF001
+    if parser._reuse_groups.typed_map_values:  # noqa: SLF001
         duplicates = replace_typed_map_value_duplicates(parser, module_models, duplicates)
     if not duplicates:
         return None
