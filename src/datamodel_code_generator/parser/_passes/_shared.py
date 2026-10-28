@@ -1766,15 +1766,6 @@ def _keeps_instance_field(field: DataModelFieldBase, source_name: str) -> bool:
     )
 
 
-def _bases_keep_instance_field(model: DataModel, source_name: str) -> bool:
-    """Return whether a base of a model, or a base of that, keeps an instance field that the document names so."""
-    return any(
-        _keeps_instance_field(field, source_name)
-        for base_model in _find_base_classes(model)
-        for field in base_model.iter_all_fields()
-    )
-
-
 def _format_tags(tags: list[DiscriminatorValue]) -> str:
     """Spell discriminator tags as the document writes them."""
     return ", ".join(map(repr, tags))
