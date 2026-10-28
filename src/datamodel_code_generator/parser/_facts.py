@@ -928,6 +928,15 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
         FreezePoint.RENDER,
     ),
     AttributeFact(
+        "DataModel",
+        "_builtin_name_bindings",
+        FactKind.PRESENTATION,
+        (RenderFact.IMPORT_ALIASES,),
+        Phase.IMPORTS,
+        FreezePoint.RENDER,
+        store_ops=("bind_builtin_names",),
+    ),
+    AttributeFact(
         "DataModel", "discriminator_tag", FactKind.FACT, (Fact.DISCRIMINATOR_TAGS,), Phase.CROSS_MODULE, FreezePoint.B1
     ),
     AttributeFact(
@@ -1049,6 +1058,9 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
     ),
     AttributeFact(
         "Reference", "_DERIVED_FROM_KEY", FactKind.BOOKKEEPING, (), Phase.PARSE, None, access=Access.DICT_KEY
+    ),
+    AttributeFact(
+        "Reference", "FIELDLESS_SITE_KEY", FactKind.BOOKKEEPING, (), Phase.PARSE, None, access=Access.DICT_KEY
     ),
     AttributeFact(
         "Parser",
