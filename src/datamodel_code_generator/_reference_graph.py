@@ -105,6 +105,12 @@ class GraphSnapshot(Enum):
     """On demand: whether a root model or a root model its root type names constrains its root field."""
     MAPPING_DEFAULTS = "mapping defaults"
     """On demand: whether the mapping defaults of a dataclass materialize a model of one path twice."""
+    SET_ITEM_HASH = "set item hash"
+    """L6: the set item models and the generated models they inherit from, whose classes decide which set item models
+    keep their builtin hash."""
+    DICT_KEY_ROOT_TYPES = "dict key root types"
+    """On demand: a root model that a dict key names and the generated models it inherits from, whose configuration
+    decides whether its instances can be dict keys."""
 
 
 _NO_KEYS: frozenset[ModelKey] = frozenset()

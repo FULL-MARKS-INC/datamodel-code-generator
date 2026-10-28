@@ -21,6 +21,7 @@ from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
 from datamodel_code_generator._requirements import pydantic_target_meets, python_target_meets
 from datamodel_code_generator._scc import find_circular_sccs
+from datamodel_code_generator.model._decisions.hashability import set_items_may_keep_builtin_hash
 from datamodel_code_generator.model._render_plan import RENDER_READY
 from datamodel_code_generator.model.base import (
     UNDEFINED,
@@ -30,6 +31,7 @@ from datamodel_code_generator.model.base import (
     _model_key_of_model,
     linearize_data_models,
     ordering_constructor_fields,
+    set_item_models_keeping_builtin_hash,
 )
 from datamodel_code_generator.model.enum import Enum, Member
 from datamodel_code_generator.model.type_alias import TypeAliasBase, TypeStatement
@@ -450,16 +452,14 @@ def mark_set_item_models_hashable(parser: RenderPrepHost, models: list[DataModel
     set_item_models = [
         model for model in models if model_key_of(model.reference) in set_item_keys and not isinstance(model, Enum)
     ]
-    # User imports may shadow the builtin annotations recognized by the backend.
-    native_hash_paths = (
-        set()
-        if parser.config.additional_imports
-        else parser.data_model_type.get_native_hash_model_paths(set_item_models)
-    )
+    builtin_hash_keys: set[ModelKey] = set()
+    if (
+        field_value_hashes := parser.data_model_type._FIELD_VALUE_HASHES  # noqa: SLF001
+    ) is not None and set_items_may_keep_builtin_hash(user_imports=bool(parser.config.additional_imports)):
+        builtin_hash_keys = set_item_models_keeping_builtin_hash(set_item_models, field_value_hashes)
     for model in set_item_models:
-        if model.reference.path in native_hash_paths:
-            continue
-        model.enable_identity_hash()
+        if model_key_of(model.reference) not in builtin_hash_keys:
+            model.enable_identity_hash()
 
 
 def set_validate_default_on_fields(
