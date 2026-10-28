@@ -18,7 +18,7 @@ from typing_extensions import Protocol
 from datamodel_code_generator._checks import CheckArea, check_mode
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._records import record
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, reference_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
 from datamodel_code_generator._requirements import pydantic_target_meets, python_target_meets
 from datamodel_code_generator._scc import find_circular_sccs
 from datamodel_code_generator.model._render_plan import RENDER_READY
@@ -27,6 +27,7 @@ from datamodel_code_generator.model.base import (
     DataModel,
     _check_render_plan_accounting,
     _find_base_classes,
+    _model_key_of_model,
     linearize_data_models,
     ordering_constructor_fields,
 )
@@ -374,28 +375,39 @@ def _flatten_union_members(data_type: DataType, enclosing: tuple[DataType, ...] 
     data_type.data_types = members
 
 
+def _container_item_aliases(model: DataModel) -> Iterator[DataModel]:
+    """Yield the deferrable aliases that the fields of ``model`` reference as a container item."""
+    for field in model.fields:
+        for target, in_container in _iter_alias_references(field.data_type):
+            if in_container:
+                yield target
+
+
 def _alias_reference_cycles(models: Sequence[DataModel]) -> dict[int, int]:
     """Map each alias on a cycle whose every reference is a container item to that cycle."""
-    aliases: dict[ModelKey, DataModel] = {}
-    graph: dict[ModelKey, set[ModelKey]] = {}
-    pending = [model for model in models if model.DEFERS_RECURSIVE_TYPE_HINT]
-    while pending:
-        if (key := model_key_of((model := pending.pop()).reference)) in graph:
-            continue
-        aliases[key] = model
-        graph[key] = set()
-        for field in model.fields:
-            for target, in_container in _iter_alias_references(field.data_type):
-                if in_container:
-                    graph[key].add(model_key_of(target.reference))
-                    pending.append(target)
-    snapshot = reference_graph(GraphSnapshot.ALIAS_CYCLES, graph, {EdgeKind.CONTAINER_ITEM: graph})
-    cycles = graph_answer(
-        GraphSnapshot.ALIAS_CYCLES,
-        snapshot.circular_components((EdgeKind.CONTAINER_ITEM,)),
-        lambda: find_circular_sccs(graph),
+    starts = [model for model in models if model.DEFERS_RECURSIVE_TYPE_HINT]
+    walk = walk_graph(
+        GraphSnapshot.ALIAS_CYCLES, EdgeKind.CONTAINER_ITEM, starts, _model_key_of_model, _container_item_aliases
     )
-    return {id(aliases[key]): index for index, scc in enumerate(cycles) for key in scc}
+
+    def old() -> dict[int, int]:
+        aliases: dict[ModelKey, DataModel] = {}
+        graph: dict[ModelKey, set[ModelKey]] = {}
+        pending = list(starts)
+        while pending:
+            if (key := model_key_of((model := pending.pop()).reference)) in graph:
+                continue
+            aliases[key] = model
+            graph[key] = set(map(_model_key_of_model, targets := list(_container_item_aliases(model))))
+            pending.extend(targets)
+        return {id(aliases[key]): index for index, scc in enumerate(find_circular_sccs(graph)) for key in scc}
+
+    cycles = walk.graph.circular_components((EdgeKind.CONTAINER_ITEM,))
+    return graph_answer(
+        GraphSnapshot.ALIAS_CYCLES,
+        {id(walk.node_of[key]): index for index, scc in enumerate(cycles) for key in scc},
+        old,
+    )
 
 
 def _iter_cycle_containers(

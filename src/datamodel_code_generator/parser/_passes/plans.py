@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import Protocol
 
 from datamodel_code_generator import ReuseScope
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, reference_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer
 from datamodel_code_generator._scc import find_circular_sccs
 from datamodel_code_generator.model.base import BaseLayoutView, _find_base_classes, linearize_data_models
 from datamodel_code_generator.parser._graph_ids import keyed_models, unchecked
@@ -289,17 +289,18 @@ def set_circular_root_model_paths(
         snapshot.value,
     )
     index = parser.generation_store.index
-    edges = {
-        EdgeKind.ANY_REFERENCE: {
-            key: index.referenced_keys_for_model(model, keyed, all_dict_keys=True)
-            for key, model in keyed.models.items()
+    graph = index.reference_graph(
+        snapshot,
+        keyed,
+        all_dict_keys=True,
+        edges={
+            EdgeKind.MAPPING_KEY: {
+                key: keyed.keys_of(root_dict_key_references(model)) for key, model in keyed.models.items()
+            }
         }
-    }
-    if require_dict_key_edge:
-        edges[EdgeKind.MAPPING_KEY] = {
-            key: keyed.keys_of(root_dict_key_references(model)) for key, model in keyed.models.items()
-        }
-    graph = reference_graph(snapshot, keyed.models, edges)
+        if require_dict_key_edge
+        else {},
+    )
 
     def circular_keys(
         components: list[set[ModelKey]],

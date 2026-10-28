@@ -102,8 +102,11 @@ iterative Tarjan traversal so large graphs do not hit Python recursion limits. `
 topological ordering. Together they keep `sort_data_models()` deterministic and let `_build_module_structure()` move
 circular module SCCs into `_internal.py` forwarder modules when imports would otherwise cycle. The passes that read
 cycles or an order among models (module dependencies, class body order, circular root models, keep model order, alias
-cycles, nested model default factories) each take a snapshot of one reference graph, `_reference_graph.py`:
-the models by model key and the edges between them by kind, which answers their components and orders. The
+cycles, nested model default factories, alias loops) each take a snapshot of one reference graph, `_reference_graph.py`:
+the models by model key and the edges between them by kind, which answers their components, orders and loops. The
+references between models come from the generation store (`GenerationIndex.reference_graph`). The edges between
+groups of models, such as the modules of a quotient and the import cycles that the `_internal` merges check, are a
+`GroupGraph`, which answers their components and orders the same way. The
 predicates that models answer on demand by walking base classes, root types or mapping defaults (inherited fields,
 ancestors, cyclic ancestry, the C3 order of bases, msgspec struct tags, pydantic protected namespaces, preservable root
 constraints, recursive dataclass mapping defaults) take a snapshot of the models they reach when asked and answer
