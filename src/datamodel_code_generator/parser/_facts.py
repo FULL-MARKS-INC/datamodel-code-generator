@@ -1061,7 +1061,7 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
         store_ops=("register_model",),
         access=Access.CONTAINER,
     ),
-    AttributeFact("Parser", "_reuse_union_tags", FactKind.FACT, (RenderFact.PLANS,), Phase.STRUCTURE, FreezePoint.B1),
+    AttributeFact("Parser", "_tag_plan", FactKind.FACT, (RenderFact.PLANS,), Phase.CROSS_MODULE, FreezePoint.B1),
     AttributeFact("Parser", "_recursion_facts", FactKind.FACT, (RenderFact.PLANS,), Phase.MODULES, FreezePoint.B1),
     AttributeFact(
         "ModuleContext",

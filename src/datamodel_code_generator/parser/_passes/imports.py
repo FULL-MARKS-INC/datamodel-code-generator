@@ -83,7 +83,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.model_metadata import ModelMetadata
     from datamodel_code_generator.parser._graph_ids import KeyedModels
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
-    from datamodel_code_generator.parser._passes._shared import ReferenceImportTarget, _VariantDiscriminatorTags
+    from datamodel_code_generator.parser._passes._shared import ReferenceImportTarget
     from datamodel_code_generator.parser._passes._state import (
         FinishRun,
         ForwarderMap,
@@ -92,6 +92,7 @@ if TYPE_CHECKING:
         SortedDataModels,
         _FinalizeState,
     )
+    from datamodel_code_generator.parser._tag_plan import TagPlan
     from datamodel_code_generator.parser.generation import GraphBuilder
     from datamodel_code_generator.reference import ModelType, Reference
     from datamodel_code_generator.types import TypeExpr
@@ -142,8 +143,8 @@ class ImportsHost(ReplacedRootsHost, Protocol[ContextT]):
         """The modules ``--import-overrides`` routes imports through, by imported name."""
 
     @property
-    def _reused_variant_tag_fields(self) -> dict[int, DataModelFieldBase]:
-        """The tag fields that a union with a reused variant annotates with a new tag, by field id."""
+    def _tag_plan(self) -> TagPlan:
+        """What the tag passes of the parse recorded."""
 
     @property
     def data_model_type(self) -> type[DataModel]:
@@ -206,8 +207,8 @@ class FinishHost(Protocol):
         """The ids of the references of typed map values."""
 
     @property
-    def _variant_discriminator_tags(self) -> dict[tuple[int, str], _VariantDiscriminatorTags]:
-        """The tags of discriminated union variants, by variant id and tag property."""
+    def _tag_plan(self) -> TagPlan:
+        """What the tag passes of the parse recorded."""
 
     @property
     def collapse_root_models(self) -> bool:
@@ -1076,10 +1077,9 @@ def record_pydantic_floor(parser: FinishHost, contexts: Sequence[ModuleContextVi
 
 def warn_about_variant_discriminator_tags(parser: FinishHost) -> None:
     """Warn once per variant whose generated tag differs from a tag a union maps it to."""
-    for recorded in parser._variant_discriminator_tags.values():  # noqa: SLF001
+    for recorded in parser._tag_plan.first_tags.values():  # noqa: SLF001
         for message in recorded.warning_messages():
             warn_as_parser_base(message, UserWarning, stacklevel=2)
-    parser._variant_discriminator_tags.clear()  # noqa: SLF001
 
 
 def warn_about_msgspec_decoding(parser: FinishHost, contexts: Sequence[ModuleContextView]) -> None:  # noqa: PLR0912
@@ -1182,7 +1182,7 @@ def alias_reused_variant_literal(parser: ImportsHost[Any], models: list[DataMode
     Such unions were left untagged before, so a model named ``Literal`` kept its name, which importers rely on.
     The alias takes no name that the module binds or its class decorators name, additional imports included.
     """
-    tag_fields = parser._reused_variant_tag_fields  # noqa: SLF001
+    tag_fields = parser._tag_plan.reused_tag_fields  # noqa: SLF001
     fields = [field for model in models for field in model.fields]
     annotated = [field for field in fields if tag_fields.get(id(field)) is field]
     bindings = {
