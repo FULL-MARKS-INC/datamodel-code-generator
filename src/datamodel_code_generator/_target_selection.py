@@ -93,7 +93,7 @@ def _server(config: Any, base: Callable[[str], Path], output: Path) -> tuple[Fas
 
 
 def _client(config: Any, base: Callable[[str], Path], output: Path) -> tuple[ClientTarget, ClientGenerationConfig]:
-    from datamodel_code_generator._client.config import ClientGenerationConfig  # noqa: PLC0415
+    from datamodel_code_generator._client.config import ClientGenerationConfig, SelectedOperation  # noqa: PLC0415
     from datamodel_code_generator._client.target import ClientTarget  # noqa: PLC0415
 
     values: dict[str, Any] = {
@@ -103,7 +103,7 @@ def _client(config: Any, base: Callable[[str], Path], output: Path) -> tuple[Cli
         values["resource_names"] = [{"tag": tag, "namespace": name} for tag, name in names.items()]
     if (entries := _json(config, "client_operations")) is not None:
         root = base("client_operations")
-        values["operations"] = [{**entry, "@ref": _operation(key, root)} for key, entry in entries.items()]
+        values["operations"] = [SelectedOperation(entry, _operation(key, root)) for key, entry in entries.items()]
     return ClientTarget(base("client_protocols")), ClientGenerationConfig(
         output=output,
         package=config.client_package,

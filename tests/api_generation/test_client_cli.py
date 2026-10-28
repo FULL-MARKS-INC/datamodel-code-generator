@@ -1114,6 +1114,10 @@ def test_client_cli_model_output_required(
             "Invalid --client-operations: /paths/~1pets/get: Input should be a valid dictionary",
         ),
         (
+            ["--client-operations", '{"/paths/~1pets/get": {"@ref": "/paths/~1pets/post"}}'],
+            "Error: --client-operations['/paths/~1pets/get'].@ref: operations['/paths/~1pets/get'] has no key '@ref'",
+        ),
+        (
             ["--client-resource-names", '{"pets": 1}'],
             "Invalid --client-resource-names: pets: Input should be a valid string",
         ),
@@ -1138,6 +1142,7 @@ def test_client_cli_model_output_required(
     ids=[
         "operations",
         "operation",
+        "operation-ref-key",
         "resource-names",
         "protocols-file",
         "protocols-object",

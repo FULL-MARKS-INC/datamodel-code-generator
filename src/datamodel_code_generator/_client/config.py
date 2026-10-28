@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import UserDict
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Literal, TypeAlias
 
-from pydantic import AfterValidator, BeforeValidator, Field, model_validator
+from pydantic import AfterValidator, BeforeValidator, Field, ValidationError, model_validator
+from pydantic_core import InitErrorDetails
 from typing_extensions import Self
 
 from datamodel_code_generator._api_types import Diagnostic
@@ -196,6 +198,14 @@ class RuntimeOperationMetadata(Node):
         return self
 
 
+class SelectedOperation(UserDict[str, Any]):
+    """The settings a user wrote for one operation, carrying the selector its key named."""
+
+    def __init__(self, entry: Mapping[str, Any], selector: Selector) -> None:
+        super().__init__(entry)
+        self.selector = selector
+
+
 class ClientOperationConfig(Node):
     """Settings of one operation, selected by its root use-site reference."""
 
@@ -217,6 +227,16 @@ class ClientOperationConfig(Node):
         | None
     ) = None
     body_field_names: Annotated[tuple[BodyFieldName, ...], BeforeValidator(_fields)] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _select(cls, data: Any) -> Any:
+        if not isinstance(data, SelectedOperation):
+            return data
+        if "@ref" in data:
+            detail = InitErrorDetails(type="extra_forbidden", loc=("@ref",), input=data["@ref"])
+            raise ValidationError.from_exception_data(cls.__name__, [detail])
+        return {**data, "@ref": data.selector}
 
     @model_validator(mode="after")
     def _distinct(self) -> Self:
