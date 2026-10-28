@@ -139,15 +139,19 @@ _SCHEME_FACTS: Final[dict[SchemeKind, tuple[str, ...]]] = {
 }
 
 
-_SERVER_RUNTIME: Final = ("server/application.py", "server/openapi.py", "server/responses.py")
+_SERVER_RUNTIME: Final = (
+    "model_codecs/errors.py",
+    "model_codecs/media.py",
+    "model_codecs/parameters.py",
+    "server/application.py",
+    "server/openapi.py",
+    "server/responses.py",
+)
 _SECURITY_RUNTIME: Final = ("server/security.py",)
 _EXTRAS_MODULE: Final = "_runtime.model_codecs.pydantic_extras"
 _EXTRAS_RUNTIME: Final = ("model_codecs/pydantic_extras.py",)
 _INPUT_RUNTIME: Final = (
-    "model_codecs/errors.py",
-    "model_codecs/media.py",
     "model_codecs/parameter_reads.py",
-    "model_codecs/parameters.py",
     "model_codecs/unset.py",
     "server/errors.py",
     "server/requests.py",
