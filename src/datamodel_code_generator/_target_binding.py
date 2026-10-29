@@ -22,8 +22,15 @@ from urllib.parse import ParseResult, unquote, urljoin
 
 from typing_extensions import Sentinel, override
 
-from datamodel_code_generator import Error, SchemaParseError
+from datamodel_code_generator import Error
+from datamodel_code_generator._document_reader import document_statuses, string_key
 from datamodel_code_generator._generation_contract import AttemptId
+from datamodel_code_generator._json_schema import (
+    MODEL_VALUE_POSITIONS,
+    SCHEMA_SHAPES,
+    SEQUENCE_SCHEMA_SHAPES,
+    SINGLE_SCHEMA_SHAPES,
+)
 from datamodel_code_generator._runtime.model_codecs.media import media_kind, normalize_media_type
 from datamodel_code_generator._target_contract import (
     BackendFieldFacts,
@@ -885,6 +892,13 @@ def _schema_use(location: SourceLocation) -> TypeUseId:
         DeclarationId(replace(location, role="declaration")),
         "neutral",
     )
+
+
+_VALUE_SCHEMA_LISTS = tuple(
+    keyword for keyword in MODEL_VALUE_POSITIONS if SCHEMA_SHAPES[keyword] in SEQUENCE_SCHEMA_SHAPES
+)
+_VALUE_SCHEMA_MAPS = tuple(keyword for keyword in MODEL_VALUE_POSITIONS if SCHEMA_SHAPES[keyword] == "map")
+_VALUE_SCHEMAS = tuple(keyword for keyword in MODEL_VALUE_POSITIONS if SCHEMA_SHAPES[keyword] in SINGLE_SCHEMA_SHAPES)
 
 
 def _mapping(value: object) -> dict[str, YamlValue]:
@@ -2568,12 +2582,12 @@ class _Reader(_SchemaLocations):
                 yield from self._referenced(declaration, ref, dynamic=keyword == "$dynamicRef")
         if self.legacy and "$ref" in raw:
             return
-        for keyword in ("allOf", "anyOf", "oneOf", "prefixItems", "items"):
+        for keyword in _VALUE_SCHEMA_LISTS:
             if isinstance(branches := raw.get(keyword), list):
                 yield from (declaration.child(keyword, str(index)) for index in range(len(branches)))
-        for keyword in ("properties", "patternProperties"):
+        for keyword in _VALUE_SCHEMA_MAPS:
             yield from (declaration.child(keyword, str(name)) for name in _mapping(raw.get(keyword)))
-        for keyword in ("items", "additionalProperties"):
+        for keyword in _VALUE_SCHEMAS:
             if isinstance(raw.get(keyword), dict):
                 yield declaration.child(keyword)
 
@@ -3444,33 +3458,18 @@ class _Contracts(_SchemaUses):
         """Return the object the target parser resolved a declaration to: itself, unless it is a reference."""
         return self.parser.resolutions.get(declaration) or (declaration, _mapping(raw))
 
-    def named(self, raw: YamlValue, holder: SchemaLocation, kind: str) -> Iterator[tuple[str, YamlValue]]:
+    @staticmethod
+    def named(raw: YamlValue, holder: SchemaLocation, kind: str) -> Iterator[tuple[str, YamlValue]]:
         """Yield the members of the object at ``holder`` by the keys that locate them.
 
         A key that is no string, such as a YAML key ``1`` loaded as a number, names no ``kind``: it is a schema error.
         """
-        for key, value in _mapping(raw).items():
-            if not isinstance(key, str):
-                path = [str(holder.child(str(key)))]
-                raise self.parser._key_error(key, kind, path)  # pyright: ignore[reportPrivateUsage] # ruff: ignore[private-member-access]
-            yield key, value
 
-    @staticmethod
-    def statuses(raw: YamlValue, holder: SchemaLocation) -> dict[str, YamlValue]:
-        """Return the responses of the object at ``holder`` by their status, the text of their key.
+        def error_path(key: object) -> list[str]:
+            return [str(holder.child(str(key)))]
 
-        YAML loads a status key such as ``200`` as a number, so two keys such as ``200`` and ``'200'`` give one status
-        twice: it is a schema error.
-        """
-        keys: dict[str, object] = {}
-        statuses: dict[str, YamlValue] = {}
         for key, value in _mapping(raw).items():
-            if (status := str(key)) in keys:
-                msg = f"response status {status} is given by two keys, {keys[status]!r} and {key!r}"
-                raise SchemaParseError(msg, path=[str(holder.child(status))])
-            keys[status] = key
-            statuses[status] = value
-        return statuses
+            yield string_key(key, kind, error_path), value
 
     def metadata(
         self,
@@ -3845,7 +3844,9 @@ class _Contracts(_SchemaUses):
                 identity,
                 status,
             )
-            for status, value in self.statuses(raw.get("responses"), declaration.child("responses")).items()
+            for status, value in document_statuses(
+                _mapping(raw.get("responses")), lambda status: [str(declaration.child("responses", status))]
+            ).items()
         )
         callbacks = tuple(
             self.metadata(
