@@ -1034,9 +1034,6 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
         "Reference", "SCHEMA_LOCATION_CONFLICT_KEY", FactKind.BOOKKEEPING, (), Phase.PARSE, None, access=Access.DICT_KEY
     ),
     AttributeFact(
-        "Reference", "SCHEMA_OWNER_FRAMES_KEY", FactKind.BOOKKEEPING, (), Phase.PARSE, None, access=Access.DICT_KEY
-    ),
-    AttributeFact(
         "Reference", "_DERIVED_FROM_KEY", FactKind.BOOKKEEPING, (), Phase.PARSE, None, access=Access.DICT_KEY
     ),
     AttributeFact(

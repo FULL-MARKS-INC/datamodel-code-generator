@@ -1580,9 +1580,6 @@ fix = "RP15b"
 [allow."src/datamodel_code_generator/_target_binding.py"."_Contracts.security_schemes"]
 "T-wire.raw-key" = { home = "T-wire", count = 1, audit = "R-05" }
 
-[allow."src/datamodel_code_generator/_target_binding.py"."_Contracts.statuses"]
-"T-wire.raw-value" = { home = "T-wire", count = 3, audit = "R-03" }
-
 [allow."src/datamodel_code_generator/_target_binding.py"."_Documents.__init__"]
 "T-wire.raw-value" = { home = "T-wire", count = 1, audit = "R-04" }
 
@@ -1774,12 +1771,6 @@ fix = "RP15b"
 [allow."src/datamodel_code_generator/model/_decisions/enum_kind.py"."<module>"]
 "H07.int64-range" = { home = "H07", count = 1, audit = "D-L1-21" }
 
-[allow."src/datamodel_code_generator/model/_decisions/tag_value.py"."<module>"]
-"H07.int64-range" = { home = "H07", count = 2, audit = "D-L1-21" }
-
-[allow."src/datamodel_code_generator/model/msgspec.py"."<module>"]
-"H07.int64-range" = { home = "H07", count = 10, audit = "D-L1-21" }
-
 [allow."src/datamodel_code_generator/model/msgspec.py"."DataModelField._annotated_union_data_type"]
 "H10.union-construction" = { home = "H10", count = 1, audit = "D-PP-15" }
 
@@ -1795,32 +1786,14 @@ fix = "RP15b"
 [allow."src/datamodel_code_generator/parser/_intersection.py"."_Reconciler._type"]
 "H06.null-membership" = { home = "H06", count = 1, audit = "D-L1-16" }
 
-[allow."src/datamodel_code_generator/parser/_passes/_shared.py"."_sort_models_by_class_body_references.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
-[allow."src/datamodel_code_generator/parser/_passes/imports.py"."<module>"]
-"H07.int64-range" = { home = "H07", count = 2, audit = "D-L1-21" }
-
 [allow."src/datamodel_code_generator/parser/_passes/imports.py"."tuple_unique_items_warning"]
 "F-use-tuple-for-closed-arrays.option-read" = { home = "F-use-tuple-for-closed-arrays", count = 1, audit = "Hx-array-shape" }
 
 [allow."src/datamodel_code_generator/parser/_passes/modules.py"."_build_keep_model_order_component_order"]
 "H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
 
-[allow."src/datamodel_code_generator/parser/_passes/modules.py"."_build_keep_model_order_components.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
-[allow."src/datamodel_code_generator/parser/_passes/modules.py"."_build_keep_model_ordered_names.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
 [allow."src/datamodel_code_generator/parser/_passes/modules.py"."replace_unique_list_to_set"]
 "F-use-tuple-for-closed-arrays.option-read" = { home = "F-use-tuple-for-closed-arrays", count = 1, audit = "Hx-array-shape" }
-
-[allow."src/datamodel_code_generator/parser/_passes/plans.py"."set_circular_root_model_paths.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
-[allow."src/datamodel_code_generator/parser/_passes/render_prep.py"."_alias_reference_cycles"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
 
 [allow."src/datamodel_code_generator/parser/_passes/render_prep.py"."quote_forward_rule_types.quoted"]
 "H10.union-construction" = { home = "H10", count = 1, audit = "D-PP-10" }
@@ -1834,14 +1807,8 @@ fix = "RP15b"
 [allow."src/datamodel_code_generator/parser/_passes/structure.py"."_module_merges"]
 "H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
 
-[allow."src/datamodel_code_generator/parser/_passes/structure.py"."_module_merges.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
 [allow."src/datamodel_code_generator/parser/base.py"."Parser._get_duplicate_root_reference"]
 "F-use-site-models-for-constrained-refs.option-read" = { home = "F-use-site-models-for-constrained-refs", count = 1, audit = "D-L1-14" }
-
-[allow."src/datamodel_code_generator/parser/base.py"."Parser._nested_model_default_factory_decision.old"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
 
 [allow."src/datamodel_code_generator/parser/graphql.py"."GraphQLParser.parse_enum_as_enum_class"]
 "F-order-constructor-fields-by.option-read" = { home = "F-order-constructor-fields-by", count = 1, audit = "D-PP-18" }
