@@ -975,6 +975,10 @@ fix = "RP13"
 home = "H23"
 fix = "RP14"
 
+[legacy_rows."legacy-merged-reference-null"]
+home = "H23"
+fix = "#4816"
+
 [legacy_rows."legacy-consumed-at-object-property"]
 home = "H07"
 fix = "keep"
