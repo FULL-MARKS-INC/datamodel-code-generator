@@ -20,24 +20,19 @@ from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypeAlias, ca
 
 from typing_extensions import Protocol
 
-from datamodel_code_generator import CollapseRootModelsNameStrategy, Error, FieldTypeCollisionStrategy, ReuseScope
-from datamodel_code_generator._checks import CheckArea, check_mode
+from datamodel_code_generator import CollapseRootModelsNameStrategy, FieldTypeCollisionStrategy, ReuseScope
 from datamodel_code_generator._constraint_applicability import TAG_LITERAL_UNTAKEN_KEYWORD
-from datamodel_code_generator._graph import stable_toposort
 from datamodel_code_generator._internal_utils import get_most_of_parent
-from datamodel_code_generator._model_keys import ModelKey, model_key_of
+from datamodel_code_generator._model_keys import FIELDLESS_SITE_KEY, ModelKey, model_key_of
 from datamodel_code_generator._reference_graph import (
     EdgeKind,
     GraphSnapshot,
     ReferenceGraph,
-    graph_answer,
     reference_graph,
     walk_graph,
 )
 from datamodel_code_generator._requirements import python_target_meets
-from datamodel_code_generator._scc import strongly_connected_components
 from datamodel_code_generator._shared_types import _CollapseRootModelsRecursionError
-from datamodel_code_generator._url_redaction import redact_reference
 from datamodel_code_generator._user_keys import class_field_key
 from datamodel_code_generator.enums import DefaultValueType
 from datamodel_code_generator.imports import IMPORT_OPTIONAL, IMPORT_UNION, Import
@@ -59,7 +54,6 @@ from datamodel_code_generator.model.base import (
     DataModel,
     DataModelFieldBase,
     _find_base_classes,
-    _keyed_answer,
     _model_key_of_model,
     _ModelKeys,
     _reference_names_model,
@@ -68,8 +62,6 @@ from datamodel_code_generator.model.base import (
 )
 from datamodel_code_generator.model.enum import Enum, IntEnum, Member, StrEnum, _enum_class, get_raw_enum_member_value
 from datamodel_code_generator.model.type_alias import TypeAliasBase
-from datamodel_code_generator.parser._check_scopes import module_checkpoint, pass_scope
-from datamodel_code_generator.parser._facts import Phase
 from datamodel_code_generator.parser._graph_ids import UNRESOLVED_MODEL_KEY, keyed_models
 from datamodel_code_generator.parser._imports_plan import ImportProducer
 from datamodel_code_generator.parser._model_shapes import REUSE_MODEL, skips_root_model
@@ -163,7 +155,6 @@ if TYPE_CHECKING:
     from datamodel_code_generator.config import ParserConfig
     from datamodel_code_generator.enums import DataclassArguments, TargetPydanticVersion
     from datamodel_code_generator.imports import Imports
-    from datamodel_code_generator.parser._graph_ids import KeyedModels
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
     from datamodel_code_generator.parser._model_shapes import ModelShapes, ReuseGroups, ShapeRow
     from datamodel_code_generator.parser._passes._shared import _ReuseOptimizationContext
@@ -731,8 +722,6 @@ ComponentId: TypeAlias = int
 Components: TypeAlias = list[list[ModelName]]
 ComponentOf: TypeAlias = dict[ModelName, ComponentId]
 
-ClassNode: TypeAlias = tuple[ModelName, ...]
-ClassGraph: TypeAlias = dict[ClassNode, set[ClassNode]]
 _KEEP_MODEL_ORDER_EDGES: Final = (EdgeKind.DEFINITION, EdgeKind.FIELD)
 """The edges keep model order keeps the models of one cycle together over."""
 
@@ -753,10 +742,9 @@ class _KeepModelOrderGraph(NamedTuple):
     name_of_key: Mapping[ModelKey, ModelName]
 
 
-def _collect_keep_model_order_deps(  # noqa: PLR0913
+def _collect_keep_model_order_deps(
     model: DataModel,
     *,
-    keyed: KeyedModels,
     model_names: ModelNames,
     imported: ModelNames,
     pydantic_v2_root_model_type: type[DataModel] | None,
@@ -768,8 +756,7 @@ def _collect_keep_model_order_deps(  # noqa: PLR0913
     - all_deps: base class refs + (optionally) field refs (within-module, non-imported)
 
     Row ``legacy-keep-order-short-name``: a reference names a model of the module by its short name, so it also adds a
-    false dependency on a same-named model of another module imported as a module. Under the ``MODEL_GRAPH`` check,
-    the dependencies by model key (`KeyedModels.key_of`) that differ are a violation.
+    false dependency on a same-named model of another module imported as a module.
     """
     class_name = model.class_name
     base_class_references = [b.reference for b in model.base_classes if b.reference]
@@ -782,15 +769,6 @@ def _collect_keep_model_order_deps(  # noqa: PLR0913
     ):
         field_references = []
 
-    def module_names(references: Iterable[Reference]) -> set[ModelName]:
-        return {
-            name
-            for reference in references
-            if (key := keyed.key_of(reference)) in keyed.models
-            and (name := keyed.models[key].class_name) not in imported
-            and name != class_name
-        }
-
     def names_by_short_name(references: Iterable[Reference]) -> set[ModelName]:
         return {
             r
@@ -798,17 +776,9 @@ def _collect_keep_model_order_deps(  # noqa: PLR0913
             if r in model_names and r not in imported and r != class_name
         }
 
-    def by_key() -> tuple[set[ModelName], set[ModelName]]:
-        strong = module_names(base_class_references)
-        return strong, strong | module_names(field_references)
-
-    return _keyed_answer(
-        "keep model order",
-        (
-            names_by_short_name(base_class_references),
-            names_by_short_name([*base_class_references, *field_references]),
-        ),
-        by_key,
+    return (
+        names_by_short_name(base_class_references),
+        names_by_short_name([*base_class_references, *field_references]),
     )
 
 
@@ -826,11 +796,9 @@ def _build_keep_model_order_dependency_maps(
     class_names = (
         {model_key_of(model.reference): model.class_name for model in models} if runtime_validation_references else {}
     )
-    keyed = keyed_models(models, "keep model order")
     for model in models:
         strong, deps = _collect_keep_model_order_deps(
             model,
-            keyed=keyed,
             model_names=model_names,
             imported=imported,
             pydantic_v2_root_model_type=pydantic_v2_root_model_type,
@@ -867,23 +835,15 @@ def _keep_model_order_graph(
 
 
 def _build_keep_model_order_components(
-    all_deps: ModelDeps,
-    order_index: OrderIndex,
-    keyed: _KeepModelOrderGraph,
+    order_index: OrderIndex, keyed: _KeepModelOrderGraph
 ) -> _KeepModelOrderComponents:
     def ordered(sccs: Iterable[Iterable[ModelName]]) -> Components:
         components = [sorted(scc, key=order_index.__getitem__) for scc in sccs]
         components.sort(key=lambda members: min(order_index[n] for n in members))
         return components
 
-    def old() -> Components:
-        class_graph: ClassGraph = {(name,): {(dep,) for dep in deps} for name, deps in all_deps.items()}
-        return ordered((node[0] for node in scc) for scc in strongly_connected_components(class_graph))
-
-    components = graph_answer(
-        GraphSnapshot.KEEP_MODEL_ORDER,
-        ordered(map(keyed.name_of_key.__getitem__, scc) for scc in keyed.graph.components(_KEEP_MODEL_ORDER_EDGES)),
-        old,
+    components = ordered(
+        map(keyed.name_of_key.__getitem__, scc) for scc in keyed.graph.components(_KEEP_MODEL_ORDER_EDGES)
     )
     comp_of: ComponentOf = {name: i for i, members in enumerate(components) for name in members}
     return _KeepModelOrderComponents(components=components, comp_of=comp_of)
@@ -905,7 +865,6 @@ def _build_keep_model_order_component_order(
 def _build_keep_model_ordered_names(
     ordered_comp_ids: list[ComponentId],
     components: Components,
-    strong_deps: ModelDeps,
     order_index: OrderIndex,
     keyed: _KeepModelOrderGraph,
 ) -> list[ModelName]:
@@ -914,28 +873,14 @@ def _build_keep_model_ordered_names(
     for component_id in ordered_comp_ids:
         members = components[component_id]
         if len(members) > 1:
-            in_order = members
-
-            def old(members: list[ModelName] = in_order) -> list[ModelName]:
-                strong_edges: dict[ModelName, set[ModelName]] = {n: set() for n in members}
-                member_set = set(members)
-                for base in members:
-                    derived = {member for member in members if base in strong_deps.get(member, set()) & member_set}
-                    strong_edges[base].update(derived)
-                return stable_toposort(members, strong_edges, key=order_index.__getitem__)
-
-            members = graph_answer(
-                GraphSnapshot.KEEP_MODEL_ORDER,
-                [
-                    name_of_key[key]
-                    for key in keyed.graph.dependency_order(
-                        (EdgeKind.DEFINITION,),
-                        [keyed.key_of_name[name] for name in in_order],
-                        lambda key: order_index[name_of_key[key]],
-                    )
-                ],
-                old,
-            )
+            members = [
+                name_of_key[key]
+                for key in keyed.graph.dependency_order(
+                    (EdgeKind.DEFINITION,),
+                    [keyed.key_of_name[name] for name in members],
+                    lambda key: order_index[name_of_key[key]],
+                )
+            ]
         ordered_names.extend(members)
     return ordered_names
 
@@ -966,9 +911,9 @@ def _reorder_models_keep_model_order(
         use_deferred_annotations=use_deferred_annotations,
     )
     keyed = _keep_model_order_graph(deps, model_by_name)
-    comps = _build_keep_model_order_components(deps.all, order_index, keyed)
+    comps = _build_keep_model_order_components(order_index, keyed)
     ordered_comp_ids = _build_keep_model_order_component_order(comps, order_index, keyed)
-    ordered_names = _build_keep_model_ordered_names(ordered_comp_ids, comps.components, deps.strong, order_index, keyed)
+    ordered_names = _build_keep_model_ordered_names(ordered_comp_ids, comps.components, order_index, keyed)
     models[:] = [model_by_name[name] for name in ordered_names]
 
 
@@ -1034,7 +979,7 @@ def _same_named_reference(model: DataModel, name: str | None, *, skips_aliases: 
 
 def _model_family(model: DataModel, derived_models: Mapping[ModelKey, list[DataModel]]) -> dict[ModelKey, DataModel]:
     """Return the models that the model inherits from or passes its fields on to, transitively, by model key."""
-    keys = _ModelKeys("model family")
+    keys = _ModelKeys()
     family = {keys.of(model): model}
     pending = [model]
     while pending:
@@ -1350,8 +1295,6 @@ def collapse_module_root_models(parser: CollapseHost, state: ModuleStateView) ->
     except _CollapseRootModelsRecursionError:
         raise
     except RecursionError as exc:
-        if (mode := check_mode(CheckArea.MODEL_GRAPH)) is not None:
-            mode.violation(Error, "collapsing root models reached the recursion limit instead of stopping at a cycle")
         raise _CollapseRootModelsRecursionError from exc
 
 
@@ -1412,21 +1355,16 @@ def _has_preservable_root_constraints(model: DataModel) -> bool:
     walk = walk_graph(
         GraphSnapshot.ROOT_CONSTRAINTS, EdgeKind.ROOT_TYPE, (model,), _model_key_of_model, _root_type_models
     )
-    return graph_answer(
-        GraphSnapshot.ROOT_CONSTRAINTS,
-        any(map(_constrains_root_field, walk.node_of.values())),
-        lambda: _walks_to_preservable_root_constraints(model, seen_models=set()),
-    )
+    return any(map(_constrains_root_field, walk.node_of.values()))
 
 
-def _walks_to_preservable_root_constraints(model: DataModel, *, seen_models: set[int]) -> bool:
-    """Return whether flattening a root wrapper would discard field-owned constraints, by walking the root types."""
-    if not model.fields or id(model) in seen_models:
-        return False
-    seen_models.add(id(model))
-    return _constrains_root_field(model) or any(
-        _walks_to_preservable_root_constraints(source_model, seen_models=seen_models)
-        for source_model in _root_type_models(model)
+def _site_needs_model_regex_engine(model: DataModel) -> bool:
+    """Return whether ``model`` is a fieldless site (``FIELDLESS_SITE_KEY``) whose pattern needs its holder's engine.
+
+    The engine is one in the config of the model that holds the pattern.
+    """
+    return bool(model.reference.__dict__.get(FIELDLESS_SITE_KEY)) and (
+        (needs_engine := model.fields[0].NEEDS_MODEL_REGEX_ENGINE) is not None and needs_engine(model.fields)
     )
 
 
@@ -1451,6 +1389,7 @@ def collapse_site_facts(
         has_root_field=True,
         circular=model_key_of(root_model.reference) in circular_root_models,
         runtime_object_validation=root_model.has_runtime_object_validation,
+        needs_model_regex_engine=_site_needs_model_regex_engine(root_model),
         field_constraints=field_constraints,
         constrains_through_root_types=not field_constraints and _has_preservable_root_constraints(root_model),
         constrained_root_field=isinstance(constraints := root_field.constraints, ConstraintsBase)
@@ -1468,26 +1407,10 @@ def collapse_site_facts(
 
 
 def has_other_root_references(parser: CollapseHost, reference: Reference, data_type: DataType) -> bool:
-    """Return whether data types other than ``data_type`` name the root model of ``reference``.
-
-    Under the ``MODEL_GRAPH`` check with a report file, record when the answer over the emitted models differs.
-    """
+    """Return whether data types other than ``data_type`` name the root model of ``reference``."""
     store = parser.generation_store
     if (answer := store._root_collapse_has_data_type_references(reference, excluded_data_type=data_type)) is None:  # noqa: SLF001
         answer = store.index.has_data_type_references_other_than(reference, data_type)
-    if (
-        (mode := check_mode(CheckArea.MODEL_GRAPH)) is not None
-        and mode.report_path is not None
-        and answer != store.index.has_data_type_references_other_than(reference, data_type, universe="emitted")
-    ):
-        path = redact_reference(reference.path)
-        users = "are all models the output does not write" if answer else "are all models built after parsing"
-        mode.record(
-            f"{CheckArea.MODEL_GRAPH.value}: when collapsing root models, the other users of {path} {users}",
-            kind="universe-differs",
-            path=path,
-            parsed=answer,
-        )
     return answer
 
 
@@ -1512,7 +1435,8 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
     ``settle_kept_parent_roots`` decides it once every module is processed. A root model that a schema validator rule
     names stays written after its holders inline it: the rule checks values through its class. A root model that its
     inner model replaces leaves; once every module is processed, the rules name the inner model instead
-    (``name_inner_models_in_rules``).
+    (``name_inner_models_in_rules``). The model of a site that earlier releases wrote as a model without fields
+    (``FIELDLESS_SITE_KEY``) keeps the types it names, so collapsing leaves every model those releases wrote.
     """
     generation_store = parser.generation_store
     generation_index = generation_store.index
@@ -1528,6 +1452,8 @@ def collapse_root_models_in_scope(  # noqa: PLR0912, PLR0913, PLR0914, PLR0915, 
     redirected_holders: list[tuple[DataModel, DataType, Import | None]] = []
 
     for model in models:  # noqa: PLR1702
+        if model.reference.__dict__.get(FIELDLESS_SITE_KEY):
+            continue
         for model_field in model.fields:
             for data_type in model_field.data_type.all_data_types:
                 reference = data_type.reference
@@ -2555,7 +2481,7 @@ def rename_named_type(  # noqa: PLR0913, PLR0917
         for user in all_models
         if any(
             (user_reference := _annotated_reference(data_type)) is not None
-            and _reference_names_model(user_reference, source, "users of a renamed type")
+            and _reference_names_model(user_reference, source)
             for data_type in user.all_data_types
         )
         for name in _family_field_names(_model_family(user, derived_models))
@@ -3013,17 +2939,16 @@ def process_each_module(
     ]
     for position, (module_, models) in enumerate(module_models, 1):
         parser._tag_plan.defers_related = position < len(module_models)  # noqa: SLF001
-        with pass_scope("Parser._process_single_module", Phase.MODULES), module_checkpoint(models):
-            ctx = parser._process_single_module(  # noqa: SLF001
-                module_,
-                models,
-                run.module_results,
-                run.config,
-                run.internal_modules,
-                run.model_path_to_module_name,
-                require_update_action_models,
-                run.unused_models,
-            )
+        ctx = parser._process_single_module(  # noqa: SLF001
+            module_,
+            models,
+            run.module_results,
+            run.config,
+            run.internal_modules,
+            run.model_path_to_module_name,
+            require_update_action_models,
+            run.unused_models,
+        )
         run.module_to_import[module_] = ctx.imports
         run.contexts.append(ctx)
     settle_update_actions(parser, require_update_action_models, _context_models(run.contexts))

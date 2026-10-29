@@ -18,7 +18,6 @@ from datamodel_code_generator.model.base import (
     GENERIC_BASE_CLASS_PATH,
     BaseClassDataType,
     DataModel,
-    _keyed_answer,
 )
 from datamodel_code_generator.model.enum import Enum
 from datamodel_code_generator.parser._graph_ids import keyed_models
@@ -312,9 +311,11 @@ def import_removed_reuse_canonicals(
 
 def renamed_types_of(parser: CrossModuleHost, reference: Reference) -> list[_RenamedType] | None:
     """Return the class names that the model ``reference`` names had before it was renamed, or None."""
-    by_path = parser._renamed_type_paths.get(reference.path)  # noqa: SLF001
-    by_key = by_path if reference.source is None else parser._renamed_types.get(model_key_of(reference))  # noqa: SLF001
-    return _keyed_answer("renamed types", by_key, lambda: by_path)
+    return (
+        parser._renamed_type_paths.get(reference.path)  # noqa: SLF001
+        if reference.source is None
+        else parser._renamed_types.get(model_key_of(reference))  # noqa: SLF001
+    )
 
 
 def import_renamed_types(

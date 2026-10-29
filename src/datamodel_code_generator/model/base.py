@@ -26,7 +26,6 @@ from pydantic import ConfigDict, Field
 from typing_extensions import Self, deprecated, final, override
 
 from datamodel_code_generator import Error, cached_path_exists
-from datamodel_code_generator._checks import CheckArea, check_mode
 from datamodel_code_generator._constraint_applicability import VALUES_AS_WRITTEN_KEY
 from datamodel_code_generator._format_types import PythonVersion  # noqa: TC001 - used by Pydantic at runtime
 from datamodel_code_generator._internal_utils import get_most_of_parent, to_hashable
@@ -41,7 +40,7 @@ from datamodel_code_generator._parse_memo import (
     note_reads,
 )
 from datamodel_code_generator._records import record
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, walk_graph
 from datamodel_code_generator._requirements import backport_path, python_target_meets
 from datamodel_code_generator._target_unicode import host_identifiers, host_parsable
 from datamodel_code_generator.imports import (
@@ -97,9 +96,9 @@ if TYPE_CHECKING:
 
     from datamodel_code_generator import DataclassArguments
     from datamodel_code_generator import types as _types
-    from datamodel_code_generator._checks import CheckMode
     from datamodel_code_generator._reference_graph import ReachedModels
     from datamodel_code_generator._requirements import PydanticConstruct
+    from datamodel_code_generator.enums import TargetPydanticVersion
     from datamodel_code_generator.imports import Imports
     from datamodel_code_generator.model import runtime_validation as _runtime_validation
     from datamodel_code_generator.model._decisions.assignment import AssignmentRow, WrittenAssignment
@@ -169,7 +168,6 @@ _BUILTIN_TEMPLATE_INTERNAL_DATA_KEYS: frozenset[str] = frozenset({
 })
 _RESOLVE_REFERENCE_ACTION_CAPABILITIES_MARKER = "__datamodel_code_generator_resolve_reference_action_capabilities__"
 MroT = TypeVar("MroT")
-_AnswerT = TypeVar("_AnswerT")
 _CustomTemplateSignature = bytes
 
 
@@ -618,6 +616,15 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
         ]
         | None
     ] = None
+    NEEDS_MODEL_REGEX_ENGINE: ClassVar[Callable[[list[DataModelFieldBase]], bool] | None] = None
+    """Return whether a pattern of the fields selects a regex engine in the config of the model that holds them."""
+    PATTERN_NEEDS_HOLDER_ENGINE: ClassVar[
+        Callable[[type[DataModel], str, PythonVersion, TargetPydanticVersion | None], bool] | None
+    ] = None
+    """Return whether a pattern in a model of the given root type needs a regex engine of the models that use it.
+
+    It takes the root type, the pattern and the target Python and Pydantic versions.
+    """
     SUPPORTS_FIELD_CONSTRAINTS: ClassVar[bool] = False
     SUPPORTS_ANNOTATED_CONSTRAINTS: ClassVar[bool] = False
     ANNOTATED_CONSTRAINTS_CONTEXT: ClassVar[object | None] = None
@@ -822,9 +829,7 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
             self,
             None,
             lambda: any(
-                _reference_names_model(d.reference, parent, "self reference")
-                for d in self.data_type.all_data_types
-                if d.reference
+                _reference_names_model(d.reference, parent) for d in self.data_type.all_data_types if d.reference
             ),
         )
 
@@ -1652,19 +1657,6 @@ def _holds_render_inputs(value: object) -> bool:
     return isinstance(value, _HOLDERS) and not isinstance(value, Reference)
 
 
-def _check_render_plan_accounting(
-    mode: CheckMode, model: DataModel, field: PlannedField, plan: FieldRenderPlan
-) -> None:
-    """Report a frozen or rebuilt plan that drops a declared item without a reason or writes an undeclared one."""
-    missing, extra = plan.unaccounted(field._declared_render_items())  # noqa: SLF001
-    if missing or extra:
-        mode.violation(
-            Error,
-            f"the render plan of {model.class_name}.{field.name} leaves {sorted(missing)} unaccounted and "
-            f"accounts for undeclared {sorted(extra)}",
-        )
-
-
 _PLAIN_ANNOTATION = Why(RuleId("D11.annotation.plain"))
 """The annotation is the field's type alone."""
 _DEFAULT_VALUE = Why(RuleId("D4.default.value"), keyword="default")
@@ -2424,6 +2416,23 @@ def _field_participates_in_constructor(field: DataModelFieldBase) -> bool:
     )
 
 
+def _rewrite_names(rendered: str, replacements: Iterable[tuple[ast.Name, str]]) -> str:
+    """Write each name node parsed from ``rendered`` as its replacement, at the UTF-8 offsets ``ast`` gives."""
+    source = rendered.encode()
+    offsets = [0, *accumulate(map(len, source.splitlines(keepends=True)))]
+    spans = [
+        (
+            offsets[node.lineno - 1] + node.col_offset,
+            offsets[cast("int", node.end_lineno) - 1] + cast("int", node.end_col_offset),
+            alias,
+        )
+        for node, alias in replacements
+    ]
+    for start, end, alias in sorted(spans, reverse=True):
+        source = source[:start] + alias.encode() + source[end:]
+    return source.decode()
+
+
 def _bind_field_expressions(rendered: str, class_name: str, bindings: Mapping[str, str]) -> str:
     """Bind names in field annotations and defaults without changing template objects.
 
@@ -2431,9 +2440,7 @@ def _bind_field_expressions(rendered: str, class_name: str, bindings: Mapping[st
     statement is parsed as an assignment of the same length (`host_parsable`), so the offsets it parses hold for the
     rendered text.
     """
-    source = rendered.encode()
-    offsets = [0, *accumulate(map(len, source.splitlines(keepends=True)))]
-    replacements: list[tuple[int, int, str]] = []
+    replacements: list[tuple[ast.Name, str]] = []
     host_source, restore_name = host_parsable(rendered)
     for statement in ast.parse(host_source).body:
         if not isinstance(statement, ast.ClassDef) or restore_name(statement.name) != class_name:
@@ -2442,23 +2449,73 @@ def _bind_field_expressions(rendered: str, class_name: str, bindings: Mapping[st
             if not isinstance(field, ast.AnnAssign):
                 continue
             expressions = (field.annotation,) if field.value is None else (field.annotation, field.value)
-            for expression in expressions:
-                for node in ast.walk(expression):
-                    match node:
-                        case ast.Name(
-                            id=name,
-                            ctx=ast.Load(),
-                            end_lineno=int() as end_line,
-                            end_col_offset=int() as end_column,
-                        ) if (alias := bindings.get(restore_name(name))) is not None:
-                            replacements.append((
-                                offsets[node.lineno - 1] + node.col_offset,
-                                offsets[end_line - 1] + end_column,
-                                alias,
-                            ))
-    for start, end, alias in sorted(replacements, reverse=True):
-        source = source[:start] + alias.encode() + source[end:]
-    return source.decode()
+            replacements.extend(
+                (node, alias)
+                for expression in expressions
+                for node in ast.walk(expression)
+                if isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and (alias := bindings.get(restore_name(node.id))) is not None
+            )
+    return _rewrite_names(rendered, replacements)
+
+
+_NAME_SCOPES: Final = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.Lambda,
+    ast.ListComp,
+    ast.SetComp,
+    ast.DictComp,
+    ast.GeneratorExp,
+)
+
+
+def _local_names(scope: ast.AST) -> set[str]:
+    """Return the names a function, lambda or comprehension binds itself: its parameters and its assigned names."""
+    arguments = getattr(scope, "args", None)
+    parameters = (
+        (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg)
+        if isinstance(arguments, ast.arguments)
+        else ()
+    )
+    return {parameter.arg for parameter in parameters if parameter is not None} | {
+        node.id for node in ast.walk(scope) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+
+
+def _bare_loads(tree: ast.AST, bound: frozenset[str] = frozenset()) -> Iterator[ast.Name]:
+    """Yield the names a tree loads bare: loaded, not the module of an attribute (``name.X``), not bound locally."""
+    match tree:
+        case ast.Name(ctx=ast.Load()):
+            if tree.id not in bound:
+                yield tree
+        case ast.Attribute(value=ast.Name()):
+            return
+        case _:
+            if isinstance(tree, _NAME_SCOPES):
+                bound |= _local_names(tree)
+            for child in ast.iter_child_nodes(tree):
+                yield from _bare_loads(child, bound)
+
+
+def _bare_loads_of(rendered: str, names: Collection[str]) -> set[str]:
+    """Return the names of ``names`` that ``rendered`` loads bare, the loads ``_bind_builtin_names`` rewrites."""
+    host_source, restore_name = host_parsable(rendered)
+    return {name for node in _bare_loads(ast.parse(host_source)) if (name := restore_name(node.id)) in names}
+
+
+def _bind_builtin_names(rendered: str, bindings: Mapping[str, str]) -> str:
+    """Write every bare load of a bound builtin in ``rendered`` through its alias, e.g. ``list_aliased[str]``."""
+    host_source, restore_name = host_parsable(rendered)
+    return _rewrite_names(
+        rendered,
+        [
+            (node, alias)
+            for node in _bare_loads(ast.parse(host_source))
+            if (alias := bindings.get(restore_name(node.id))) is not None
+        ],
+    )
 
 
 class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
@@ -2468,6 +2525,7 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     """
 
     _field_name_bindings: Mapping[str, str] | None = None
+    _builtin_name_bindings: Mapping[str, str] | None = None
     reused_reference: Reference | None = None
     """The reference of the model that reuse replaced with this empty subclass of an equal model."""
 
@@ -2525,8 +2583,6 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
     """Whether msgspec decodes data by the output's annotations, which it resolves at the first decode."""
     _PYDANTIC_FORM: ClassVar[PydanticConstruct | None] = None
     """The construct that the model's own form writes where Pydantic reads it, such as a ``type`` statement."""
-    _CONFIG_KEYS_WITHOUT_REQUIREMENT: ClassVar[Callable[[], tuple[str, ...]]] = staticmethod(tuple)
-    """The config keys that the model can write without a row in ``_requirements.py``, for the debug check."""
     _LITERAL_HOLDS_ENUM_MEMBERS: ClassVar[bool] = True
     """Whether the output validates a ``Literal`` of enum members (msgspec does not)."""
     _LAYERS_REPEATED_CONSTRAINTS: ClassVar[bool] = True
@@ -2970,13 +3026,8 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
         added to it.
         """
         met = set() if visited is None else visited
-        met_before = set(met)
         walk = _base_walk(GraphSnapshot.INHERITED_FIELDS, (self,))
-        for key in graph_answer(
-            GraphSnapshot.INHERITED_FIELDS,
-            walk.graph.postorder(walk.starts[0], EdgeKind.BASE, met),
-            lambda: [_model_key_of_model(model) for model in _walked_inherited_field_models(self, met_before)],
-        ):
+        for key in walk.graph.postorder(walk.starts[0], EdgeKind.BASE, met):
             yield from walk.node_of[key].fields
 
     def get_dedup_key(self, class_name: str | None = None, *, use_default: bool = True) -> tuple[Any, ...]:
@@ -2997,7 +3048,6 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
             self,
             (class_name, use_default),
             compute,
-            lambda: self._render_dedup_key(render_class_name),
         )
 
     def _prepare_dedup_key(self) -> None:
@@ -3198,6 +3248,13 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
 
     @override
     def _render(self, *args: Any, **kwargs: Any) -> str:
+        """Render the template, writing the bare builtins that the module imports under aliases through the aliases."""
+        rendered = self._render_template(*args, **kwargs)
+        if self._builtin_name_bindings is None:
+            return rendered
+        return _bind_builtin_names(rendered, self._builtin_name_bindings)
+
+    def _render_template(self, *args: Any, **kwargs: Any) -> str:
         """Render project-owned built-ins without loading Jinja."""
         if (
             args
@@ -3537,8 +3594,7 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
             reference
             for rule_data_type in runtime_validation.data_types
             for data_type in rule_data_type.all_data_types
-            if (reference := data_type.reference) is not None
-            and not _reference_names_model(reference, self, "schema runtime validation references")
+            if (reference := data_type.reference) is not None and not _reference_names_model(reference, self)
         )
 
     @property
@@ -3685,18 +3741,11 @@ class DataModel(TemplateBase, Nullable, ABC):  # noqa: PLR0904
         return self.rendered_fields
 
     def _refresh_field_render_plans(self) -> None:
-        """Rebuild the frozen plan of each field whose contents changed since, as ``render`` may change them.
-
-        A rebuilt plan must account for every item its field declares, as a frozen one, under
-        ``DATAMODEL_CODE_GENERATOR_CHECK_RENDER_PLANS``.
-        """
+        """Rebuild the frozen plan of each field whose contents changed since, as ``render`` may change them."""
         if (ready := RENDER_READY.get()) is None:
             return
         for field in cast("list[PlannedField]", self.fields):
-            if (plan := ready.refreshed(field)) is not None and (
-                mode := check_mode(CheckArea.RENDER_PLANS)
-            ) is not None:
-                _check_render_plan_accounting(mode, self, field, plan)
+            ready.refreshed(field)
 
     def _template_description(self, *, use_custom_template: bool) -> str | None:
         """Return a description safe for the selected template convention."""
@@ -3752,39 +3801,10 @@ def _base_walk(
     )
 
 
-def _walked_inherited_field_models(model: DataModel, met: set[ModelKey]) -> list[DataModel]:
-    """Return the models whose fields ``model`` inherits, bases first, each once, by walking its bases."""
-    if (key := model_key_of(model.reference)) in met:
-        return []
-    met.add(key)
-    models = [
-        inherited for base in _find_base_classes(model) for inherited in _walked_inherited_field_models(base, met)
-    ]
-    models.append(model)
-    return models
-
-
 def _model_ancestor_keys(model: DataModel, stand_ins: Mapping[int, Reference | None] | None) -> frozenset[ModelKey]:
     """Collect the model keys of generated ancestors without assuming direct bases are already sorted."""
     walk = _base_walk(GraphSnapshot.ANCESTORS, (model,), stand_ins)
-    return graph_answer(
-        GraphSnapshot.ANCESTORS,
-        walk.graph.reached(walk.starts[0], (EdgeKind.BASE,)),
-        lambda: _walked_ancestors(model, stand_ins),
-    )
-
-
-def _walked_ancestors(model: DataModel, stand_ins: Mapping[int, Reference | None] | None) -> frozenset[ModelKey]:
-    """Collect the model keys of the generated ancestors of ``model`` by walking its bases."""
-    ancestors: set[ModelKey] = set()
-    to_visit = direct_base_models(model, stand_ins)
-    while to_visit:
-        parent = to_visit.pop()
-        if (parent_key := model_key_of(parent.reference)) in ancestors:
-            continue
-        ancestors.add(parent_key)
-        to_visit.extend(direct_base_models(parent, stand_ins))
-    return frozenset(ancestors)
+    return walk.graph.reached(walk.starts[0], (EdgeKind.BASE,))
 
 
 def _hash_chain(snapshot: GraphSnapshot, models: Sequence[DataModel]) -> list[list[HashClassFacts]]:
@@ -3820,37 +3840,19 @@ def _model_key_of_model(model: DataModel) -> ModelKey:
     return model_key_of(model.reference)
 
 
-def _keyed_answer(site: str, by_key: _AnswerT, by_path: Callable[[], _AnswerT]) -> _AnswerT:
-    """Return ``by_key``, what a site finds by model key or Reference identity.
-
-    Under the ``MODEL_GRAPH`` check, a ``by_key`` that differs from ``by_path()``, what the site found by path, name or
-    Reference equality before, is a violation.
-    """
-    if (mode := check_mode(CheckArea.MODEL_GRAPH)) is not None and by_key != by_path():
-        mode.violation(Error, f"{site}: the lookups by model key and by path disagree", site=site)
-    return by_key
-
-
 @final
 class _ModelKeys:
-    """The model keys of the models that one walk, map or cache meets, which it tells models apart by.
+    """The model keys of the models that one walk, map or cache meets, which it tells models apart by."""
 
-    Under the ``MODEL_GRAPH`` check, a model met at the path of another model the same walk met is a violation
-    (`_keyed_answer`): told apart by path, the two would be taken for one model.
-    """
+    __slots__ = ("_met",)
 
-    __slots__ = ("_keys_by_path", "_met", "_site")
-
-    def __init__(self, site: str) -> None:
-        """Start the keys of one walk, map or cache, which ``site`` names in a violation."""
-        self._site = site
-        self._keys_by_path: dict[str, ModelKey] = {}
+    def __init__(self) -> None:
+        """Start the keys of one walk, map or cache."""
         self._met: set[ModelKey] = set()
 
-    def of(self, model: DataModel) -> ModelKey:
+    def of(self, model: DataModel) -> ModelKey:  # noqa: PLR6301
         """Return the model key of ``model``."""
-        key = model_key_of(model.reference)
-        return _keyed_answer(self._site, key, lambda: self._keys_by_path.setdefault(model.path, key))
+        return model_key_of(model.reference)
 
     def first(self, model: DataModel) -> bool:
         """Return whether the walk meets ``model`` for the first time, and remember it as met."""
@@ -3887,23 +3889,17 @@ def forget_model_memos(model: DataModel, *tables: MemoTable) -> None:
             forget(table, model_key_of(reference), model)
 
 
-def _reference_names_model(reference: Reference, model: DataModel, site: str) -> bool:
+def _reference_names_model(reference: Reference, model: DataModel) -> bool:
     """Return whether ``reference`` names ``model``: whether the two carry one model key.
 
     Row ``legacy-keyless-reference-by-path``: a reference that no model was built with (one built outside the resolver,
     such as by a parser extension) names the model at its path. Row ``legacy-replaced-root-shares-path``: a reference
     to the model that shares the path of ``model`` since collapse replaced one by the other names it too
-    (`_share_path_identity`). Under the ``MODEL_GRAPH`` check, a reference whose path and model key disagree on
-    whether it names ``model`` is a violation (`_keyed_answer`).
+    (`_share_path_identity`).
     """
-    by_path = reference.path == model.path
-    key = model_key_of(reference)
-    named = (
-        by_path
-        if reference.source is None
-        else key in {model_key_of(model.reference), model.__dict__.get(_PATH_PARTNER_KEY)}
-    )
-    return _keyed_answer(site, named, lambda: by_path)
+    if reference.source is None:
+        return reference.path == model.path
+    return model_key_of(reference) in {model_key_of(model.reference), model.__dict__.get(_PATH_PARTNER_KEY)}
 
 
 def sort_data_models_for_mro(
@@ -3969,14 +3965,7 @@ def linearize_data_models(
     lineages: dict[ModelKey, list[DataModel]] = {}
     for key in order:
         lineages[key] = [node_of[key], *merged([node_of[base] for base in graph.ordered_targets(key, EdgeKind.BASE)])]
-    return [
-        node_of[key]
-        for key in graph_answer(
-            GraphSnapshot.BASE_CLASS_ORDER,
-            list(map(_model_key_of_model, merged(list(models)))),
-            lambda: list(map(_model_key_of_model, _linearize_depth_first(models, stand_ins))),
-        )
-    ]
+    return [node_of[key] for key in map(_model_key_of_model, merged(list(models)))]
 
 
 def _linearize_depth_first(
