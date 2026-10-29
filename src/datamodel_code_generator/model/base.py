@@ -829,11 +829,6 @@ class DataModelFieldBase(_BaseModel):  # noqa: PLR0904
             ),
         )
 
-    @property
-    def _can_apply_constraints(self) -> bool:
-        """Apply constraints to containers without suppressing recursive item types."""
-        return self._constraints_blocked_by() is None
-
     def _constraints_blocked_by(self, *, anyurl_outside_container: bool = False) -> RenderDrop | None:
         """Return why the field's call cannot write its constraints, or None when it can (``render_drop``)."""
         return render_drop(
