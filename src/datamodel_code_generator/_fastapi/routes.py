@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 from urllib.parse import unquote
 
-from datamodel_code_generator._target_contract import LiteralScalar, LiteralSequence
+from datamodel_code_generator._target_operations import group_tag
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -168,18 +168,11 @@ def _plain(name: str) -> bool:
     return name.isascii() and name.isidentifier() and not keyword.iskeyword(name)
 
 
-def tags(operation: OperationContract) -> tuple[str, ...]:
-    """Return an operation's tags in declaration order."""
-    if not isinstance(value := dict(operation.facts).get("tags"), LiteralSequence):
-        return ()
-    return tuple(item.value for item in value.items if isinstance(item, LiteralScalar) and isinstance(item.value, str))
-
-
 def group_key(operation: OperationContract, *, single: bool) -> str:
     """Return the group of an operation: its first tag, default without tags, or all for the single layout."""
     if single:
         return "all"
-    return f"tag:{found[0]}" if (found := tags(operation)) else "default"
+    return "default" if (tag := group_tag(operation)) is None else f"tag:{tag}"
 
 
 def group_basis(key: str) -> str:
