@@ -1594,6 +1594,26 @@ def test_main_openapi_msgspec_tagged_unions_inherited(output_file: Path, entrypo
         )
 
 
+def test_main_openapi_msgspec_tagged_unions_diamond(output_file: Path) -> None:
+    """Visit a struct derived through two bases once when looking for a derived struct that keeps the tag property."""
+    run_main_and_assert(
+        input_path=OPEN_API_DATA_PATH / "discriminator_msgspec_tagged_unions_diamond.yaml",
+        output_path=output_file,
+        input_file_type="openapi",
+        assert_func=assert_file_content,
+        expected_file=EXPECTED_OPENAPI_PATH / "discriminator" / "msgspec_tagged_unions_diamond.py",
+        extra_args=[
+            "--output-model-type",
+            "msgspec.Struct",
+            "--use-msgspec-tagged-unions",
+            "--target-python-version",
+            "3.10",
+            "--disable-timestamp",
+        ],
+        force_exec_validation=True,
+    )
+
+
 def test_main_openapi_discriminator_mapping_msgspec_tags(output_file: Path) -> None:
     """Tag msgspec variants whose discriminator value comes from the mapping or the schema name."""
     run_main_and_assert(

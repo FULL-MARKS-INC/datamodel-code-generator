@@ -721,7 +721,7 @@ def _iter_derived_fields(
 ) -> Iterator[DataModelFieldBase]:
     """Yield the fields that the classes derived from the model declare, each class once."""
     for derived_model in derived_models.get(model_key_of(model.reference), ()):
-        if not visited.first(derived_model):  # pragma: no cover
+        if not visited.first(derived_model):
             continue
         yield from derived_model.fields
         yield from _iter_derived_fields(derived_model, derived_models, visited)

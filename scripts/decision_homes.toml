@@ -899,6 +899,17 @@ adapters = [
     "parser/_passes/modules.py:settle_kept_parent_roots",
 ]
 
+[homes.H15]
+decision = "whether the instances of a model hash by value: set item models keeping the builtin hash, and dict keys that take a root model's root type"
+core = ["model/_decisions/hashability.py"]
+adapters = [
+    "model/base.py:set_item_models_keeping_builtin_hash",
+    "model/base.py:DataModel._keys_take_root_type",
+    "model/base.py:DataModel._hash_class_facts",
+    "model/pydantic_v2/base_model.py:BaseModel._hash_class_facts",
+    "model/pydantic_v2/base_model.py:_validated_value_hashes",
+]
+
 [legacy_rows."legacy-exact-ints-as-floats"]
 home = "H07"
 fix = "keep"
