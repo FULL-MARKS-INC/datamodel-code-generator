@@ -6,7 +6,7 @@ rows need, in their order, as an Enum lookup or a variant's mapped tags cost mor
 read the facts from the live objects: ``parser/_passes/_shared.py`` (``_tag_field_matches``, ``_keeps_instance_field``,
 ``_FieldTagFacts``, ``_get_mapping_discriminator_values``, ``enum_discriminator_literal``,
 ``enum_discriminator_members``),
-``parser/_passes/modules.py`` (``_VariantTagFacts`` and the passes that apply tags), ``parser/jsonschema.py``
+``parser/_tag_plan.py`` (``_VariantTagFacts``), the passes that apply tags, ``parser/jsonschema.py``
 (``_SchemaTagFacts`` behind ``JsonSchemaParser._get_single_literal_value``, ``_get_union_variant_literal_values``,
 ``_get_tagged_union_field_values``, ``_set_tagged_union_discriminator``) and ``model/msgspec.py``
 (``Struct._tag_options``, ``Struct.discriminator_tag``).

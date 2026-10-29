@@ -23,7 +23,7 @@ from datamodel_code_generator.parser._passes._shared import (
     override_required_field,
 )
 from datamodel_code_generator.parser._passes._state import RecursionFacts
-from datamodel_code_generator.parser._tag_plan import iter_union_sites, possible_tag_names
+from datamodel_code_generator.parser._tag_plan import field_namer, iter_union_sites, possible_tag_names
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.imports import Import
     from datamodel_code_generator.model.base import DataModel, DataModelFieldBase
     from datamodel_code_generator.parser._passes._state import ModuleModels, StructuredRun
-    from datamodel_code_generator.parser._tag_plan import TagPlan
+    from datamodel_code_generator.parser._tag_plan import TagCapabilities, TagPlan
     from datamodel_code_generator.parser.generation import GraphBuilder
     from datamodel_code_generator.reference import ModelType, Reference
 
@@ -116,6 +116,10 @@ class PlansHost(FlattenHost, Protocol):
         """The roots that collapse replaced by their inner models."""
 
     @property
+    def _tag_capabilities(self) -> TagCapabilities:
+        """The rows of the output's model and field classes that the tag passes read."""
+
+    @property
     def _tag_plan(self) -> TagPlan:
         """What the tag passes of the parse recorded."""
 
@@ -169,7 +173,7 @@ def flatten_conflicting_base_layouts(parser: PlansHost, module_models: ModuleMod
     output. A model that a type override replaces has a layout the generator does not know, as a configured base
     class has.
     """
-    if not parser.data_model_type.FLATTENS_CONFLICTING_BASE_LAYOUTS:
+    if not parser._tag_capabilities.flattens_layouts:  # noqa: SLF001
         return
     models = [model for _, models in module_models for model in models]
     if not (joins := [model for model in models if len(model.base_classes) > 1]):
@@ -187,9 +191,7 @@ def flatten_conflicting_base_layouts(parser: PlansHost, module_models: ModuleMod
     tag_names = possible_tag_names(
         iter_union_sites(chain(models, chain.from_iterable(parser._collapsed_reuse_models.values()))),  # noqa: SLF001
         list(layout_models.values()),
-        lambda property_name, class_name: parser.model_resolver.get_valid_field_name_and_alias(
-            field_name=property_name, model_type=parser.field_name_model_type, class_name=class_name
-        )[0],
+        field_namer(parser.model_resolver, parser.field_name_model_type),
     )
     overrides = parser._model_type_override_imports  # noqa: SLF001
 

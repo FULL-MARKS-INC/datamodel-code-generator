@@ -1203,6 +1203,10 @@ fix = "G05"
 home = "H11"
 fix = "G05"
 
+[legacy_rows."legacy-collapse-python-name-mode"]
+home = "H11"
+fix = "G05"
+
 # ==== allowlist (shrink-only; `--write-allowlist` rewrites everything below this line) ====
 
 [allow."src/datamodel_code_generator/_client/codec_plan.py"."<module>"]

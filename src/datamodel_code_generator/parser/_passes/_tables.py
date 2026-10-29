@@ -513,7 +513,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 "unconstrain_union_members",
                 late(plans.unconstrain_union_members_in_modules),
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
             ),
             PassSpec(
                 "set_circular_root_model_paths",
@@ -563,7 +563,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 "settle_discriminated_unions",
                 late(modules.settle_discriminated_unions),
-                when=lambda self, _: self.data_model_field_type.SUPPORTS_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.writes_argument,
             ),
         ),
     ),
@@ -575,12 +575,12 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
             PassSpec(
                 "tag_fields_of_tagged_bases",
                 cross_module.tag_fields_of_tagged_bases,
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
             ),
             PassSpec(
                 "write_enum_member_tags_as_values",
                 cross_module.write_enum_member_tags_as_values,
-                when=lambda self, _: not self.data_model_type._LITERAL_HOLDS_ENUM_MEMBERS,  # noqa: SLF001
+                when=lambda self, _: not self._tag_capabilities.literal_holds_members,
             ),
             PassSpec(
                 "warn_enums_admitting_other_values",
@@ -660,7 +660,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
                 lambda self, run: render_prep.fix_tag_opt_out_field_ordering(
                     self._tag_plan.opted_out, _context_models(run.contexts)
                 ),
-                when=lambda self, _: self.data_model_type.REQUIRES_TAGGED_UNION_DISCRIMINATOR,
+                when=lambda self, _: self._tag_capabilities.struct_tags,
             ),
             HookCall(
                 "finalize_modules",
