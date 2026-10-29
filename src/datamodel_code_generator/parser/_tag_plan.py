@@ -6,12 +6,13 @@ its order. The decisions of the L5 tag passes are the functions here: whether a 
 (:func:`site_validity`), the Python name of its tag field (:func:`site_names`, :func:`shared_site_names`), the tags of
 a variant (:func:`tags_of_variant`, :class:`UnionView`), the form each tag field takes
 (:func:`iter_tag_field_decisions`), which msgspec unions take struct tags (:func:`tag_msgspec_unions`) and which
-``discriminator=`` Pydantic cannot build (:func:`settle_site`, :func:`iter_root_default_unions`). The passes keep their
-slots: they call these where they read the facts before, write the result through the store, in the order they read
-it, as a variant may read a tag field that the write for an earlier variant changed, and record it in
-:class:`TagPlan`, which holds what the tag passes of one parse recorded; :meth:`TagPlan.reset` forgets it at the start
-of L4. The class constants of a backend these decisions read are the rows of :class:`TagCapabilities`. The L3 reuse
-keys (:func:`declared_union_tags`) and the L4 layout prediction (:func:`possible_tag_names`) are read here too.
+``discriminator=`` Pydantic cannot build (:func:`settle_site`, :func:`iter_root_default_unions`), and at L6 what
+becomes of the msgspec structs below tagged bases (:func:`iter_struct_tag_decisions`). The passes keep their slots:
+they call these where they read the facts before, write the result through the store, in the order they read it, as a
+variant may read a tag field that the write for an earlier variant changed, and record it in :class:`TagPlan`, which
+holds what the tag passes of one parse recorded; :meth:`TagPlan.reset` forgets it at the start of L4. The class
+constants of a backend these decisions read are the rows of :class:`TagCapabilities`. The L3 reuse keys
+(:func:`declared_union_tags`) and the L4 layout prediction (:func:`possible_tag_names`) are read here too.
 
 Each pass keeps its slot in the pipeline, so today's timing stays; these rows name it until a decision after the module
 loop replaces them:
@@ -42,9 +43,12 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast, final
 from datamodel_code_generator import Error
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._records import record
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, walk_graph
 from datamodel_code_generator.model._decisions.tag_value import (
+    field_tag,
     is_tag_value,
     mapping_path_keys,
+    redeclared_tag_field,
     same_tag,
     same_tags,
     schema_path_keys,
@@ -52,9 +56,16 @@ from datamodel_code_generator.model._decisions.tag_value import (
     tag_key,
     variant_tags,
 )
-from datamodel_code_generator.model.base import DataModel, _find_base_classes, _ModelKeys, linearize_data_models
+from datamodel_code_generator.model.base import (
+    DataModel,
+    _find_base_classes,
+    _model_key_of_model,
+    _ModelKeys,
+    linearize_data_models,
+)
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum
 from datamodel_code_generator.parser._passes._shared import (
+    _FieldTagFacts,
     _format_tags,
     _get_discriminator_field_value,
     _get_enum_from_base,
@@ -74,10 +85,11 @@ from datamodel_code_generator.types import ANY, NONE
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
     from datamodel_code_generator._internal_utils import HashableComparable
     from datamodel_code_generator._model_keys import ModelKey
-    from datamodel_code_generator.model._decisions.tag_value import TagFieldMatch, VariantTagSource
+    from datamodel_code_generator.model._decisions.tag_value import FieldTag, TagFieldMatch, VariantTagSource
     from datamodel_code_generator.model.base import DataModelFieldBase
     from datamodel_code_generator.parser._passes._shared import DiscriminatorValue
     from datamodel_code_generator.reference import ModelResolver, ModelType
@@ -93,6 +105,8 @@ __all__ = [
     "RetypedTagField",
     "SiteNames",
     "SiteStatus",
+    "StructTagDecision",
+    "StructTagKind",
     "TagCapabilities",
     "TagPlan",
     "UnionSite",
@@ -106,6 +120,7 @@ __all__ = [
     "has_any_variant",
     "has_reused_variant",
     "iter_root_default_unions",
+    "iter_struct_tag_decisions",
     "iter_tag_field_decisions",
     "iter_union_sites",
     "mapped_struct_tag",
@@ -152,6 +167,14 @@ MsgspecOutcome: TypeAlias = Literal["applied", "deferred", "untaggable", "relate
 * ``deferred``: a struct a union of a later module may tag keeps the tag field as an instance field, so it waits.
 * ``untaggable``: a struct cannot take exactly one tag for it; its variants are left untagged.
 * ``related``: a base or derived struct keeps the tag field as an instance field; its variants are left untagged.
+"""
+
+StructTagKind: TypeAlias = Literal["tagged-base", "opted-out", "flattened"]
+"""What L6 decides for a msgspec struct below tagged bases (:class:`StructTagDecision`).
+
+* ``tagged-base``: the fields that redeclare the tag field of a base with one literal become its tags.
+* ``opted-out``: it opts out of the tag it inherits.
+* ``flattened``: it declares the fields of its bases itself and keeps its tag.
 """
 
 
@@ -927,6 +950,126 @@ class VariantTags:
 
 
 @final
+@record(eq=False)
+class StructTagDecision:
+    """What L6 decided for a msgspec struct below tagged bases (:data:`StructTagKind`)."""
+
+    model: DataModel
+    kind: StructTagKind
+    tags: tuple[tuple[DataModelFieldBase, str, FieldTag], ...] = ()
+    """``tagged-base``: the fields that become tags, the tag field of a base each redeclares and the tag it holds."""
+    untagged: tuple[DataModelFieldBase, ...] = ()
+    """``opted-out``: the tag fields that are instance fields again, typed by their const where no literal is."""
+
+
+def _redeclared_tag_field(tag_fields: AbstractSet[str], field_: DataModelFieldBase) -> str | None:
+    """Return the tag field of a tagged base that a field redeclares, by its Python or its source name, or None."""
+    return redeclared_tag_field(tag_fields, name=field_.name, original_name=field_.original_name, alias=field_.alias)
+
+
+def _bases_keep_instance_field(model: DataModel, source_name: str) -> bool:
+    """Return whether a base of a model, or a base of that, keeps an instance field that the document names so."""
+    return any(
+        _keeps_instance_field(field_, source_name)
+        for base_model in _find_base_classes(model)
+        for field_ in base_model.iter_all_fields()
+    )
+
+
+def _structs_of_union(data_type: DataType) -> set[int]:
+    """Return the ids of the structs that a union lists, through the aliases it names."""
+    return {
+        id(source)
+        for member, _, _ in _iter_discriminator_data_types(data_type.data_types)
+        if member.reference
+        and isinstance(source := member.reference.source, DataModel)
+        and source.REQUIRES_TAGGED_UNION_DISCRIMINATOR
+    }
+
+
+def _structs_sharing_a_union(models: Iterable[DataModel]) -> set[int]:
+    """Return the ids of the structs that a union lists beside another struct, which msgspec decodes only if tagged."""
+    shared: set[int] = set()
+    for model in models:
+        for field_ in model.fields:
+            for data_type in field_.data_type.all_data_types:
+                if data_type.is_union and len(structs := _structs_of_union(data_type)) > 1:
+                    shared |= structs
+    return shared
+
+
+def _has_cyclic_ancestry(model: DataModel) -> bool:
+    """Return whether the base classes of a model, however distant, inherit from one another in a cycle."""
+    walk = walk_graph(GraphSnapshot.CYCLIC_ANCESTRY, EdgeKind.BASE, (model,), _model_key_of_model, _find_base_classes)
+    return walk.graph.acyclic_order((EdgeKind.BASE,)) is None
+
+
+def _bases_first(models: Sequence[DataModel]) -> list[DataModel]:
+    """Return the models with base classes, each after the bases among ``models`` it inherits from, each once.
+
+    A model whose bases, however distant, inherit from one another in a cycle is left out, and the bases only it
+    reaches wait for their own turn. L6 changes the bases of a model only once its turn has come, so the order is
+    that of the snapshot of ``models`` and the models they inherit from, taken before.
+    """
+    walk = walk_graph(GraphSnapshot.TAGGED_BASES, EdgeKind.BASE, models, _model_key_of_model, _find_base_classes)
+    met = set(walk.node_of).difference(walk.starts)
+    order: list[ModelKey] = []
+    for model, key in zip(models, walk.starts, strict=True):
+        if key in met or not model.base_classes or _has_cyclic_ancestry(model):
+            met.add(key)
+            continue
+        order.extend(
+            reached for reached in walk.graph.postorder(key, EdgeKind.BASE, met) if walk.node_of[reached].base_classes
+        )
+    return [walk.node_of[key] for key in order]
+
+
+def iter_struct_tag_decisions(models: Sequence[DataModel]) -> Iterator[StructTagDecision]:
+    """Yield what becomes of the msgspec structs below tagged bases, as the pass asks for each after writing the last.
+
+    msgspec rejects a field that declares the tag field of a tagged base. A struct inherits the tag of its base, so
+    its single literal becomes its own tag, as for a tagged variant, and a struct with any other such field opts out of
+    the tag to keep the field. A struct whose tag field a base keeps as an instance field opts out too, and its tag
+    field is a field of its own again, as msgspec refuses a tag field that a base declares; a struct that reuse made an
+    empty subclass of that base declares the fields of its base itself instead and keeps its tag, as it would without
+    reuse, where a union lists it beside another struct: msgspec decodes such a union only if all its structs are
+    tagged. Bases of other modules are tagged by then, as every module is processed first, and a base is decided
+    before the structs inheriting from it, as its own tag decides theirs. Inheritance cycles are reported later.
+    """
+    sharing: set[int] | None = None
+    for model in _bases_first(models):
+        if tag_fields := {tag[0] for base in _find_base_classes(model) if (tag := base.discriminator_tag) is not None}:
+            redeclared = [
+                (field_, tag_field, field_tag("legacy-literal-only", _FieldTagFacts(field_)))
+                for field_ in model.fields
+                if not field_.extras.get("is_classvar")
+                and (tag_field := _redeclared_tag_field(tag_fields, field_)) is not None
+            ]
+            tags = tuple((field_, tag_field, tag) for field_, tag_field, tag in redeclared if tag is not None)
+            if len(tags) != len(redeclared):
+                yield StructTagDecision(model, "opted-out")
+            elif tags:
+                yield StructTagDecision(model, "tagged-base", tags)
+        if (tag := model.discriminator_tag) is None or not _bases_keep_instance_field(model, tag[0]):
+            continue
+        if model.reused_reference is not None:
+            if sharing is None:
+                sharing = _structs_sharing_a_union(models)
+            if id(model) in sharing:
+                yield StructTagDecision(model, "flattened")
+                continue
+        yield StructTagDecision(
+            model,
+            "opted-out",
+            untagged=tuple(
+                field_
+                for field_ in model.fields
+                if field_.extras.get("is_classvar") and _redeclared_tag_field({tag[0]}, field_) is not None
+            ),
+        )
+
+
+@final
 @dataclass(slots=True)
 class TagPlan:
     """What the tag passes of one parse recorded, by the ids of the models and fields they read.
@@ -948,8 +1091,8 @@ class TagPlan:
     """The msgspec unions whose tags wait until every module is processed."""
     defers_related: bool = False
     """Whether modules remain whose unions may tag a struct, so the unions such a struct blocks wait."""
-    opted_out: list[DataModel] = field(default_factory=list)
-    """The structs below tagged bases that L6 leaves untagged."""
+    struct_tags: list[StructTagDecision] = field(default_factory=list)
+    """What L6 decided for the msgspec structs below tagged bases, in the order it wrote them."""
 
     def reset(self) -> None:
         """Forget what the passes of an earlier parse recorded after L3."""
@@ -959,7 +1102,12 @@ class TagPlan:
         self.reused_tag_fields.clear()
         self.deferred_msgspec.clear()
         self.defers_related = False
-        self.opted_out.clear()
+        self.struct_tags.clear()
+
+    @property
+    def opted_out(self) -> list[DataModel]:
+        """Return the structs below tagged bases that L6 leaves untagged."""
+        return [decision.model for decision in self.struct_tags if decision.kind == "opted-out"]
 
     def inline_variant_tags(
         self, models: Iterable[DataModel], namer: FieldNamer, *, enum_member_tags: bool

@@ -240,7 +240,7 @@ core = [
 ]
 adapters = [
     "parser/_passes/modules.py:apply_discriminator_type",
-    "parser/_passes/cross_module.py:_tag_fields_of_tagged_bases",
+    "parser/_passes/cross_module.py:tag_fields_of_tagged_bases",
 ]
 
 [homes.H12]
