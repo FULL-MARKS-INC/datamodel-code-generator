@@ -137,16 +137,25 @@ _LEAF_LAYER_IMPORTS: Final[dict[str, tuple[frozenset[str], str]]] = {
             "only the standard library and typing_extensions"
         ),
     ),
+    "json-schema": (
+        frozenset({*sys.stdlib_module_names, "typing_extensions"}),
+        (
+            "the subschema position table is a leaf that every schema walker reads: import only the standard library "
+            "and typing_extensions"
+        ),
+    ),
     "parser-core": (
         frozenset({
             *sys.stdlib_module_names,
             "typing_extensions",
+            "datamodel_code_generator._json_schema",
             "datamodel_code_generator._records",
             "datamodel_code_generator._regex_syntax",
         }),
         (
             "a pure parser core computes from the dumped schemas it is given: import only the standard library, "
-            "typing_extensions, datamodel_code_generator._records and datamodel_code_generator._regex_syntax"
+            "typing_extensions, datamodel_code_generator._json_schema, datamodel_code_generator._records and "
+            "datamodel_code_generator._regex_syntax"
         ),
     ),
     "checks": (
@@ -161,14 +170,11 @@ _LEAF_LAYER_IMPORTS: Final[dict[str, tuple[frozenset[str], str]]] = {
 _PARSER_LAYERS: Final = frozenset({"parser", "parser-passes"})
 """Layers of parser code: the parser modules and the pass modules under ``parser/_passes/``."""
 _PARSER_PASS_IMPORTS: Final = frozenset({
-    "datamodel_code_generator.parser._check_scopes",
     "datamodel_code_generator.parser._facts",
-    "datamodel_code_generator.parser._finality",
     "datamodel_code_generator.parser._graph_ids",
     "datamodel_code_generator.parser._imports_plan",
     "datamodel_code_generator.parser._model_shapes",
     "datamodel_code_generator.parser._null_facts",
-    "datamodel_code_generator.parser._pass_decls",
     "datamodel_code_generator.parser._passes",
     "datamodel_code_generator.parser._phases",
     "datamodel_code_generator.parser._pipeline",
@@ -1258,6 +1264,8 @@ def _classify_source_path(path: Path) -> Layer:
             layer = "constraints"
         case ("_regex_syntax.py",):
             layer = "regex"
+        case ("_json_schema.py",):
+            layer = "json-schema"
         case ("_checks.py",):
             layer = "checks"
         case ("_client" | "_fastapi", *_):

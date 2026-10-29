@@ -17,9 +17,8 @@ from typing import TYPE_CHECKING, Any, Final, TypeAlias, cast
 from typing_extensions import Protocol
 
 from datamodel_code_generator import DefaultValueTypeWarning, Error, ReuseScope
-from datamodel_code_generator._checks import CheckArea, check_mode
+from datamodel_code_generator._constraint_applicability import MSGSPEC_OUTPUT, int_beyond_values
 from datamodel_code_generator._model_keys import model_key_of
-from datamodel_code_generator._parse_memo import rendering_memo
 from datamodel_code_generator._python_target_names import PYTHON_BUILTIN_TYPE_NAMES
 from datamodel_code_generator._requirements import pydantic_floor
 from datamodel_code_generator._url_redaction import redact_reference
@@ -28,21 +27,11 @@ from datamodel_code_generator.imports import IMPORT_LITERAL, Import
 from datamodel_code_generator.model._decisions.enum_kind import literal_value_kind
 from datamodel_code_generator.model._decisions.tag_value import struct_tag_clash
 from datamodel_code_generator.model._render_plan import RENDER_READY
-from datamodel_code_generator.model.base import BaseClassDataType, DataModel
+from datamodel_code_generator.model.base import BaseClassDataType, DataModel, _bare_loads_of
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum, get_raw_enum_member_value
 from datamodel_code_generator.model.output import _bare_name_loads, _model_field_name_collisions
 from datamodel_code_generator.model.type_alias import TypeAliasBase, TypeStatement
-from datamodel_code_generator.parser._graph_ids import keyed_models, unchecked
-from datamodel_code_generator.parser._imports_plan import (
-    BindingRequest,
-    FinalName,
-    ImportProducer,
-    ModuleImportPlan,
-    NameTable,
-    ReferenceImport,
-    ReferenceUse,
-    allocate_bindings,
-)
+from datamodel_code_generator.parser._imports_plan import Added, ImportProducer
 from datamodel_code_generator.parser._passes._shared import (
     BaseStandInHost,
     RecursionFactsHost,
@@ -50,8 +39,6 @@ from datamodel_code_generator.parser._passes._shared import (
     _context_models,
     _declares_unique_items,
     _format_tags,
-    _generic_base_class_module,
-    _get_model_module_name,
     _is_discriminator_container,
     _is_discriminator_wrapper,
     _iter_discriminator_data_types,
@@ -68,7 +55,6 @@ from datamodel_code_generator.parser._passes._state import _PYDANTIC_FLOORS, Con
 from datamodel_code_generator.parser._passes._warnings import warn_as_parser_base
 from datamodel_code_generator.parser._passes.render_prep import _DECIMAL_WARNING_EXAMPLE_LIMIT
 from datamodel_code_generator.reference import ModelResolver
-from datamodel_code_generator.types import DataType, render_type_expr
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
@@ -78,12 +64,11 @@ if TYPE_CHECKING:
     from datamodel_code_generator._requirements import PydanticConstruct
     from datamodel_code_generator.enums import TargetPydanticVersion
     from datamodel_code_generator.imports import Imports
-    from datamodel_code_generator.model._render_plan import FieldRenderPlan, PlannedField, RenderReady
+    from datamodel_code_generator.model._render_plan import RenderReady
     from datamodel_code_generator.model.base import DataModelFieldBase
     from datamodel_code_generator.model_metadata import ModelMetadata
-    from datamodel_code_generator.parser._graph_ids import KeyedModels
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
-    from datamodel_code_generator.parser._passes._shared import ReferenceImportTarget, _VariantDiscriminatorTags
+    from datamodel_code_generator.parser._passes._shared import _VariantDiscriminatorTags
     from datamodel_code_generator.parser._passes._state import (
         FinishRun,
         ForwarderMap,
@@ -93,8 +78,8 @@ if TYPE_CHECKING:
         _FinalizeState,
     )
     from datamodel_code_generator.parser.generation import GraphBuilder
-    from datamodel_code_generator.reference import ModelType, Reference
-    from datamodel_code_generator.types import TypeExpr
+    from datamodel_code_generator.reference import ModelType
+    from datamodel_code_generator.types import DataType
 
 __all__ = [
     "FinishHost",
@@ -102,8 +87,10 @@ __all__ = [
     "RenderHost",
     "add_root_init_result",
     "alias_builtin_shadowing_module_imports",
+    "alias_builtins_hidden_by_submodules",
     "append_model_imports",
     "bind_module_field_names",
+    "builtin_name_bindings",
     "change_module_imported_model_names",
     "decide_config_items",
     "name_final_classes_of_additional_properties",
@@ -164,6 +151,10 @@ class ImportsHost(ReplacedRootsHost, Protocol[ContextT]):
     @property
     def target_python_version(self) -> PythonVersion:
         """The Python version the output targets."""
+
+    @property
+    def treat_dot_as_module(self) -> bool | None:
+        """Whether dots in schema names make modules."""
 
     def _collect_used_names_from_models(
         self,
@@ -343,6 +334,9 @@ _FIELD_NAME_BINDINGS: Final = ImportProducer("field-name-bindings")
 
 
 _BUILTIN_MODULE_BINDINGS: Final = ImportProducer("builtin-module-bindings")
+
+
+_BUILTIN_SUBMODULE_BINDINGS: Final = ImportProducer("builtin-submodule-bindings")
 
 
 _REUSED_VARIANT_LITERAL: Final = ImportProducer("reused-variant-literal")
@@ -804,26 +798,18 @@ def _msgspec_mixed_enum_message(model: Enum, *, literal_under_all: bool) -> str 
     )
 
 
-_MSGSPEC_INT_MIN: Final = -(2**63)
-"""The least int msgspec decodes as an Enum or a Literal value, that of the signed 64-bit range."""
-
-
-_MSGSPEC_INT_MAX: Final = 2**63 - 1
-"""The greatest int msgspec decodes as an Enum or a Literal value, that of the signed 64-bit range."""
-
-
 _BEYOND_MSGSPEC_INTS: Final = (
     "is beyond the 64-bit range, while msgspec decodes Enum and Literal ints only from -2**63 to 2**63 - 1"
 )
 
 
 def _msgspec_wide_int(values: Iterable[object]) -> int | None:
-    """Return the first int of the values that msgspec refuses as an Enum or a Literal value (``_MSGSPEC_INT_MIN``).
+    """Return the first int of the values that msgspec refuses as an Enum or a Literal value (``int_values``).
 
     A bool, which is no int as a value, lies within the range.
     """
     return next(
-        (value for value in values if isinstance(value, int) and not _MSGSPEC_INT_MIN <= value <= _MSGSPEC_INT_MAX),
+        (value for value in values if isinstance(value, int) and int_beyond_values(MSGSPEC_OUTPUT, value)),
         None,
     )
 
@@ -843,35 +829,6 @@ def _msgspec_wide_int_enum_message(model: Enum) -> str | None:
     if (value := _msgspec_wide_int(values)) is None:
         return None
     return f"msgspec cannot decode the enum {model.class_name}: its value {value} {_BEYOND_MSGSPEC_INTS}."
-
-
-def _written_key_of(keyed: KeyedModels, reused: Mapping[ModelKey, ModelKey], reference: Reference) -> ModelKey:
-    """Return the key of the model among ``keyed`` that ``reference`` names: by its key, else by its path.
-
-    A duplicate that reuse replaced by an empty subclass keeps its Reference in the types that named it; the reference
-    names the subclass, which reuses it (``reused``: the key of each reused reference to the key of its subclass).
-    """
-    if (key := model_key_of(reference)) not in keyed.models and reused.get(key) in keyed.models:
-        return reused[key]
-    return keyed.key_of(reference)
-
-
-def _written_model_names(model: DataModel) -> Iterator[tuple[Reference, str, bool]]:
-    """Yield each model name a model writes: the reference, what the model writes for it, and whether as a base class.
-
-    A type that names a model writes its import's expression (unquoted) or the class name; an enum member literal
-    writes the class name of its enum.
-    """
-    for data_type in _named_data_types(model):
-        if (reference := data_type.reference) is not None:
-            yield (
-                reference,
-                (data_type.alias or reference.short_name).strip('"'),
-                isinstance(data_type, BaseClassDataType),
-            )
-        literal_reference = data_type._enum_member_literal_reference  # ruff: ignore[private-member-access]
-        if literal_reference is not None and not data_type.alias:
-            yield from ((literal_reference, enum_class, False) for enum_class, _ in data_type.enum_member_literals)
 
 
 def _remap_imports(ledger: ModuleImportLedger, imports: Imports, overrides: Mapping[str, str]) -> None:
@@ -1049,10 +1006,6 @@ def record_pydantic_floor(parser: FinishHost, contexts: Sequence[ModuleContextVi
     each construct, named with its module when the parse writes more than one. Output that Pydantic does not
     build has no floor to state.
     """
-    if (mode := check_mode(CheckArea.GENERATED_CODE_REQUIREMENTS)) is not None and (
-        unlisted := parser.data_model_type._CONFIG_KEYS_WITHOUT_REQUIREMENT()  # noqa: SLF001
-    ):
-        mode.violation(Error, f"config keys without a row in _requirements.py: {', '.join(unlisted)}")
     if (record := _PYDANTIC_FLOORS.get()) is None or parser.target_pydantic_version is None:
         return
     if not parser.data_model_type._READ_BY_PYDANTIC:  # noqa: SLF001
@@ -1221,34 +1174,6 @@ def alias_reused_variant_literal(parser: ImportsHost[Any], models: list[DataMode
     return True
 
 
-def check_frozen_render_plans() -> None:
-    """Report a frozen render plan, or the type expression frozen with it, that renders other text than now.
-
-    The plan is compared with its field's plan rebuilt now, the type expression with the field's type hint now,
-    both rendered with a memo of their own, so the check leaves the parse's memo as it was.
-    """
-    if (mode := check_mode(CheckArea.RENDER_PLANS)) is None:
-        return
-    ready = cast("RenderReady", RENDER_READY.get())
-    for frozen_field, plan, type_expr in ready.frozen():
-        field = cast("PlannedField", frozen_field)
-        with rendering_memo():
-            hint = cast("DataModelFieldBase", frozen_field).data_type.type_hint
-            frozen_hint = render_type_expr(cast("TypeExpr", type_expr))
-        if frozen_hint != hint:
-            mode.violation(
-                Error, f"the type expression frozen for field {field.name} renders {frozen_hint}, now {hint}"
-            )
-        with ready.rebuilding():
-            rebuilt = cast("FieldRenderPlan", field._build_frozen_render_plan())  # noqa: SLF001
-            rebuilt_text = field._render_plan_text(rebuilt)  # noqa: SLF001
-        if (frozen_text := field._render_plan_text(plan)) != rebuilt_text:  # noqa: SLF001
-            mode.violation(
-                Error,
-                f"the render plan frozen for field {field.name} renders {frozen_text}, rebuilt {rebuilt_text}",
-            )
-
-
 def snapshot_model_imports(state: _FinalizeState[Any]) -> None:
     """Collect the imports of every model once, reading the plans row ``legacy.L-NF`` keeps for imports."""
     with cast("RenderReady", RENDER_READY.get()).import_view():
@@ -1380,6 +1305,96 @@ def alias_builtin_shadowing_module_imports(parser: ImportsHost[Any], state: _Fin
         _alias_builtin_shadowing_module_imports(parser, ctx)
 
 
+def _written_module_path(module: ModulePath, *, treat_dot_as_module: bool | None) -> ModulePath:
+    """Return the path that the output writes a module at, as ``render_modules`` normalizes and expands it."""
+    path = _normalize_result_module_path(module, treat_dot_as_module=treat_dot_as_module)
+    return _expand_export_module_path(path) if treat_dot_as_module else path
+
+
+def _package_submodule_names(
+    contexts: Iterable[ModuleContextView],
+    forwarder_modules: Collection[ModulePath],
+    *,
+    treat_dot_as_module: bool | None,
+) -> dict[ModulePath, set[str]]:
+    """Return the names of the written submodules of each package, by the package's path in the written layout.
+
+    Importing a submodule, from any module, binds its name in its package.
+    """
+    names: dict[ModulePath, set[str]] = {}
+    for ctx in contexts:
+        if not (ctx.models or ctx.is_init or ctx.module_key in forwarder_modules):
+            continue
+        *packages, file_name = _written_module_path(ctx.module, treat_dot_as_module=treat_dot_as_module)
+        if file_name != "__init__.py":
+            packages.append(file_name.removesuffix(".py"))
+        for depth in range(len(packages)):
+            names.setdefault(tuple(packages[:depth]), set()).add(packages[depth])
+    return names
+
+
+def _alias_builtins_hidden_by_submodules(
+    parser: ImportsHost[Any], ctx: ModuleContextView, submodule_names: Collection[str]
+) -> None:
+    """Import the builtins that a package's submodules hide, and that the package writes bare, under aliases.
+
+    ``app/list.py`` binds ``list`` in ``app/__init__.py`` once anything imports it, whatever the import is named, so
+    ``list[str]`` there would subscript the module. The package imports the builtin as ``list_aliased``, the alias
+    form of field-name bindings, and every bare ``list`` its models and module code write follows; ``list.Pop``
+    names the submodule and keeps its name. A builtin is a name of the static table of the target
+    (``PYTHON_BUILTIN_TYPE_NAMES``); the output writes a bare load of one for nothing but the builtin.
+    """
+    if not (hidden := PYTHON_BUILTIN_TYPE_NAMES.intersection(submodule_names)):
+        return
+    loads = {model: found for model in ctx.models if (found := _bare_loads_of(model.render(), hidden))}
+    module_code = parser.data_model_type.render_module_code(ctx.models)
+    if not (written := {name for found in loads.values() for name in found} | _bare_loads_of(module_code, hidden)):
+        return
+    reserved = {
+        *submodule_names,
+        *(model.class_name for model in ctx.models),
+        *(field.name for model in ctx.models for field in model.fields if field.name is not None),
+        *(
+            module_imports.get_effective_name(from_, import_)
+            for module_imports in (ctx.imports, parser.imports)
+            for from_, imported in module_imports.items()
+            for import_ in imported
+        ),
+    }
+    bindings = {name: _reserve_import_alias(name, reserved) for name in sorted(written)}
+    parser._import_ledger.append(  # noqa: SLF001
+        ctx.imports,
+        [Import(from_="builtins", import_=name, alias=alias) for name, alias in bindings.items()],
+        _BUILTIN_SUBMODULE_BINDINGS,
+    )
+    for model, found in loads.items():
+        parser._graph_builder.bind_builtin_names(model, {name: bindings[name] for name in sorted(found)})  # noqa: SLF001
+
+
+def alias_builtins_hidden_by_submodules(parser: ImportsHost[Any], state: _FinalizeState[Any]) -> None:
+    """Import the builtins that each package's submodules hide, and that the package writes bare, under aliases."""
+    submodule_names = _package_submodule_names(
+        state.contexts, state.forwarder_modules, treat_dot_as_module=parser.treat_dot_as_module
+    )
+    for ctx in state.contexts:
+        if ctx.is_init and (
+            names := submodule_names.get(
+                _written_module_path(ctx.module, treat_dot_as_module=parser.treat_dot_as_module)[:-1]
+            )
+        ):
+            _alias_builtins_hidden_by_submodules(parser, ctx, names)
+
+
+def builtin_name_bindings(ledger: ModuleImportLedger, imports: Imports) -> dict[str, str]:
+    """Return the aliases that ``alias_builtins_hidden_by_submodules`` imported the builtins of a module under."""
+    return {
+        import_.import_: cast("str", import_.alias)
+        for entry in ledger.entries(imports)
+        if entry.producer == _BUILTIN_SUBMODULE_BINDINGS and isinstance(entry.operation, Added)
+        for import_ in entry.operation.imports
+    }
+
+
 def bind_module_field_names(parser: ImportsHost[Any], state: _FinalizeState[Any]) -> None:
     """Bind the field names of each module that its imports shadow."""
     for ctx in state.contexts:
@@ -1434,122 +1449,6 @@ def remap_import_overrides(parser: ImportsHost[Any], state: _FinalizeState[Any])
         _remap_imports(parser._import_ledger, ctx.imports, overrides)  # noqa: SLF001
 
 
-def plan_module_imports(parser: RenderHost[Any, Any, Any], run: FinishRun[Any, ContextT, Any]) -> None:
-    """Compute the import plan of every module from the final names, for ``_check_module_imports`` to compare.
-
-    It runs after the last rename (``change_imported_model_name``), under the ``MODULE_IMPORTS`` check only. A
-    model's final module is the module that writes it.
-    """
-    if check_mode(CheckArea.MODULE_IMPORTS) is None:
-        return
-    emitted = unchecked(keyed_models((model for ctx in run.contexts for model in ctx.models), "module import plan"))
-    names = NameTable({
-        model_key_of(model.reference): FinalName(
-            model.reference.short_name, _module_name_from_module_path(ctx.module_key), ctx.module
-        )
-        for ctx in run.contexts
-        for model in ctx.models
-    })
-    reused = {
-        model_key_of(model.reused_reference): key
-        for key, model in emitted.models.items()
-        if model.reused_reference is not None
-    }
-    for ctx in run.contexts:
-        parser._import_ledger.record_plan(  # noqa: SLF001
-            ctx.imports,
-            module_import_plan(
-                parser,
-                ctx,
-                names=names,
-                emitted=emitted,
-                reused=reused,
-                module_names=run.model_path_to_module_name,
-                internal_modules=run.internal_modules,
-            ),
-        )
-
-
-def module_import_plan(  # noqa: PLR0913
-    parser: RenderHost[Any, Any, Any],
-    ctx: ModuleContextView,
-    *,
-    names: NameTable,
-    emitted: KeyedModels,
-    reused: Mapping[ModelKey, ModelKey],
-    module_names: Mapping[str, str],
-    internal_modules: set[ModulePath],
-) -> ModuleImportPlan:
-    """Plan the models a module names: its own by their final class names, the others through their imports.
-
-    A reference names a model of the module first, then one of any module (``_written_key_of``); one that names
-    no written model is written by its own name, without an import, as today. The generated base class is
-    imported by its class name from the module that writes it, as ``cross_module.apply_generic_base_class``
-    imports it; any other model of another module through the name ``allocate_bindings`` gives its import. An
-    import of a name that ``--import-overrides`` lists comes from the module it names.
-    """
-    members = unchecked(keyed_models(ctx.models, "module import plan"))
-    overrides = parser._import_overrides or {}  # noqa: SLF001
-    generic_base = None if parser._generic_base_model is None else model_key_of(parser._generic_base_model.reference)  # noqa: SLF001
-    uses: list[ReferenceUse] = []
-    pending: list[tuple[ModelKey, str, str, str, ReferenceImportTarget, str]] = []
-    references: dict[tuple[str | None, str], ReferenceImport] = {}
-
-    def add_reference(target: ModelKey, import_: Import) -> None:
-        if (module := overrides.get(import_.import_)) is not None:
-            import_ = dataclasses.replace(import_, from_=module)
-        references.setdefault(
-            (import_.from_, import_.import_), ReferenceImport(target, names.names[target].module, import_)
-        )
-
-    for model in ctx.models:
-        module_name = _get_model_module_name(model, module_names)
-        for reference, written, base_class in _written_model_names(model):
-            if (target := _written_key_of(members, reused, reference)) in members.models:
-                uses.append(ReferenceUse(target, model.class_name, names.class_name(target, reference), written))
-            elif (final := names.names.get(target := _written_key_of(emitted, reused, reference))) is None:
-                uses.append(ReferenceUse(target, model.class_name, reference.short_name, written))
-            elif target == generic_base:
-                uses.append(ReferenceUse(target, model.class_name, final.class_name, written))
-                add_reference(
-                    target,
-                    Import(from_=_generic_base_class_module(ctx.module, final.module_path), import_=final.class_name),
-                )
-            else:
-                name = names.class_name(target, reference)
-                import_target = reference_import_target(
-                    name,
-                    module_name,
-                    f"{final.module}.{name}" if final.module else name,
-                    use_exact=ctx.imports.use_exact,
-                    init=ctx.is_init,
-                    internal_modules=internal_modules,
-                    base_class=base_class,
-                    treat_dot_as_module=parser.treat_dot_as_module,
-                )
-                pending.append((target, model.class_name, name, written, import_target, reference.path))
-    bindings = allocate_bindings(
-        (BindingRequest(t.full_path, t.import_) for *_, t, _ in pending),
-        parser._import_ledger.name_log(ctx.imports, ctx.scoped_model_resolver.exclude_names),  # noqa: SLF001
-        target_python_version=parser.target_python_version,
-    )
-    for target, holder, name, written, import_target, reference_path in pending:
-        if (binding := bindings.get(BindingRequest(import_target.full_path, import_target.import_))) is None:
-            uses.append(ReferenceUse(target, holder, None, written))
-            continue
-        add_reference(
-            target,
-            Import(
-                from_=import_target.written_from,
-                import_=import_target.import_,
-                alias=binding,
-                reference_path=reference_path,
-            ),
-        )
-        uses.append(ReferenceUse(target, holder, import_target.expression(name, binding) or name, written))
-    return ModuleImportPlan(ctx.module_key, tuple(references.values()), tuple(uses))
-
-
 def record_generated_class_names(parser: FinishHost, run: FinishRun[Any, ModuleContextView, Any]) -> None:
     """Record the class name of every generated model."""
     parser.generated_class_names = tuple(
@@ -1568,8 +1467,6 @@ def add_root_init_result(run: FinishRun[Any, Any, Any]) -> None:
 
 def render(parser: RenderHost[ConfigT, ContextT, ResultT], run: FinishRun[ConfigT, ContextT, ResultT]) -> None:
     """Render every module into the output of ``parse()``."""
-    check_frozen_render_plans()
-    plan_module_imports(parser, run)
     run.output = render_modules(
         parser,
         run.module_results,

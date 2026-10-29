@@ -107,7 +107,7 @@ the models by model key and the edges between them by kind, which answers their 
 predicates that models answer on demand by walking base classes, root types or mapping defaults (inherited fields,
 ancestors, cyclic ancestry, the C3 order of bases, msgspec struct tags, pydantic protected namespaces, preservable root
 constraints, recursive dataclass mapping defaults) take a snapshot of the models they reach when asked and answer
-from it, each model once. Under the `MODEL_GRAPH` check, each answer is compared with the computation it replaced.
+from it, each model once.
 
 ## Generated Inventory
 
@@ -332,18 +332,19 @@ holds, in order, the steps that rewrite the site (a `$ref` with sibling keywords
 `parse_any_of` (both through `parse_combined_schema`), `parse_object`, `parse_enum`, `parse_root_type` and the other
 builders; the rows of an object-kind schema (`_OBJECT_KIND_ROWS`) are shared by the definition table and
 `_parse_object_kind_schema`. Rows call the public hooks through the parser, so overriding subclasses keep working; a
-change of what a position parses is a row edit. `DispatchTable.choose` returns the chosen row as a `Choice` and the position's method
+change of what a position parses is a row edit. A table also declares what its sites type (`TypedChild`: the child schemas and the models their types name): `DispatchTable.typed_children` returns the declaration of the row chosen for a site (`Row.typed`), else the table's (`DispatchTable.typed`); the field table's `custom-type` row types nothing, its other rows the model of the site's schema, and the definition table's sites what `_typed_model_children` lists. The request/response split walks a key by asking them (`_get_ref_schema_rw_model_reference_facts`), not by listing positions itself. `DispatchTable.choose` returns the chosen row as a `Choice` and the position's method
 builds it in its own frame, so a nested schema costs no more stack frames per level than the parse methods it reaches
 (`test_main_nesting_within_recursion_limit` fails when it does). A definition written as a `$ref` whose sibling keywords cannot merge into its circular target gets no model outside a definitions container (the `ref` row; `--openapi-as-definitions ref-components` counts the components of an OpenAPI specification as one, `OpenAPIParser._definition_entry_prefixes`); once every schema is parsed (`_end_schema_parsing`), the users of its reference move to the reference that `$ref` names (`_type_references_to_definitions_without_model`), so a reference to it is typed by its target, as such a `$ref` is at a field. Then a schema that an allOf base names, that got no model and that a field naming it would be typed by an import, the class `--external-ref-mapping` imports for a schema of a mapped document or the class `x-python-import` names (not a type expression in its place), is parsed into a stand-in (`_parse_base_stand_ins`): its model, parsed in its own document under the reference the base names (`parse_json_pointer`, past the `x-python-import` shortcut, and the targets that parse reserves there), in the module of the first model that names it, with the import kept by model key (`Parser._base_stand_in_imports`). Only that schema is a stand-in: the other models the parse adds are written, as a generated base gives them. A stand-in may name further such bases and definitions parsed as their `$ref` alone, so the parse and the redirect repeat until no new stand-in appears. Then the import types every other user of a stand-in, one that a reference its document does not map names, as it types a mapped `$ref`, and the parse adds nothing to the imports every module shares: a stand-in is never written, and the models the parse writes import what their types name. A stand-in never splits into read/write variants (`_get_separate_model_fields`, `_register_root_model_as`), takes part in no reuse (`_ReuseOptimizationContext`), name uniqueness, module dependency or import (L3, L5 `change_from_import`), and leaves its module where model-level type overrides remove models; a stand-in of `x-python-import` is never dropped as a generated root model is (L3 `delete_duplicate_models`), as the class it declares is the base whatever its schema describes. Once every module is processed, the import replaces the bases that name a stand-in (`apply_base_stand_in_imports`), so every pass before reads it as a generated base, in every module whatever their order. Then a model that uses a `$ref` that `--external-ref-mapping` maps and whose fragment names no schema stops with an error (`_reject_mapped_references_without_schema`), and the late hook `_generate_forced_base_models` runs. That merge, the inherited `$ref` property
 merge (`_resolve_inherited_parent_property`) and a property that overrides an inherited one
-(`_merge_properties_with_parent_constraints`, unless `--allof-merge-mode none`) stand for the intersection of their
-parts: the earlier merge (`_deep_merge`, `_merge_property_schemas`) stays wherever it enforces what the intersection
-enforces, and `parser/_intersection.py:intersect_keywords` writes the tightest bounds, the least common `multipleOf`,
+(`_merge_properties_with_parent_constraints` through `_inherited_override_schema`, unless `--allof-merge-mode none`)
+stand for the intersection of their parts: the earlier merge (`parser/_intersection.py`: `concatenating_row`,
+`inherited_override_row`) stays wherever it enforces what the intersection enforces, and
+`parser/_intersection.py:intersect_keywords` writes the tightest bounds, the least common `multipleOf`,
 the common `type` and `enum` values, the union of `required` and a `false` that a part sets where the merge does not;
 nested schemas follow the same rule. Where the document's dialect (draft 7 or earlier, OpenAPI 3.0) does not read
 `$ref` siblings as parts, a sibling `enum` that the document writes does not narrow the referenced schema (the legacy
 sibling enum row; an inherited property override is a part in every dialect). Null comes from the site's own `nullable`, `type` list or `null` value, else only
-if every part admits it. A keyword whose parts have no value in common keeps the earlier value and warns
+if every part admits it (`parser/_null_facts.py`, site `all-of-parts`). A keyword whose parts have no value in common keeps the earlier value and warns
 (`warn_unsatisfiable`); `pattern`, `format`, tuple positions, combinators and allOf members are not intersected there
 yet. A oneOf/anyOf of constants can become a
 synthetic enum (`_extract_const_enum_from_combined`). An enum class takes a value base (`IntEnum`, `StrEnum`,
@@ -362,7 +363,8 @@ dict whose value type is the union of the value types of its key classes, never 
 the null of a type array of object and null, or of `nullable: true` under `--strict-nullable` as `_get_data_type` does
 for other types, so property counts stay on it, and the other types of a type array join it in a union. A `nullable`
 that `parse_combined_schema` copies from an anyOf or oneOf parent into a branch is marked on the branch, and the dict of
-that branch leaves it to the union. Names come from `ModelResolver.add`.
+that branch leaves it to the union. Without `--use-single-dict-for-object-maps` the builder keeps the 0.86.0 forms as
+its `legacy-map-*` rows (see "Legacy rows"). Names come from `ModelResolver.add`.
 Each model records the location of the schema object it is built from on its `Reference` (`_record_schema_object`).
 Every use of a reference gets a new `DataType` that points to the one shared `Reference`. allOf `$ref` items become base
 classes; inherited fields whose parent is not parsed yet stay as placeholders that L5 resolves. Discriminators are only
@@ -511,7 +513,7 @@ for class names and reuse keys as in 0.86.0, while the import block leaves them 
 `Imports`; `ModuleImportLedger.external` records what it changed. `DATAMODEL_CODE_GENERATOR_CHECK_MODULE_IMPORTS`
 compares each module's imports with the replay of their entries when the import text is written, so a write that
 bypasses the ledger fails the check, which the test suite turns on. The names the module's `ModelResolver` gives its
-imports are asked for through the ledger too (`NameLog`). After the last rename, `parser/_passes/imports.py:plan_module_imports` plans
+imports are asked for through the ledger too (`NameLog`). After the last rename, `tests/checks/module_imports.py` plans
 the models each module names from the final names (`NameTable`): `ModuleImportPlan` holds the imports of other modules'
 models, named by `allocate_bindings` in the order the module asked for them (row `legacy.alias-order`), and what the
 module writes for each model. Nothing is written from the plan yet; under the same check, the module must write what
@@ -527,7 +529,7 @@ whose hints strip it (`types.py:DataType._hint_null_source`), and import collect
 (`parser/_passes/render_prep.py:finalize_rendered_nullability`, after the module bodies, whose type-alias updates write the
 union operators and quotes the members' hints read), through `types.py:DataType._materialize_render_state`, which marks
 the None it adds; msgspec's top-level None and the `Field()` default plan read the value without it
-(`legacy-msgspec-top-level-null-as-written`, `legacy-strip-keeps-written-null-only`). Before it, only
+(`legacy-msgspec-top-level-null-as-written`; the `Field()` default plan of a Pydantic field reads the None as written the same way, which no row names). Before it, only
 `parser/_passes/render_prep.py:_flatten_union_members` (render preparation), which moves member nullability onto the union, and L3's
 `DataModel._write_pre_render_nullability` (`legacy-l3-import-nullability`, which overrides and constructor ordering
 read; `DataModel._prepare_dedup_key` writes it for every field whose hint renders its own type before a dedup key
@@ -570,10 +572,11 @@ rendered outside a parse decides them, and its `ConfigDict` import, when it rend
 
 ### Pass Declarations
 
-Every pass is declared in `parser/_pass_decls.py` as a `PassDecl`: its name, phase, scope (once over every model, or
+Every pass is declared in `scripts/pass_decls.py` as a `PassDecl`: its name, phase, scope (once over every model, or
 once per output module over that module's models), kind (`transform`, `plan`, `repair`, `check`, `setup`,
-`bookkeeping`), the `Fact` and `RenderFact` members of `parser/_facts.py` it reads and writes, explicit order edges
-(`after`), the change that removes a repair (`removed_by`) and the phase it moves to (`target`).
+`bookkeeping`), the `Fact` and `RenderFact` members of `scripts/fact_tables.py` it reads and writes, explicit order
+edges (`after`), the change that removes a repair (`removed_by`) and the phase it moves to (`target`). The package
+holds no declaration: only the checks read them, and they join a declaration to its pass by name.
 `scripts/check_fact_finality.py` (run by the test suite) checks that names are unique, phases never go back in
 execution order, a repair names what removes it, and setup, check and bookkeeping passes write no fact (a check pass
 may write the pseudo-fact `STDERR`, the warnings it emits, so that two passes that warn are ordered).
@@ -581,31 +584,35 @@ may write the pseudo-fact `STDERR`, the warnings it emits, so that two passes th
 `Parser.parse()` runs the passes from the tables of `parser/_passes/_tables.py` (`PIPELINE`, with the bodies
 `STRUCTURE_BODY`, `MODULE_BODY` and `FINALIZE_SEGMENTS` of the overridable hooks `_build_module_structure`,
 `_process_single_module` and `_finalize_modules`), built from the steps
-of `parser/_pipeline.py`: a `PassSpec` runs one declared pass, when its condition holds; a `ForEachModule` runs passes
-module by module; a `HookCall` calls an overridable method whose default runs a sub-table; a `Segment` enters a phase
-on the store (`GenerationStore.enter_phase`, read as `GenerationStore.phase`) and the boundary before it (`PARSED`, B1,
-`DECIDED`, B2), then runs its steps. The `Runner` is the only caller of a pass, inside `fact_pass(DECL)`
-(`parser/_check_scopes.py`) with the models the finality check compares; steps call passes through the parser instance, so
-overrides and `--debug` tracing apply as to any method. The two diagnostics warnings that name the code calling
+of `parser/_pipeline.py`: a `PassSpec` runs one pass, named as its declaration, when its condition holds; a
+`ForEachModule` runs passes module by module; a `HookCall` calls an overridable method whose default runs a sub-table; a
+`Segment` enters a phase on the store (`GenerationStore.enter_phase`, read as `GenerationStore.phase`), then runs its
+steps. The labels that only the checks read live in `scripts/pass_decls.py`: the boundary each segment enters
+(`BOUNDARY_BEFORE`: `PARSED`, B1, `DECIDED`, B2), the pass scope of a segment's guarded writes (`SCOPE_NAMES`) and the
+sub-table of each hook (`HOOK_BODIES`). The `Runner` is the only caller of a pass; the finality check of the test suite
+(`tests/checks/parse.py`) runs each one inside the scope of its declaration with the models it compares
+(`CHECKED_MODELS`); steps call passes through the parser instance, so overrides and `--debug` tracing apply as to any
+method. The two diagnostics warnings that name the code calling
 `parse()` find that frame however deep the pipeline is (`stacklevel_at_parse_caller`).
 
-The order rule (`parser/_pipeline.py:check_order`): two passes of one segment conflict when one writes what the other
-reads or both write the same fact. Where only the earlier writes what the later reads, a derived edge orders them; every
-other conflicting pair needs explicit `after` edges, with their reasons, that connect it directly or through other
-edges. An explicit edge replaces the derived edge of its pair; one that runs a reader before a writer of what it reads
-is a provisional read, listed below the table. `scripts/check_pass_pipeline.py` (run by the test suite) checks that the
-tables run every declaration once in `PASS_DECLS` order, in the phase of its segment and with its scope, that the
-segments enter the boundaries in order and satisfy the order rule, that the repair set only shrinks, that every
+The order rule (`scripts/check_pass_pipeline.py:check_order`): two passes of one segment conflict when one writes what
+the other reads or both write the same fact. Where only the earlier writes what the later reads, a derived edge orders
+them; every other conflicting pair needs explicit `after` edges, with their reasons, that connect it directly or through
+other edges. An explicit edge replaces the derived edge of its pair; one that runs a reader before a writer of what it
+reads is a provisional read, listed below the table. `scripts/check_pass_pipeline.py` (run by the test suite) checks
+that the tables run every declaration once in `PASS_DECLS` order, in the phase of its segment and with its scope, that
+the segments enter the boundaries in order and satisfy the order rule, that the repair set only shrinks, that every
 decision registry follows the rules of the [Decision Phase](#decision-phase), that only `GenerationStore.seal_facts`
 builds `FinalFacts`, that no code outside `Parser` reaches its name-mangled members, and lists the warnings whose
-`stacklevel` reaches past their caller. A pass trace (`scripts/check_pass_pipeline.py --trace`) records each pass that runs; the test suite keeps the
-traces of a few inputs and checks that some input runs every declared pass. The finality check
-([Fact Finality](#fact-finality)) compares the writes of `fact` rows with the declarations while the generator runs;
-reads and the writes of presentation rows are declared from the code. A new pass gets a declaration and a table entry.
+`stacklevel` reaches past their caller. A pass trace (`scripts/check_pass_pipeline.py --trace`) records each pass that
+runs; the test suite keeps the traces of a few inputs and checks that some input runs every declared pass. The finality
+check ([Fact Finality](#fact-finality)) compares the writes of `fact` rows with the declarations while the generator
+runs; reads and the writes of presentation rows are declared from the code. A new pass gets a declaration and a table
+entry.
 
 <!-- BEGIN AUTO-GENERATED PASS DECLARATIONS -->
 !!! note "Generated pass table"
-    Generated by `scripts/build_architecture_docs.py` from `parser/_pass_decls.py`, in execution order.
+    Generated by `scripts/build_architecture_docs.py` from `scripts/pass_decls.py`, in execution order.
 
 | Phase | Pass | Scope | Kind | Writes | Reads | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -700,7 +707,8 @@ reads and the writes of presentation rows are declared from the code. A new pass
 | IMPORTS | `remove_unused_imports` | global | repair | MODULE_IMPORTS | CLASS_NAMES, FIELD_TYPES, MODULE_CODE, MODULE_IMPORTS | Drops the imports no rendered name uses; becomes a check. Removed by RP15b. After `merge_runtime_expression_imports`: removes unused imports once every producer added its imports. |
 | IMPORTS | `resolve_module_import_conflicts` | global | transform | IMPORT_ALIASES, MODULE_IMPORTS | FIELD_NAMES, MODULE_IMPORTS | Lets the backend alias imports that clash with names of the module (model hook). After `remove_unused_imports`: resolves the conflicts of the imports that are used. |
 | IMPORTS | `alias_builtin_shadowing_module_imports` | global | transform | IMPORT_ALIASES, MODULE_IMPORTS, QUOTING | FIELD_TYPES, IMPORT_ALIASES, MODULE_IMPORTS | Aliases a module import named like a builtin that its module also writes bare, e.g. ``list[str]``. After `resolve_module_import_conflicts`: aliases the module imports once their names are final. |
-| IMPORTS | `bind_module_field_names` | global | repair | IMPORT_ALIASES, UNBOUND_FIELDS | FIELD_NAMES, MODULE_IMPORTS | Removed by RP15b. After `resolve_module_import_conflicts`: binds field names against the final import names. After `alias_builtin_shadowing_module_imports`: binds field names against the aliases of module imports. |
+| IMPORTS | `alias_builtins_hidden_by_submodules` | global | transform | IMPORT_ALIASES, MODULE_IMPORTS | FIELD_TYPES, IMPORT_ALIASES, MODULE_IMPORTS, MODULE_MEMBERSHIP | Imports a builtin that a package's own submodule hides, e.g. ``list``, under an alias for its bare uses. After `alias_builtin_shadowing_module_imports`: aliases the builtins once the module imports are aliased. |
+| IMPORTS | `bind_module_field_names` | global | repair | IMPORT_ALIASES, UNBOUND_FIELDS | FIELD_NAMES, MODULE_IMPORTS | Removed by RP15b. After `resolve_module_import_conflicts`: binds field names against the final import names. After `alias_builtin_shadowing_module_imports`: binds field names against the aliases of module imports. After `alias_builtins_hidden_by_submodules`: binds field names against the aliases of hidden builtins. |
 | IMPORTS | `change_imported_model_name` | global | transform | CLASS_NAMES | CLASS_NAMES, MODULE_IMPORTS | Renames models that collide with imports, the last class-name change. |
 | IMPORTS | `name_final_classes_of_additional_properties` | global | transform | BACKEND_CONFIG | CLASS_NAMES, IMPORT_ALIASES | Renders backend settings that name the classes of additional properties (TypedDict extra_items) from their final names, a class of another module through its import (model hook). Runs when: additional properties reference classes. |
 | IMPORTS | `refresh_sequence_interface_after_renames` | global | repair | BACKEND_CONFIG | CLASS_NAMES | Runs when: use_root_model_sequence_interface and a model was renamed. Removed by RP15b. After `name_final_classes_of_additional_properties`: both write backend config; the sequence interface is decided last. |
@@ -759,7 +767,9 @@ Provisional reads, from the explicit edges:
 - `snapshot_model_imports` reads MODELS_EXIST before `remove_unused_models` writes it: the snapshot holds the imports of unused models, which leave with them.
 - `remove_unused_imports` reads MODULE_IMPORTS before `resolve_module_import_conflicts` writes it: resolves the conflicts of the imports that are used.
 - `resolve_module_import_conflicts` reads MODULE_IMPORTS before `alias_builtin_shadowing_module_imports` writes it: aliases the module imports once their names are final.
+- `alias_builtin_shadowing_module_imports` reads IMPORT_ALIASES, MODULE_IMPORTS before `alias_builtins_hidden_by_submodules` writes it: aliases the builtins once the module imports are aliased.
 - `alias_builtin_shadowing_module_imports` reads IMPORT_ALIASES before `bind_module_field_names` writes it: binds field names against the aliases of module imports.
+- `alias_builtins_hidden_by_submodules` reads IMPORT_ALIASES before `bind_module_field_names` writes it: binds field names against the aliases of hidden builtins.
 - `change_imported_model_name` reads MODULE_IMPORTS before `replan_schema_validators_after_renames` writes it: plans the validator helpers again for the renamed models.
 - `bind_module_field_names` reads MODULE_IMPORTS before `replan_schema_validators_after_renames` writes it: binding reads the module imports before the helpers are planned again.
 <!-- END AUTO-GENERATED PASS DECLARATIONS -->
@@ -770,8 +780,9 @@ The `decide` segment (`DECIDE`, entered at B1 right after `apply_generic_base_cl
 parser's registry, `Parser._DECISION_PASSES` (`parser/_phases.py`). The registry holds one decision, `omit_held_null`
 (`parser/_held_null.py`, `--omit-redundant-reference-null`, #5081): a type that names a model holding null itself (a
 root model or type alias whose type admits None, or an enum with a None member) drops the None it restates of that
-model; the None it writes itself stays. A decision is a `DecisionPass`: a `DecisionSpec` (its `PassDecl`, a global
-transform of `DECIDE` that reads and writes `Fact` members only, and the issue it fixes), the writer protocol of its
+model; the None it writes itself stays. A decision is a `DecisionPass`: a `DecisionSpec` (the name of its `PassDecl` in
+`DECISION_DECLS` of `scripts/pass_decls.py`, a global transform of `DECIDE` that reads and writes `Fact` members only,
+and the issue it fixes), the writer protocol of its
 writes (a `DecisionWriter`), `run(facts, writer)` and, for a decision behind an option, `when(parser)`. When a decision
 runs, `GenerationStore.seal_facts` builds the one `FinalFacts` of the parse: per output module, the models that render
 (unused models, which leave their modules later, are left out), as the read-only views of `model/_views.py`
@@ -782,14 +793,15 @@ one implementation of the writer protocols over the store, which records the mod
 writer never changes a data type node that other fields share: it replaces the node in the one field with a copy
 first.
 
-The decisions run in the order the order rule computes from their declarations (`decision_order`): a decision that
-reads what another writes runs after it, every other conflicting pair needs an `After` edge in `decl.after` (the only
-explicit edges a decision has), and the registration order breaks ties. Each runs inside `fact_pass` with its
-declaration, so the finality check holds its writes to the facts it declares. With the finality check on, `FinalFacts`
+The decisions run in registry order, which must be the order the order rule computes from their declarations
+(`decision_order`): a decision that reads what another writes runs after it, every other conflicting pair needs an
+`After` edge in the `after` of its declaration (the only explicit edges a decision has), and the registration order
+breaks ties. The finality check runs each inside the
+scope of its declaration, so it holds its writes to the facts it declares. With the finality check on, `FinalFacts`
 holds guarded views that report each read of a render fact as `render-read` ([Fact Finality](#fact-finality)).
 `scripts/check_pass_pipeline.py` checks every registry: unique names that no table pass has, global transforms of
 `DECIDE` that read and write facts only, an issue each, writer protocols that `_DecisionWriter` implements, and the
-order rule.
+order rule, whose order the registry lists.
 
 ### Hidden Couplings
 
@@ -828,7 +840,7 @@ collapse replacing a member of a shared list.
 ### Fact Finality
 
 "Final after" names the last pass that can still change the fact. A decision that reads the fact belongs after it.
-`parser/_facts.py` holds the same information per attribute (`final_after`, `frozen_at`) for the checkers.
+`scripts/fact_tables.py` holds the same information per attribute (`final_after`, `frozen_at`) for the checkers.
 
 | Fact | Final after |
 | --- | --- |
@@ -864,13 +876,13 @@ reach a merged `_internal` module, except for a root model that the `parent` str
 which is removed from the module that holds it: unused roots of other collapses stay in merged modules. Later passes
 change presentation or derive from those facts.
 
-The finality check (`parser/_finality.py`, `DATAMODEL_CODE_GENERATOR_CHECK_FACT_FINALITY`, on in every test) checks
+The finality check (`tests/checks/finality.py`, `DATAMODEL_CODE_GENERATOR_CHECK_FACT_FINALITY`, on in every test) checks
 this table and the pass declarations while the generator runs. It keeps a fingerprint per model: the values of the
-`fact` rows of `parser/_facts.py` on the model, its fields and the data types of their types and of its bases, holding
-the objects it keys. When a pass ends, it compares the models the pass touched (the models of its module and the models
-they reference, for a module pass; the models that guarded writes and store operations reached; the models the pass
-reported changed with `GenerationStore.note_changed_models` or a field's `invalidate_semantic_caches`) and reports a
-changed row as
+`fact` rows of `scripts/fact_tables.py` on the model, its fields and the data types of their types and of its bases,
+holding the objects it keys. When a pass ends, it compares the models the pass touched (the models of its module and the
+models they reference, for a module pass; the models that guarded writes and store operations reached; the models the
+pass reported changed with `GenerationStore.note_changed_models` or a field's `invalidate_semantic_caches`) and reports
+a changed row as
 
 - `undeclared` when the pass declares none of the row's facts,
 - `other-module` when a module pass changed a model of another module (whether that module is done is in the report),
@@ -889,7 +901,7 @@ check compares the fields of bases that constructor ordering read after the deci
 (`get_inherited_constructor_info` of `parser/_passes/_shared.py`), with the facts `fix_constructor_field_ordering` declares as reads, with those
 fields at B2 (`ordering-input`): render preparation of a later module must not change what an earlier module's
 ordering read. `KNOWN_WRITES` in
-`parser/_finality.py` lists the violations of today's pipeline, each with the roadmap item that removes it and a
+`tests/checks/finality.py` lists the violations of today's pipeline, each with the roadmap item that removes it and a
 witness, the `datamodel-codegen` arguments of one run that makes it; they are reported with `report:<path>` and never
 raise. `python scripts/check_fact_finality.py --witnesses` (and the test suite) run the witnesses and report the entries
 whose witness no longer makes them, so the list only shrinks. Presentation rows, parser state, module imports and
@@ -930,8 +942,7 @@ wrap the operations on the store keep seeing every call. The operations on `Gene
 every other caller (`@deprecated(category=None)`: ty lists the callers, and no warning is raised at run time).
 
 A `Reference` takes a `ModelKey` when it is built: `Reference.model_post_init` stores the next value of a process-wide
-counter in its `__dict__`, beside its schema location, and `parser/_graph_ids.py:model_key_of` reads it
-(`identity_of` returns the `ModelIdentity` record: the key, the schema location and the owner). The owner
+counter in its `__dict__`, beside its schema location, and `parser/_graph_ids.py:model_key_of` reads it. The owner
 (`owner_of`) is the model whose builder built this one: each model builder of `JsonSchemaParser` runs in a frame whose
 cell takes the model it built when it returns, and a model records the frames open when it is recorded. A read or
 write variant stands for its base model in those frames, so it takes the base's owner; a document parse (`_parse_file`,
@@ -964,9 +975,9 @@ field's type walked at the current clock are not walked again. `DataModel.import
 fields' kept imports with the model's own (`_additional_imports`) at each read; the snapshot of the IMPORTS phase is
 where they become final. Fields and models of classes outside the package, and every field of a parse by a parser
 class outside it, compute both at each read (`DataModel.clear_imports_cache` is a deprecated no-op).
-`DATAMODEL_CODE_GENERATOR_CHECK_RENDER_MEMOS` computes every returned value anew and fails on a difference, except for
-the dedup keys and self references whose stale values today's output keeps (`legacy-stale-dedup-keys`,
-`legacy-stale-self-reference`), which it records with a report file.
+`DATAMODEL_CODE_GENERATOR_CHECK_RENDER_MEMOS` (`tests/checks/memos.py`) computes every returned value anew and fails on
+a difference, except for the dedup keys and self references whose stale values today's output keeps
+(`legacy-stale-dedup-keys`, `legacy-stale-self-reference`), which it records with a report file.
 
 The mutation APIs are the `GenerationStore` methods listed in `GENERATION_STORE_MUTATION_METHODS`, for example
 `replace_field_type`, `replace_nested_data_type`, `set_fields`, `set_base_classes`, `update_model_reference` and
@@ -974,12 +985,12 @@ The mutation APIs are the `GenerationStore` methods listed in `GENERATION_STORE_
 flattened module, field type, imported name, internal module and collapsed root), each with its own universe for
 uniqueness.
 
-`parser/_facts.py` says which attribute holds which fact. `ATTRIBUTE_FACTS` has one row per owner class and attribute,
-`__dict__` key, dict entry (`extras["kw_only"]`) or cached property, with its kind (`fact`, `presentation`, `cache` or
-`bookkeeping`), the `Fact` and `RenderFact` members a write changes, the store operations allowed to write it, the
-`Phase` whose passes write it last today and its freeze point: the latest freeze point among its facts (every `Fact`
-at B1, every `RenderFact` at its `RENDER_FACT_FREEZE_POINTS` entry), after which nothing may write it once the pass
-pipeline is in place. The finality checks still check each `Fact` at B1 unless a pass declares an exception.
+`scripts/fact_tables.py` says which attribute holds which fact. `ATTRIBUTE_FACTS` has one row per owner class and
+attribute, `__dict__` key, dict entry (`extras["kw_only"]`) or cached property, with its kind (`fact`, `presentation`,
+`cache` or `bookkeeping`), the `Fact` and `RenderFact` members a write changes, the store operations allowed to write
+it, the `Phase` whose passes write it last today and its freeze point: the latest freeze point among its facts (every
+`Fact` at B1, every `RenderFact` at its `RENDER_FACT_FREEZE_POINTS` entry), after which nothing may write it once the
+pass pipeline is in place. The finality checks still check each `Fact` at B1 unless a pass declares an exception.
 Bookkeeping rows name no fact and no store operation. The module docstring lists the three allowed exceptions to the
 kind rules (plan rows, rendered nullability, the schema-validator plan cache). The module imports only the standard
 library and `typing_extensions` (`scripts/check_architecture_boundaries.py` registers it as the `facts` leaf layer), so
@@ -1014,12 +1025,12 @@ The checker does not follow these forms, so they must not be used for model writ
 `obj.extras.__setitem__(key, value)` and other dunder calls, unbound method calls such as `list.append(obj.fields,
 field)`, and `functools.partial(setattr, obj)`.
 
-The runtime write guard (`parser/_finality.py`, `DATAMODEL_CODE_GENERATOR_CHECK_STORE_WRITES`) checks the same rule
-while the generator runs, for writes the scan cannot follow. `Parser.parse` arms it at the end of L1: `DataType`,
-`DataModelFieldBase` and `DataModel` get a `__setattr__` guard for the fact and presentation attributes of
+The runtime write guard (`tests/checks/finality.py`, `DATAMODEL_CODE_GENERATOR_CHECK_STORE_WRITES`) checks the same
+rule while the generator runs in the test suite, for writes the scan cannot follow. It arms at the end of L1:
+`DataType`, `DataModelFieldBase` and `DataModel` get a `__setattr__` guard for the fact and presentation attributes of
 `ATTRIBUTE_FACTS`, the lists those attributes hold become guarded copies (shared where the originals were shared; they
 are not `list` exactly and outlive the parse, acting as plain lists afterwards), each store operation named in a row's
-`store_ops` runs in a write scope, and the pipeline of `parser/_passes/_tables.py` opens pass scopes (`pass_scope(name, phase)`:
+`store_ops` runs in a write scope, and the pipeline of `parser/_passes/_tables.py` runs in pass scopes (`ParseChecks.scope`:
 `_build_module_structure` in STRUCTURE, the `plan` segment in PLAN, each `_process_single_module` in MODULES, the
 `cross_module` and `generic_base_class` segments in CROSS_MODULE, the `decide` segment in DECIDE, the
 `render_preparation` segment, `_finalize_modules` included, in RENDER_PREPARATION, the `finish` segment in IMPORTS and the
@@ -1030,9 +1041,9 @@ accepts any guarded write, and the phase is not checked: which operation and pha
 to the finality checks. With the area off nothing is installed. The guard does
 not see writes through `object.__setattr__`, through `__dict__`, into dict attributes, or into a list an object got
 outside a store operation after L1. The guards, the guarded lists and the store-operation scopes belong to the checks
-of one parse (`parse_checks`, armed by `arm_parse_checks`), which the finality check shares: `Parser.parse` imports
-`parser/_finality.py` and installs them only when either area is on, and the guard reports writes only when `STORE_WRITES` is on, while the finality check uses them to
-learn which models a pass touched.
+of one parse (`parse_checks`, armed by `ParseChecks.arm`), which the finality check shares: a parse loads
+`tests/checks/finality.py` and installs them only when either area is on, and the guard reports writes only when
+`STORE_WRITES` is on, while the finality check uses them to learn which models a pass touched.
 
 The test suite runs the guard in every test (`tests/conftest.py:StoreWritesCheck`): it reports into a file of the test
 process, and after each test the checker names each write of the package by the function that contains the reported
@@ -1046,15 +1057,13 @@ the counted ones. When the scan learns to find a write a witness covers, the wit
 
 Current behaviour that a decision reading the index must allow for:
 
-- Index queries answer over the parsed universe by default: the models parsers registered (`Parser.results`) plus
+- Index queries answer over the parsed universe: the models parsers registered (`Parser.results`) plus
   redirected edges, removed ones included, not the module lists that L3–L6 edit. A model a later pass builds (a reuse
   subclass, the merged inherited Enum, the generic base class) is registered in the emitted universe only, and
   `retire_model` (`replace_model` for a model built in another's place) records each model that leaves the output
-  (duplicates, reused and overridden models, unused models leaving their written module list). `universe="emitted"`
-  answers over the models the output writes. Under `DATAMODEL_CODE_GENERATOR_CHECK_MODEL_GRAPH`, the written models
-  must equal the emitted universe after render preparation, and with a report file each root-collapse decision on
-  remaining references records when its answer over the emitted models differs (`kind: universe-differs`), the
-  evidence for switching the default.
+  (duplicates, reused and overridden models, unused models leaving their written module list). Under
+  `DATAMODEL_CODE_GENERATOR_CHECK_MODEL_GRAPH`, the written models must equal the emitted universe after render
+  preparation.
 - A store operation called with `refresh="deferred"` notes the models it changes for the next refresh but does not
   mark the facts dirty, so they stay as they were until another mutation. `drop_union_member_constraints` (msgspec
   `unconstrain_union_members`, slice assignment on `data_types`), `swap_data_type` for the nested lists of
@@ -1116,13 +1125,14 @@ over dumped schemas or frozen schema facts, in a pure parser core (`parser/_inte
 `parser/_null_facts.py`, `parser/_model_shapes.py`); the adapter that reads those facts is the only
 code that reads the live objects, and callers are to go through it (readers of the stored `is_optional` move in a later
 step). `scripts/check_architecture_boundaries.py` keeps the package free of concrete backends and the parser cores free
-of everything but the standard library. A table that `types.py` reads while it is imported is a top-level leaf instead,
-as the model package imports `types.py`: `_requirements.py` and `_constraint_applicability.py`.
+of everything but the standard library and the leaf tables they read (`_json_schema.py`, `_records`, `_regex_syntax`).
+A table that `types.py` reads while it is imported is a top-level leaf instead, as the model package imports
+`types.py`: `_requirements.py` and `_constraint_applicability.py`.
 
 | Decision | Pure core | Adapters |
 | --- | --- | --- |
-| the schema a `$ref` with sibling keywords or an inherited property override stands for: the intersection of its parts, keyword by keyword, keeping the earlier merge wherever it enforces the same (JSON value equality, enum intersection and tightest bounds included) | `parser/_intersection.py`: `intersect_keywords`, `warn_unsatisfiable`, `json_values_equal`, `intersect_enum_values`, `intersect_constraint`, `enum_metadata` | `parser/jsonschema.py`: `JsonSchemaParser._intersect_ref_siblings` (for `_merge_ref_with_schema` and `_resolve_inherited_parent_property`), `_merge_properties_with_parent_constraints`; the allOf merges read its helpers (`_intersect_all_of_enum`, `_align_all_of_enum_metadata`, `_intersect_constraint`) |
-| where a schema object's null comes from (a `type` of null or a `type` list holding null, an `anyOf`/`oneOf` member typed null, `nullable`, a null `enum` value) and what each L1 site reads from it; OpenAPI passes `nullable` under `--strict-nullable` as a fact (a marker the first `_get_data_type` call sets) instead of rewriting `type`; today's disagreeing sites are named `legacy-*` rows, each deleted by its fix (G12, G01 decision 3): root models ignore `nullable` (`legacy-root-model-type-only`), references read only a `type` of null (`legacy-ref-target-null-type-only`), root and array sites read `nullable` without `--strict-nullable` (`legacy-root-type-nullable-ungated`, `legacy-array-nullable-ungated`; `allOf` sites read it so by G01 decision 3, `all-of-own-null`), a copied `nullable` leaves a map without null (`legacy-map-copied-nullable`), a `Literal` enum reads its null value alone (`legacy-enum-literal-value-only`), and OpenAPI's `nullable` counts as a type list only after the type is first built (`legacy-nullable-as-type-list`); RP13 deletes the three use-site rows (`legacy-nullable-as-type-list`, `legacy-root-model-type-only`, `legacy-ref-target-null-type-only`) | `parser/_null_facts.py`: `resolve_null_facts` (`NullSources`, `NullMode`, `NullFacts`) | `parser/jsonschema.py`: `_null_sources` and `_read_type` (the facts), `JsonSchemaParser._null_mode` (overridden by `parser/openapi.py:OpenAPIParser._null_mode`) and `JsonSchemaParser._null_facts`; sites `JsonSchemaObject.type_has_null`, `_excluded_null_members` (for `JsonSchemaParser.parse_combined_schema`), `_enum_entries_skip_null`, `JsonSchemaParser`: `get_object_field`, `_get_data_type`, `_get_python_type_override`, `_object_nullable`, `_create_registered_root_model`, `get_ref_data_type` and `_cache_ref_data_type_facts`, `_parse_ref_nullable_only_item`, `_parse_constrained_type_union`, `parse_array_fields`, `_object_map_admits_null`, `_merge_all_of_root_schema`, `_all_of_root_value_schema`, `_parse_root_type_with_context`, `_parse_multiple_types_with_properties`, `_resolve_array_field_required_nullable`, `parse_enum`, `_literal_values_type`, `_add_nullable_combined_schema_branches`, `_merge_inherited_type_shape_dict`, `_mark_partial_inherited_fields`; not yet: the converters (avro, xmlschema `nillable`, protobuf wrappers), `parse_field` of `parser/graphql.py`, `_extract_const_enum_from_combined`, and the `nullable` reads of `_enforced_value_keywords`, `_get_inherited_schema_types` and the const-as-enum check |
+| the schema a `$ref` with sibling keywords or an inherited property override stands for: the intersection of its parts, keyword by keyword, keeping the earlier merge wherever it enforces the same (JSON value equality, enum intersection and tightest bounds included) | `parser/_intersection.py`: `intersect_keywords`, `warn_unsatisfiable`, `json_values_equal`, `intersect_enum_values`, `intersect_constraint`, `enum_metadata`, `INTERSECTED_KEYWORDS`; `LEGACY_ROWS`, the rows of 0.86.0 output a parse keeps without `--intersect-allof-keywords` (`legacy-merge-row`, `legacy-lookahead-patterns`, `legacy-all-of-site-form`, `legacy-all-of-null-as-written`), the option's only policy; the inherited property override: its presentation row `inherited_override_row` and the rows of `--allof-merge-mode` (`inherits_keyword`, which keywords and defaults an override inherits; `merge_inherited_value` and `merge_inherited_keyword`, how one subschema value or keyword merges, rows `override` and `type-shape` of `InheritedRow`; `inherited_positional_tail`) | `parser/jsonschema.py`: `JsonSchemaParser._legacy_intersection` (the kept rows, read by every site the option changes; `legacy-all-of-null-as-written` through `NullMode.type_excludes_member_null`), `_intersect_ref_siblings` (for `_merge_ref_with_schema` and `_resolve_inherited_parent_property`), `_merge_properties_with_parent_constraints` and its one entry per property `_inherited_override_schema` (the type shape of `--allof-merge-mode none`: `_merge_inherited_type_shape_dict`), the inherited field overlay `_overlay_inherited_field` and default `_inherited_default_source`; the allOf merges read its helpers (`_intersect_constraint`, `intersect_enum_values`) and its rows `concatenating_row` and `all_of_member_row` |
+| where a schema object's null comes from (a `type` of null or a `type` list holding null, an `anyOf`/`oneOf` member typed null, `nullable`, a null `enum` value) and what each L1 site reads from it; OpenAPI passes `nullable` under `--strict-nullable` as a fact (a marker the first `_get_data_type` call sets) instead of rewriting `type`; today's disagreeing sites are named `legacy-*` rows, each deleted by its fix (G12, G01 decision 3): root models ignore `nullable` (`legacy-root-model-type-only`), references read only a `type` of null (`legacy-ref-target-null-type-only`), root and array sites read `nullable` without `--strict-nullable` (`legacy-root-type-nullable-ungated`, `legacy-array-nullable-ungated`; `allOf` sites read it so by G01 decision 3, `all-of-own-null`), a copied `nullable` leaves a map without null (`legacy-map-copied-nullable`), a `Literal` enum reads its null value alone (`legacy-enum-literal-value-only`), and OpenAPI's `nullable` counts as a type list only after the type is first built (`legacy-nullable-as-type-list`); RP13 deletes the three use-site rows (`legacy-nullable-as-type-list`, `legacy-root-model-type-only`, `legacy-ref-target-null-type-only`) | `parser/_null_facts.py`: `resolve_null_facts` (`NullSources`, `NullMode`, `NullFacts`), `dump_null_sources` (the own `type` and `nullable` of a dump) | `parser/_intersection.py:inherited_override_row` (row `inherited-typed-without-null` from a dump); `parser/jsonschema.py`: `_null_sources` and `_read_type` (the facts), `JsonSchemaParser._null_mode` (overridden by `parser/openapi.py:OpenAPIParser._null_mode`) and `JsonSchemaParser._null_facts`; sites `JsonSchemaObject.type_has_null`, `_excluded_null_members` (for `JsonSchemaParser.parse_combined_schema`), `_enum_entries_skip_null`, `JsonSchemaParser`: `get_object_field`, `_get_data_type`, `_get_python_type_override`, `_object_nullable`, `_create_registered_root_model`, `get_ref_data_type` and `_cache_ref_data_type_facts`, `_parse_ref_nullable_only_item`, `_parse_constrained_type_union`, `parse_array_fields`, `_object_map_admits_null`, `_merge_all_of_root_schema`, `_all_of_root_value_schema`, `_parse_root_type_with_context`, `_parse_multiple_types_with_properties`, `_resolve_array_field_required_nullable`, `parse_enum`, `_literal_values_type`, `_add_nullable_combined_schema_branches`, `_merge_inherited_type_shape_dict`, `_mark_partial_inherited_fields`; not yet: the converters (avro, xmlschema `nillable`, protobuf wrappers), `parse_field` of `parser/graphql.py`, `_extract_const_enum_from_combined`, and the `nullable` reads of `_enforced_value_keywords`, `_get_inherited_schema_types` and the const-as-enum check |
 | whether a type's rendered hint, or the annotation a field writes around it, includes None | `model/_decisions/nullability.py`: `rendered_nullability`, `takes_member_null`, `member_null`, `field_renders_none` | `types.py:DataType.admits_none`; `model/base.py:DataModelFieldBase._field_null_source`; writes: `types.py:DataType._materialize_render_state` (see L7) |
 | how a data type writes its type hint, and the base hint of RootModel generics: one expression of its tree (`TypeExpr`: `TypeLeaf`, `RefLeaf`, `TypeApply`) that one renderer writes through the backend hooks of its nodes (`_get_wrapped_reference_type_hint`, `_wrap_discriminator_type_hint`, `_CONSTRAINED_TYPE_TO_BASE`, the container orders, the `type_hint` of a class that writes its own); names, quotes and None are read when it is written | `types.py`: `type_expr_of`, `render_type_expr` | `types.py:DataType.type_hint` and `base_type_hint`; the expression frozen with each field render plan is checked against the type hint when the modules are written (`DATAMODEL_CODE_GENERATOR_CHECK_RENDER_PLANS`) |
 | which class an enum is written as: under `--keep-enum-member-values` a value base (`IntEnum`, `StrEnum`, `(T, Enum)`) only when it keeps every member value, else `Enum`; without it the 0.86.0 base of the schema type unless that base refuses a member (`legacy-value-base-changing-a-member`); merged enums keep today's kinds as named `legacy-*` rows, and msgspec keeps the 0.86.0 base where it could not decode that `Enum` (`legacy-msgspec-decodable-value-base`, until G16 decides msgspec Enums; capability `DataModel._DECODES_MIXED_ENUM_VALUES` through `model/output.py:OutputModelContext.decodes_mixed_enum_values`) | `model/_decisions/enum_kind.py`: `decide_enum_kind` | `parser/jsonschema.py:JsonSchemaParser._get_enum_model_class` (schema enums, also those merged from `const` branches and those of the converted formats); `parser/graphql.py:GraphQLParser.parse_enum_as_enum_class`; `parser/_passes/modules.py:extract_inherited_enum` (L5); classes: `model/enum.py:_enum_class` |
@@ -1132,12 +1142,117 @@ as the model package imports `types.py`: `_requirements.py` and `_constraint_app
 | which values of a `const` or an `enum` meet the length, bound and `multipleOf` keywords beside them that the field does not write (the `Literal` of a Pydantic field or root that writes a keyword keeps its values), and which keywords the values decide, so msgspec leaves them out silently; no value left keeps them as written with the unsatisfiable warning | `_constraint_applicability.py`: `literal_check`, `LITERAL_DECIDABLE_KEYWORDS` | `parser/jsonschema.py:JsonSchemaParser`: `_literal_view` (`parse_enum`, `parse_enum_as_literal`), `_check_literal_const` (`_get_const_data_type`), `_combined_values_admitted` (`_extract_const_enum_from_combined`), `_literal_written` (the const of `_get_data_type`, the enum and const of `_parse_root_type_with_context`); warning `_admitted_or_warn`, `parser/_intersection.py:warn_unsatisfiable`; `model/msgspec.py:DataModelField._literal_decided_meta_keywords`; not yet: `pattern` (G01's static pattern scanner) and the literals of `_build_lightweight_type` |
 | how the constraints of two fields overlay (the overriding values win): the class of the result comes from the first given argument (inherited field copies) or the first `ConstraintsBase` (collapsing root models, `ConstraintsBase.merge_constraints`) | `model/base.py:_overlay_constraints`, rows `first-given` and `first-constraints` | `parser/base.py:_copy_resolved_inherited_field`; `parser/_passes/modules.py:collapse_root_models_in_scope` through `ConstraintsBase.merge_constraints` |
 | the kind of a const or enum value, and whether a `Literal` or a msgspec tag holds it | `model/_decisions/enum_kind.py`: `literal_value_kind`, `is_literal_kind`, `is_tag_kind` | `parser/jsonschema.py`: `_partition_enum_values`, `_get_const_data_type`, `_extract_const_enum_from_combined`; `parser/_passes/imports.py`: `_msgspec_enum_clashes`, `_msgspec_null_enum_message`; discriminator tags through `model/_decisions/tag_value.py` (`field_tag`, `enum_tag_literal`, `union_tag_values`); the type of a const through `model/_decisions/literal_default.py:const_type` |
-| discriminator tags: which value tags a union variant (L1 branch literals, L5 tag fields, L6 redeclared tag fields), which field holds the tag property, which schemas a mapping path names, how tags are told apart, and the `tag` and `tag_field` of a msgspec Struct; today's disagreements are named `legacy-*` rows, each deleted by its fix: a `const` or one-member Enum value of any kind as a tag (`legacy-value-of-any-kind`), the L6 redeclared tag field read only as a one-value `Literal` (`legacy-literal-only`), `1 == True` at L5 and L6 but not at L1 (`legacy-python-equality`), the redeclared tag field picked in string-hash order when both its names are tag fields (`legacy-hash-order`), msgspec `tag_field` by Python name without `--use-msgspec-tagged-unions` (`legacy-python-name`), the L1 tag property replacing a declared one (`legacy-literal-property-replaces-declared`), a mapping key compared as written (`legacy-raw-mapping-key`), and the wider mapping-path keys of the msgspec layout prediction (`legacy-any-key`) | `model/_decisions/tag_value.py`: `field_tag`, `variant_tags`, `tag_field_matches`, `tag_field_kept`, `redeclared_tag_field`, `mapped_tags` (`mapping_path_keys`, `schema_path_keys`), `tag_key` (`same_tag`, `same_tags`, `distinct_tags`), `union_tag_values`, `tagged_union_discriminator`, `struct_tag_field`, `struct_tag_conflicts`, `struct_tag_clash`, `struct_tag_options`, `struct_discriminator_tag`, `enum_tag_literal`, `enum_tag_members`, `enum_tag_as_values` | `parser/_passes/_shared.py`: `_get_discriminator_field_value` with `_FieldTagFacts`, `_tag_field_matches`, `_keeps_instance_field`, `_get_mapping_discriminator_values`, `enum_discriminator_literal` (also as `parser/base.py:Parser._get_enum_discriminator_literal`), `enum_discriminator_members` (read with `enum_tag_as_values` by L6 `write_enum_member_tags_as_values` in `parser/_passes/cross_module.py`); `parser/_passes/modules.py`: `_variant_tags` with `_VariantTagFacts` (`_get_discriminator_values`, `_get_union_discriminator_values`); read by L3 `_union_tags` (`parser/_passes/structure.py`), L4 `find_possible_tag_names` (`parser/_passes/plans.py`), L5 `apply_discriminator_type`, `_discriminator_variants_are_valid` and L6 `_tag_discriminator_unions` (`parser/_passes/modules.py`), `_tag_fields_of_tagged_bases` (`parser/_passes/cross_module.py`), `parser/_passes/imports.py:_msgspec_refused_structs`; `parser/jsonschema.py:JsonSchemaParser._get_single_literal_value` with `_SchemaTagFacts`, `_get_union_variant_literal_values`, `_get_tagged_union_field_values`, `_set_tagged_union_discriminator` (L1); `model/msgspec.py:Struct._tag_options`, `Struct.discriminator_tag`; not here: tag defaults and nullability (next row) and tag patterns (`_drop_discriminator_tag_patterns`) |
+| discriminator tags: which value tags a union variant (L1 branch literals, L5 tag fields, L6 redeclared tag fields), which field holds the tag property, which schemas a mapping path names, how tags are told apart, and the `tag` and `tag_field` of a msgspec Struct; today's disagreements are named `legacy-*` rows, each deleted by its fix: the L6 redeclared tag field read only as a one-value `Literal` (`legacy-literal-only`), `1 == True` at L5 and L6 but not at L1 (`legacy-python-equality`), the redeclared tag field picked in string-hash order when both its names are tag fields (`legacy-hash-order`), msgspec `tag_field` by Python name without `--use-msgspec-tagged-unions` (`legacy-python-name`), the L1 tag property replacing a declared one (`legacy-literal-property-replaces-declared`), and the wider mapping-path keys of the msgspec layout prediction (`legacy-any-key`) | `model/_decisions/tag_value.py`: `field_tag`, `variant_tags`, `tag_field_matches`, `tag_field_kept`, `redeclared_tag_field`, `mapped_tags` (`mapping_path_keys`, `schema_path_keys`), `tag_key` (`same_tag`, `same_tags`, `distinct_tags`), `union_tag_values`, `tagged_union_discriminator`, `struct_tag_field`, `struct_tag_conflicts`, `struct_tag_clash`, `struct_tag_options`, `struct_discriminator_tag`, `enum_tag_literal`, `enum_tag_members`, `enum_tag_as_values` | `parser/_passes/_shared.py`: `_get_discriminator_field_value` with `_FieldTagFacts`, `_tag_field_matches`, `_keeps_instance_field`, `_get_mapping_discriminator_values`, `enum_discriminator_literal` (also as `parser/base.py:Parser._get_enum_discriminator_literal`), `enum_discriminator_members` (read with `enum_tag_as_values` by L6 `write_enum_member_tags_as_values` in `parser/_passes/cross_module.py`); `parser/_passes/modules.py`: `_variant_tags` with `_VariantTagFacts` (`_get_discriminator_values`, `_get_union_discriminator_values`); read by L3 `_union_tags` (`parser/_passes/structure.py`), L4 `find_possible_tag_names` (`parser/_passes/plans.py`), L5 `apply_discriminator_type`, `_discriminator_variants_are_valid` and L6 `_tag_discriminator_unions` (`parser/_passes/modules.py`), `_tag_fields_of_tagged_bases` (`parser/_passes/cross_module.py`), `parser/_passes/imports.py:_msgspec_refused_structs`; `parser/jsonschema.py:JsonSchemaParser._get_single_literal_value` with `_SchemaTagFacts`, `_get_union_variant_literal_values`, `_get_tagged_union_field_values`, `_set_tagged_union_discriminator` (L1); `model/msgspec.py:Struct._tag_options`, `Struct.discriminator_tag`; not here: tag defaults and nullability (next row) and tag patterns (`_drop_discriminator_tag_patterns`) |
 | the type a const takes, and the default, required and nullability of a field fixed to one value: by its `const`, by one `Literal` under `--use-one-literal-as-default`, or as a discriminator tag (an optional tag is its field's default where Pydantic rejects one, a tag whose type L5 writes is required); today's disagreements are named `legacy-*` rows, each deleted by its fix: a required or defaulted const drops the null its schema admits (`legacy-const-drops-null`, #4873), an optional const that no `Literal` holds is not nullable either (`legacy-const-without-literal-not-null`), a msgspec const is never nullable and takes no default (`legacy-msgspec-const-not-null`), and a one-literal default drops the null of a `type` list that a tag keeps (`legacy-one-literal-drops-type-null`) | `model/_decisions/literal_default.py`: `decide_literal_default`, `const_type` | `model/base.py:DataModelFieldBase._process_const_as_literal` (the `process_const` hook of the Pydantic, dataclass and TypedDict fields: L1, and L5 `collapse_root_models` again), `model/msgspec.py:DataModelField.process_const`; `parser/_passes/modules.py` (L5): `set_one_literal_on_default`, and `set_tag_literal_default` for the tags fields hold (also those nested choices give a union) and those `apply_discriminator_type` writes (also the Enum tags of nested choices where `discriminator=` is written; default from `_get_single_discriminator_default`); `parser/jsonschema.py:JsonSchemaParser._get_const_data_type` (L1, which returns the const type before the null a `type` list or `nullable` adds); writes: `model/base.py:_apply_literal_default`; not routed: the tag field `apply_discriminator_type` appends is built required and takes no default under `--force-optional`, where a tag whose type it writes does |
 | which members a union holds, in which order, whether it writes None itself, and how it writes them: each builder passes its row (`declared` for the jsonschema and OpenAPI builders, `ordered` for msgspec field hints with None and `UNSET` as members), every `DataType` drops a member that admits any value and null beside another member and takes its None (`constructed`), and rendering keeps each written member once and takes over the None of its members; today's disagreements are named `legacy-*` rows, each deleted by its fix: the branches beside `array` of a type array go before it (`legacy-non-array-first`), the member collapse replaces goes last (`legacy-replacement-last`), the GraphQL union template writes `Union[...]` whatever the union operator (`legacy-graphql-template`), rendering compares a member's text before stripping its None (`legacy-dedup-before-strip`), and Pydantic writes `MISSING` after the rendered hint, keeping a union in it nested (`legacy-missing-appended`) | `model/_decisions/union_assembly.py`: `assemble_union` (`MemberFacts`, `UnionPolicy`, `UnionPlan`), `merge_members`, `join_union` | `types.py:build_union` (with the builder's `self.data_type`) for `parser/jsonschema.py` and `parser/openapi.py`, `model/msgspec.py:DataModelField._ordered_union_data_type`; `types.py:DataType.__init__`; `parser/generation.py:GenerationStore.replace_nested_data_type` (L5 collapse); `parser/graphql.py:GraphQLParser.parse_union`; `types.py:render_type_expr` (`_render_union`); `_target_binding.py` (`_ordered_union`, the structural projection); `model/pydantic_v2/base_model.py:DataModelField._type_hint_with_missing_sentinel`; `types.py:union_members` gives the members of a type that is a union at its top level (msgspec's plain-union checks); not yet: `parser/_passes/render_prep.py:_flatten_union_members` and the other nested-union checks of the parser passes |
-| the type of an object map: one dict with the key type of its patterns or `propertyNames` and the union of the value types of its key classes, the null and the other types of its type array (an L1 builder over raw keywords of the map object, not a pure core); an `additionalProperties` schema that asserts something admits the keys outside the patterns, which makes the keys those of `propertyNames` or `str`, except for msgspec, which keeps its 0.86.0 type until G16 decides msgspec union fallbacks (capability `DataModel._DECODES_VALUE_UNIONS` through `model/output.py:OutputModelContext.decodes_value_unions`) | `parser/jsonschema.py:JsonSchemaParser._parse_object_map` | the map positions of `parser/jsonschema.py`: the object and typed nullable map rows of the field table (`parse_item`), the map branches of `_parse_root_type_with_context`, the dict root of `parse_object` (`_get_additional_properties_root_field`, whose counts read the object's own keywords; where schema validators check the patterns its dict is `dict[<propertyNames key or str>, Any]`); the dict is built by the public hooks `parse_pattern_properties` and `parse_property_names`, `_parse_additional_properties_map` and `_parse_nullable_map`; a dict that is the only member of a type array of object and null, built by `_get_data_type`, is the type itself (`_get_type_array_data_type`) |
+| the type of an object map: one dict with the key type of its patterns or `propertyNames` and the union of the value types of its key classes, the null and the other types of its type array (an L1 builder over raw keywords of the map object, not a pure core); an `additionalProperties` schema that asserts something admits the keys outside the patterns, which makes the keys those of `propertyNames` or `str`, except for msgspec, which keeps its 0.86.0 type until G16 decides msgspec union fallbacks (capability `DataModel._DECODES_VALUE_UNIONS` through `model/output.py:OutputModelContext.decodes_value_unions`) | `parser/jsonschema.py:JsonSchemaParser._parse_object_map` | the map positions of `parser/jsonschema.py`: the object and typed nullable map rows of the field table (`parse_item`), the map branches of `_parse_root_type_with_context`, the dict root of `parse_object` (`_get_additional_properties_root_field`, whose counts read the object's own keywords; where schema validators check the patterns its dict is `dict[<propertyNames key or str>, Any]`); the dict is built by the public hooks `parse_pattern_properties` and `parse_property_names`, `_parse_additional_properties_map` and `_parse_nullable_map`; a dict that is the only member of a type array of object and null, built by `_get_data_type`, is the type itself (`_get_type_array_data_type`); `JsonSchemaParser._legacy_object_maps`, the only reader of `--use-single-dict-for-object-maps` and `--check-pattern-maps-strictly`, gives the rows of 0.86.0 maps they leave out (`legacy-map-*`, `legacy-validated-pattern-maps`), and `_typed_nullable_map_value_schema` the values `--use-typed-nullable-map-values` and `--use-typed-map-values-beside-other-types` type; `_object_map_key_type` gives the key type of every map position (rows `pattern-map`, `property-names-map`, `extra-field`) |
 | what the class body writes after a field's annotation (its call, its default, or nothing) and what that gives the model's constructor (a default value or factory, whether the field takes part), per output row (`model`, `dataclass`, `pydantic-dataclass`, `msgspec`), classified when a pass reads it; row `legacy-stdlib-annotated` (a stdlib dataclass `field(...)` under `--use-annotated` counts as unassigned); the written assignment is read with the nested-model default factories it has then, before L6 records the recursive paths that drop them (`legacy-nested-factory-at-read`) | `model/_decisions/assignment.py`: `classify_assignment`, `participates_in_constructor`, `struct_assigned`, `written_data`; the record `model/_render_plan.py:AssignmentFacts` | `model/base.py:DataModel._field_assignment_facts` (the row of the class, or its own hooks when it replaces them without naming a row) over `_assignment_inputs` and the field hook `DataModelFieldBase._written_assignment` (overridden by the dataclass, Pydantic dataclass and msgspec fields); readers: the L1 construction key, `parser/_passes/render_prep.py`: `fix_constructor_field_ordering` and `fix_tag_opt_out_field_ordering` (after the decision phase), `DataModel.field_binds_class_attribute` (L5 `hides_named_type` of `parser/_passes/modules.py`, `_is_hidden_by_earlier_field`), `warn_required_assignments_after_defaults` (`parser/_passes/render_prep.py`); views: `FIELD_ASSIGNMENT_CHECKER`, `FIELD_DEFAULT_CLASSIFIER`, `FIELD_PARTICIPATES_IN_CONSTRUCTOR`, `FIELD_CONSTRUCTION_ORDER_KEY` of the built-in outputs and `DataModelFieldBase._get_constructor_default_info`; not routed: `model/dataclass.py:_has_constructor_default` (nested mapping defaults, which skips rendering structured values) and the nested-factory metadata (`_set_nested_model_default_factory_metadata`) |
 | the Pydantic release that generated models need above an explicit target, which a generation states once, as a `UserWarning`, for the output it keeps | `_requirements.py`: `pydantic_floor`, `pydantic_floor_message` over the rows (`label`, `config_key`; `CONFIG_KEY_REQUIREMENTS` is a view of them) | constructs: `_pydantic_constructs` of `model/base.py:DataModel` and `DataModelFieldBase`, `model/type_alias.py`, and `model/pydantic_v2/base_model.py` (`DataModelField`, `BaseModel`) and `dataclass.py:DataClass`, whose config keys come from `_rendered_config_items` (`BaseModel`, `RootModel`, `DataClass`), the items the renderer, the imports and the alias decisions read too; record: `parser/_passes/imports.py:record_pydantic_floor` at the end of L6, into `pydantic_floors_recorded`; statement: `__init__.py:_parse_generation`, for the parse it keeps |
+| targets (`--generate-client`, `--generate-server`): what an API object of an OpenAPI document says (method, path, parameters, bodies, responses, media, encodings, headers, links, callbacks, servers, security, schemes), read once where the API walk visits it, then recorded; no `YamlValue` or raw-key read after the walk (the served-document copier copies the recorded objects) | `parser/openapi_scope.py` (the walk); planned: `_target_walk.py` | `_fastapi/source_document.py` (copies the source as written, #4534) |
+| targets: where a `$ref` or a JSON pointer of a loaded document leads (no second `urljoin`/`unquote` follower in a target) | `parser/_schema_graph.py`, `parser/_api_reference.py`, `parser/openapi_scope.py` | `_target_documents.py` |
+| targets: whether a type admits None and how None is stripped (the target half of the null row above; a target never inspects members for `NoneType`) | `model/_decisions/nullability.py`; planned: `_target_types.py`: `admits_none`, `without_none` | `types.py:DataType.admits_none`, `model/base.py:DataModelFieldBase._field_null_source` |
+| targets: the JSON and lexical kind of a type's values (the kind tables of codecs, parameters, forms and parts) | `_openapi_wire_plan.py:LexicalKinds`; planned: `_target_types.py`: `lexical_kind`, `json_kinds` | `model/_decisions/enum_kind.py:literal_value_kind` (the kind row above) |
+| the method resolution order of generated models and the effective fields a model has with its bases (targets enumerate members through it, not by their own C3) | `model/base.py`: `linearize_data_models`, `c3_merge` | `model/base.py:DataModel.iter_all_fields`; `parser/_passes/settle.py:sort_base_classes_for_mro` |
+| Pydantic `extra`, closedness and by-name configuration of a model through its bases (targets read it, never derive it) | planned: `model/_decisions/closedness.py` | none yet (the first adapter is the target seam; the model backends follow) |
+| targets: the structure and spelling of a model type: the model's `TypeExpr`, frozen once at the seam (no target builds, unwraps or inspects a type view for a decision) | `types.py`: `type_expr_of`, `render_type_expr`; planned: `_target_types.py:freeze_type` | `_target_module.py:TargetModule`, `_target_module.py:TypeComposer` (text of support compositions) |
+| targets: the operation plan both targets read (groups, operation and argument names, settings resolution, parameters and defaults, media, bodies, responses, status classes, bodyless statuses, forms, parts, security requirements); where the client and the server differ, a named policy row | planned: `_target_operations.py` | none (each target keeps only its own forms) |
+| which keywords of a schema hold subschemas, the shape of each value (a map of named schemas, a list, one, or one or a list) and the roles each keyword plays (applicator, in place, conditional, child of an array or an object, unmatched, unevaluated, held as a `JsonSchemaObject` field, definitions); a walker that visits another set or order than a role gives keeps it as a named view of the table | `_json_schema.py`: `SCHEMA_POSITIONS`, `SCHEMA_SHAPES`, `schema_positions`; views `SCHEMA_MAP_KEYS`, `SCHEMA_VALUE_KEYS`, `MODEL_VALUE_POSITIONS`, `REF_PRE_PASS_FIELDS`, `REF_PRE_PASS_POSITIONS` | the walkers of `parser/jsonschema.py` (`_walk_schema_objects`, `_iter_referencing_schemas`, `_iter_schema_resource_children`, `_iter_ref_walk_children`, `_find_json_schema_anchor_pointer`, `_locate_dump`) and its keyword tables, `parser/_intersection.py`, `_target_binding.py:_Reader._subschemas`, `input_model.py`, `_recommend/_signals.py` |
+
+The target rows have their code shapes in the toml (`T-wire`, `T-resolver`, `T-kind`, `T-type`, `T-operation`, `H14`,
+`Hx-closedness`, and target signatures of `H08`, `H11`, `H23`, `H24`). A `planned` place is a core that a later change
+creates: it covers its hits and need not exist yet, and the check fails once it does, so that the change moves it to
+`core`. The target sites that exist today are in the allowlist, each under the audit row it belongs to (`R-nn` a read of
+the document after the API walk, `M-nn` a model fact decided again, `C-nn` a decision that the client and the server
+plan twice). The code shape `key` is a string key read of a raw object: `x["k"]`, `x.get("k")`, `x.pop("k")` or
+`x.setdefault("k", ...)`.
+
+**Keeping a decision in its home.** `scripts/decision_homes.toml` records, for each decision above and for the options
+that 0.87.0 added, the home's core and adapters and the code shapes that mean "this code decides it": a read of a schema
+object's `nullable`, a call that computes the components or the order of a graph, the list of subschema keywords, a
+literal `2 ** 63`, a read of an option outside the place that owns it. `scripts/check_decision_homes.py` (run by
+`tests/test_decision_homes.py`) fails with "decision X has its home in file:function" for such a shape anywhere else;
+the sites that exist today are the allowlist at the end of the toml, which only shrinks. A new site goes through the
+home: build the facts in an adapter and call the core, or, for a decision with no home yet, add the home with the change
+instead of a second copy. An allowlist entry needs the owner's agreement and names the audit entry it belongs to
+(`audit`). After a change routes sites to a home, `python scripts/check_decision_homes.py --write-allowlist` lowers the
+list.
+
+**Legacy rows.** A `legacy-*` row names an exception that keeps the output of an earlier release. Every row that `src/`
+names is a table of `legacy_rows` in the toml with its home and what deletes it (`fix`: an issue, a plan group, or
+`keep` for output that stays the default for good), and a row of this table with the same home and fix; the check fails
+for a row on one side only, so the page names no row the code lacks and the code has no unplanned row. A new
+exception to a home is a new named row, never an anonymous `if`.
+
+| Row | Home | Keeps | Fix |
+| --- | --- | --- | --- |
+| `legacy-rw-parsed-facts` | F-dedupe-request-response-variants | without `--dedupe-request-response-variants`, the read/write facts and graph node of a key come from a temporary parse of its fields, the walk reads every reference of a key, and every model collects its inherited fields to decide its split | keep |
+| `legacy-rw-unowned-parent-fields` | F-dedupe-request-response-variants | without `--dedupe-request-response-variants`, the inline models of an allOf parent's own fields are parsed at no owner path | keep |
+| `legacy-rw-extra-items-as-written` | Hx-typed-positions | the request/response walk reads the TypedDict extra_items type of additionalProperties as written, not with its false allOf values read as `set_additional_properties` reads them | B5 |
+| `legacy-rw-field-site-as-written` | Hx-typed-positions | the request/response walk chooses the row of a field site from the site as written, its `$ref` merged with its siblings only where the site itself writes a customTypePath (`parse_item` merges every `$ref` with siblings first) | B5 |
+| `legacy-merge-row` | H03 | a `$ref` with siblings and an inherited property override are the earlier merge (`concatenating_row` / `inherited_override_row`) | G01 |
+| `legacy-lookahead-patterns` | H03 | patterns are joined by lookaheads with no warning; an allOf member merge keeps the later pattern | G01 |
+| `legacy-all-of-site-form` | H03 | allOf value sites keep their earlier form with no conflict warning (a model without fields only where their parts admit an object); a `$ref` member's sibling `enum`/`const` does not narrow its literals | G01 |
+| `legacy-all-of-null-as-written` | H03 | null is read as written where allOf parts meet (null members beside a `type` without null, an allOf map member's `type` keeps its null, a `None` merged enum value fits) | G01 |
+| `legacy-map-union-of-dicts` | F-use-single-dict-for-object-maps | without `--use-single-dict-for-object-maps`, patternProperties give a union of dicts, one per rendered value type, with no inexact-map warning (msgspec, which cannot decode it, gets the one dict) | keep |
+| `legacy-map-pattern-keys-only` | F-use-single-dict-for-object-maps | without `--use-single-dict-for-object-maps`, an additionalProperties schema beside patternProperties types no key; the dict admits the keys of its patterns only | keep |
+| `legacy-map-null-left-to-field` | F-use-single-dict-for-object-maps | without `--use-single-dict-for-object-maps`, the dict of an object map takes neither the null of its type array or `nullable` nor its property counts, which stay on the field (a type array of object and null is a union holding the dict); only the typed values of `--use-typed-nullable-map-values` make one dict, optional where its type array lists null, joined with the other types | keep |
+| `legacy-validated-pattern-maps` | F-check-pattern-maps-strictly | without `--check-pattern-maps-strictly`, the root dict of a map the patternProperties validator checks has `str` keys and counts no pattern, a declared key whose simple schema a pattern rejects witnesses the check, and the model of an object without properties joins no other type of its type array | keep |
+| `legacy-nullable-as-type-list` | H06 | OpenAPI `nullable` is read as a type list only after the first `_get_data_type` of a schema (a list item is nullable under a root model and not elsewhere) | G12 |
+| `legacy-root-model-type-only` | H06 | a root model ignores `nullable` and reads only its `type` | G12 |
+| `legacy-ref-target-null-type-only` | H06 | a reference reads only a `type` of null (or strict `nullable`) of its target, not a type list | G12 |
+| `legacy-map-copied-nullable` | H06 | a `nullable` copied into a combined branch leaves its map without null (the owner kept it) | keep |
+| `legacy-root-type-nullable-ungated` | H06 | a root field is nullable by `nullable` without `--strict-nullable` | #5054 |
+| `legacy-multiple-types-nullable-not-recorded` | H06 | a type list with an object records only the type list's null; `--read-nullable-beside-type-list` reads `nullable` too | keep |
+| `legacy-array-nullable-ungated` | H06 | an array field is nullable by `nullable` without `--strict-nullable` | #5054 |
+| `legacy-enum-literal-value-only` | H06 | a `Literal` enum admits null by its null value alone | #5054 |
+| `legacy-msgspec-top-level-null-as-written` | H23 | msgspec reads `is_optional` for the top-level None before render preparation writes rendered nullability | RP13 |
+| `legacy-member-null-from-hint-text` | H23 | a union takes the None of a member by rendering the member's hint | RP13 |
+| `legacy-l3-import-nullability` | H23 | L3 deduplication renders write nullability that overrides and constructor ordering read | RP14 |
+| `legacy-consumed-at-object-property` | H07 | a zero-bound class consumes its keyword only at an object property; `--omit-redundant-constraints` omits it everywhere | keep |
+| `legacy-all-of-root-format-kinds` | H07 | an allOf root keeps, silently, the keywords of the kinds its format names | G03b |
+| `legacy-undeclared-keywords-off-literal` | H07 | the `Literal` of a const or enum takes no keyword of an undeclared kind | G03b |
+| `legacy-override-keeps-string-keywords` | H07 | `--type-overrides` keeps the string keywords the replaced type took | G03b |
+| `legacy-anyurl-keeps-string-keywords` | H07 | `AnyUrl` takes every string keyword and Pydantic then drops them all at render | G03b |
+| `legacy-value-base-changing-a-member` | H08 | the 0.86.0 `IntEnum` or `(T, Enum)` base that changes a member value (`2.5` becomes `2`); `--keep-enum-member-values` keeps the values | keep |
+| `legacy-msgspec-decodable-value-base` | H08 | msgspec keeps the 0.86.0 value base so that the class decodes its members | G16 |
+| `legacy-inherited-first-base-class` | H08 | an enum merged from allOf takes the class of the first enum | G01-3 |
+| `legacy-inherited-specialized-without-member-check` | H08 | a merged enum keeps the `IntEnum` or `StrEnum` of the first and, since 0.87.0, leaves out the members it cannot hold | G01-3 |
+| `legacy-const-drops-null` | H09 | a required or defaulted const drops the null its schema admits | #4873 |
+| `legacy-const-without-literal-not-null` | H09 | an optional const that no `Literal` holds is not nullable but defaults to None | #4804 |
+| `legacy-msgspec-const-not-null` | H09 | a msgspec const is never nullable and takes no default | #5054 |
+| `legacy-one-literal-drops-type-null` | H09 | a one-literal default drops the null of a type list that a tag keeps | #5054 |
+| `legacy-non-array-first` | H10 | the branches beside `array` of a type array go before it | keep |
+| `legacy-replacement-last` | H10 | the member that collapse replaces goes last in its union | OPT-6 |
+| `legacy-graphql-template` | H10 | the GraphQL union template writes `Union[...]` whatever the union operator | OPT-8 |
+| `legacy-dedup-before-strip` | H10 | rendering compares a member's text before stripping its None | OPT-5 |
+| `legacy-missing-appended` | H10 | Pydantic writes `MISSING` after the hint and keeps a nested union | RP14 |
+| `legacy-any-key` | H11 | the msgspec layout prediction of L4 matches mapping paths by all four key kinds | G05 |
+| `legacy-hash-order` | H11 | the redeclared tag field is picked in string-hash order when both its names are tag fields | G05 |
+| `legacy-literal-only` | H11 | L6 reads a redeclared tag field only as a one-value `Literal` | G05 |
+| `legacy-literal-property-replaces-declared` | H11 | the L1 tag property replaces a declared one | G05 |
+| `legacy-python-equality` | H11 | `1 == True` share a tag at L5 and L6 but not at L1 | G05 |
+| `legacy-python-name` | H11 | msgspec `tag_field` by Python name without `--use-msgspec-tagged-unions` or `--tag-msgspec-by-payload-name` | keep |
+| `legacy-same-name-dedup` | H12 | same-name deduplication leaves union tags out and renders models under their own class name | G06 |
+| `legacy-collapse-reuse` | H12 | collapse-reuse skips root models, renders each round anew and tells bases apart by reference | G06 |
+| `legacy-tree-scope` | H12 | tree-scope reuse compares models by its own key | G06 |
+| `legacy-reuse-model` | H12 | `--reuse-model` compares models by its own key | G06 |
+| `legacy-stale-dedup-keys` | H12 | users compare a dedup key memoized by an earlier pass | FIX-9 |
+| `legacy-graphql-affix-only` | H16 | GraphQL names get affixes only: no uniqueness, map, strategy or singularization | G09 |
+| `legacy-recursion-follows-path` | H20 | recursion facts follow paths through `_internal` relocation | GR9a |
+| `legacy-stale-self-reference` | H21 | a root field keeps the answer "named the wrapper" from before the rename | FIX-9 |
+| `legacy-shared-node-in-place` | H21 | collapse writes a shared node in place under a shared child list | FIX-3 |
+| `legacy-keyless-reference-by-path` | H21 | a reference that no model was built with names the model at its path | GR11 |
+| `legacy-module-follows-path` | H21 | module entries follow paths | GR11 |
+| `legacy-keep-order-short-name` | H21 | a false dependency on a same-named model of another module | GR11 |
+| `legacy-replaced-root-shares-path` | H21 | a collapsed root and its inner model name each other | GR11 |
+| `legacy-nested-factory-at-read` | H24 | the assignment is read with the nested factories it has then, before L6 records the recursive paths | PH2 |
+| `legacy-nested-factory-order-before-nullability` | H24 | a Pydantic dataclass under `--strip-default-none` keeps the required-fields answer of the first read | PH2 |
+| `legacy.L-NF` | H24 | the import snapshot reads fields as if the nested factory were written | PH2 |
+| `legacy-stdlib-annotated` | H24 | a stdlib dataclass `field(...)` under `--use-annotated` counts as unassigned | DC12 |
+| `legacy.alias-order` | H26 | import names in the order that L5 and L6 repairs asked for them | RP15b |
+| `legacy.enum-member-import-bindings` | H26 | an enum's `Field` import is bound but not written | RP15b |
+| `legacy.pdc-annotated-strip` | H26 | a Pydantic dataclass drops the `Annotated` import whenever it must see the field's metadata, also when the hint writes `Annotated` | RP15b |
+| `legacy-run-alias-generator-import` | H26 | a BaseModel keeps importing the run's `--alias-generator` where it does not render it, so that class naming is unchanged | RP15b |
 
 **Scope on schema objects, not parse paths.** When an option applies to part of a document, the walk that defines the
 part marks the schema objects in scope where the document is rewritten (L0), and L1 checks the mark on the object it
@@ -1326,18 +1441,18 @@ paths:
 Run `python scripts/check_architecture_boundaries.py` to validate these rules. The checker parses imports and semantic
 backend inspection with the Python AST, including lazy and dynamic imports. Entrypoint, parser, configuration,
 input-model, reference, model-composition, output-model, shared-model, schema graph, parser pass, requirement-table,
-constraint-table, and debug check flag files are classified explicitly. The composition root may select concrete
-backends, while shared-model modules must remain neutral: they cannot import a concrete backend or resolve one through
+constraint-table, subschema-position-table and debug check flag files are classified explicitly. The composition
+root may select concrete backends, while shared-model modules must remain neutral: they cannot import a concrete backend or resolve one through
 `sys.modules`, including module-name constants and aliases. The requirement table may import only the standard library,
 `typing_extensions`, `_records` and `enums`, the constraint table only those and the requirement table, `_checks.py`,
-which every layer reads for the debug check flags, only the standard library and `typing_extensions`, and the schema
+which every layer reads for the debug check flags, and `_json_schema.py`, the table of subschema positions every schema
+walker reads (by shape or through a view of its roles), only the standard library and `typing_extensions`, and the schema
 graph (`parser/_schema_graph.py`, L0) only those and `reference`: the parsers pass it their rules. Pass modules
 (`parser/_passes/`) follow the parser rules and import no parser module but the generation store, the import ledger,
-`_python_type_imports`, the leaf modules `_graph_ids` and `_model_shapes`, the check hooks of `_check_scopes` (the
-finality checks of `_finality` load only when a check area is on), the
-pipeline steps of `_pipeline` with the declarations of `_pass_decls`, `_facts` and `_phases`, and each other, not even
-for typing: a pass of one layer is a function in that layer's module (`settle.py`, `structure.py`, `plans.py`,
-`modules.py`, `cross_module.py`, `decide.py`, `render_prep.py`, `imports.py`) that takes the parser through the layer's
+`_python_type_imports`, the leaf modules `_graph_ids` and `_model_shapes`, the pipeline steps of `_pipeline` with the
+phases of `_facts`, the decisions of `_phases`, and each other, not even for typing: a pass of one layer is a
+function in that layer's module (`settle.py`, `structure.py`, `plans.py`, `modules.py`, `cross_module.py`, `decide.py`,
+`render_prep.py`, `imports.py`) that takes the parser through the layer's
 `Protocol` (`SettleHost`, `StructureHost`, `PlansHost`, `ModulesHost`, `CrossModuleHost`, `DecideHost`,
 `RenderPrepHost`, `ImportsHost`; the parse segment takes `ParseHost`, in `modules.py` importing other modules' models,
 reuse, collapse, discriminator tags, the module loop and the rule aliases take the narrower `ImportFromHost`,
@@ -1409,7 +1524,8 @@ The location is a fact recorded in L0 and L1:
   win. A boolean schema, which cannot carry a location, takes it from its holder.
 - **Copy steps** the location survives, besides those under "Scope on schema objects": L0 unsharing,
   `openapi.py:RawMediaObject` (the media object's own `schema` value is used), lists joined and dicts merged in
-  `_deep_merge`, `_merge_all_of_schema`, `_merge_property_schemas` and `_merge_inherited_type_shape_dict` (and the
+  `parser/_intersection.py`: `concatenating_row`, `all_of_member_row`, `inherited_override_row`, and
+  `_merge_inherited_type_shape_dict` (and the
   nested schemas `intersect_keywords` rewrites in their result, copied with the location they had there), combined
   classes in `_parse_object_common_part`, inherited normalizations in `_merge_properties_with_parent_constraints`,
   array type-union branches, OpenAPI operation copies for path-level parameters and global `security` (the operation's

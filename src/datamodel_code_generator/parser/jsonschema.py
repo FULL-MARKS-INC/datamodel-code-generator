@@ -73,8 +73,18 @@ from datamodel_code_generator._constraint_applicability import (
 from datamodel_code_generator._format_types import (
     DatetimeClassType,
 )
-from datamodel_code_generator._json_schema import SCHEMA_MAP_KEYS, SCHEMA_VALUE_KEYS
-from datamodel_code_generator._model_keys import model_key_of
+from datamodel_code_generator._json_schema import (
+    DEFINITION_KEYS,
+    REF_PRE_PASS_FIELDS,
+    REF_PRE_PASS_POSITIONS,
+    SCHEMA_MAP_KEYS,
+    SCHEMA_POSITIONS,
+    SCHEMA_SHAPES,
+    SCHEMA_VALUE_KEYS,
+    SINGLE_SCHEMA_SHAPES,
+    schema_positions,
+)
+from datamodel_code_generator._model_keys import FIELDLESS_SITE_KEY, model_key_of
 from datamodel_code_generator._records import record
 from datamodel_code_generator._regex_syntax import (
     conjoin_patterns,
@@ -113,7 +123,6 @@ from datamodel_code_generator.model._decisions.tag_value import (
 )
 from datamodel_code_generator.model.base import (
     UNDEFINED,
-    _keyed_answer,
     c3_merge,
     get_inherited_fields,
     sanitize_module_name,
@@ -149,14 +158,23 @@ from datamodel_code_generator.model.runtime_validation import (
 from datamodel_code_generator.parser._graph_ids import BuildFrames
 from datamodel_code_generator.parser._imports_plan import ImportProducer
 from datamodel_code_generator.parser._intersection import (
-    ENUM_METADATA_KEYWORDS,
+    INHERITED_SCHEMA_KEYWORDS,
+    INTERSECTED_KEYWORDS,
+    LEGACY_ROWS,
+    POSITIONAL_SCHEMA_KEYWORDS,
     KeywordIntersection,
+    all_of_member_row,
     bounds_admit_no_value,
-    enum_metadata,
+    concatenating_row,
+    inherited_override_row,
+    inherited_positional_tail,
+    inherits_keyword,
     intersect_constraint,
     intersect_enum_values,
     intersect_keywords,
     intersect_multiple_of,
+    merge_inherited_keyword,
+    merge_inherited_value,
     warn_unsatisfiable,
     warn_untaken_patterns,
 )
@@ -166,6 +184,7 @@ from datamodel_code_generator.parser._null_facts import (
     NullMode,
     NullSite,
     NullSources,
+    dump_null_sources,
     resolve_null_facts,
 )
 from datamodel_code_generator.parser._passes._keys import _DERIVED_FROM_KEY, _RAW_SCHEMA_DEFAULT_UNDEFINED
@@ -177,6 +196,7 @@ from datamodel_code_generator.parser._schema_dispatch import (
     Row,
     SchemaSite,
     Step,
+    TypedChild,
 )
 from datamodel_code_generator.parser._schema_graph import (
     SCHEMA_GRAPH,
@@ -251,7 +271,6 @@ from datamodel_code_generator.util import BaseModel, get_yaml_parse_errors
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Container, Generator, Iterable, Iterator, Mapping, Sequence
     from contextlib import AbstractContextManager
-    from typing import TypeGuard
 
     from pydantic import GetCoreSchemaHandler, ValidatorFunctionWrapHandler
     from pydantic_core import CoreSchema
@@ -288,7 +307,9 @@ _CONST_ENUM_TYPES: Final[Mapping[LiteralValueKind, str]] = {
 """The ``type`` a merged enum of const branches takes from the kind of the first const that has one."""
 _LIGHTWEIGHT_MAX_DEPTH: Final = 3
 _LIGHTWEIGHT_MAX_UNION_ELEMENTS: Final = 5
-_ARRAY_ITEMS_CONSTRAINT_FIELDS = frozenset({"items", "additionalItems", "prefixItems", "unevaluatedItems"})
+_MODELED_POSITIONS = frozenset(schema_positions("modeled"))
+"""The subschema keywords ``JsonSchemaObject`` holds as fields."""
+_ARRAY_ITEMS_CONSTRAINT_FIELDS = frozenset(schema_positions("modeled", "array"))
 
 
 def _update_false_schema_refs(
@@ -326,70 +347,24 @@ _ANNOTATION_KEYWORDS = frozenset({
 })
 _NON_ASSERTING_KEYWORDS = _ANNOTATION_KEYWORDS | {"contentEncoding", "contentMediaType", "contentSchema", "format"}
 _FALSE_ALL_OF_KEYWORDS = _ANNOTATION_KEYWORDS | {"allOf"}
-_INHERITED_NESTED_SCHEMA_FIELDS = (
-    "items",
-    "additionalItems",
-    "prefixItems",
-    "additionalProperties",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-    "properties",
-    "patternProperties",
-    "propertyNames",
-)
-_INHERITED_POSITIONAL_SCHEMA_FIELDS = frozenset({"items", "prefixItems"})
-_INHERITED_SCHEMA_MAP_FIELDS = frozenset({"patternProperties", "properties"})
-_ALLOF_BOUND_CONSTRAINT_FIELDS = frozenset({
-    "minimum",
-    "maximum",
-    "exclusiveMinimum",
-    "exclusiveMaximum",
-    "minLength",
-    "maxLength",
-    "minItems",
-    "maxItems",
-    *PROPERTY_COUNT_KEYWORDS,
-})
+_MODELED_SCHEMA_MAPS = schema_positions("modeled", shapes=("map",))
+"""The maps of named subschemas ``JsonSchemaObject`` models: ``properties`` and ``patternProperties``."""
 _INHERITED_ARRAY_EXTRA_CONSTRAINT_FIELDS = frozenset({"contains", "maxContains", "minContains"})
 _RAW_SCHEMA_EXPLICIT_FIELD_EXTRAS_KEY = "_raw_schema_explicit_field_extras"
 _INHERITED_TYPE_SHAPE_FIELDS = frozenset({
+    *_MODELED_POSITIONS,
     "$dynamicRef",
     "$recursiveRef",
     "$ref",
-    "additionalItems",
-    "additionalProperties",
-    "allOf",
-    "anyOf",
     "customBasePath",
     "customTypePath",
     "discriminator",
-    "items",
-    "oneOf",
-    "patternProperties",
-    "prefixItems",
-    "properties",
-    "propertyNames",
     "required",
     "type",
-    "unevaluatedItems",
-    "unevaluatedProperties",
 })
 _INHERITED_CONTAINER_TYPE_FIELDS: tuple[tuple[frozenset[str], frozenset[str]], ...] = (
-    (
-        frozenset({"array"}),
-        frozenset({"additionalItems", "items", "prefixItems", "unevaluatedItems"}),
-    ),
-    (
-        frozenset({"object"}),
-        frozenset({
-            "additionalProperties",
-            "patternProperties",
-            "properties",
-            "propertyNames",
-            "required",
-            "unevaluatedProperties",
-        }),
-    ),
+    (frozenset({"array"}), _ARRAY_ITEMS_CONSTRAINT_FIELDS),
+    (frozenset({"object"}), frozenset({*schema_positions("modeled", "object"), "required"})),
 )
 _INHERITED_MATERIALIZED_TYPE_SHAPE_KEY = "_inherited_materialized_type_shape"
 _MERGED_REF_TARGET_KEY = "_merged_ref_target"
@@ -410,15 +385,12 @@ _DERIVED_FROM_REF_KEY = "_derived_from_ref"
 _REPORTED_VALUE_CONFLICT_KEY = "_reported_value_conflict"
 _VALUE_CONFLICT_KEYWORDS = frozenset({"enum", "const"})
 _ALL_OF_VALUE_PART_EXCLUDED_EXTRAS = frozenset({
-    "contains",
+    *schema_positions("applicator", without=(*_MODELED_POSITIONS, "dependencies", "extends")),
     "dependentRequired",
-    "dependentSchemas",
-    "else",
-    "if",
-    "not",
-    "then",
     "x-python-type",
 })
+"""The extras that keep an allOf member from being a value part: ``dependentRequired``, ``x-python-type`` and the
+applicators held in extras, except ``dependencies`` and ``extends`` (legacy)."""
 _NO_INHERITED_SCHEMA_MERGE = Sentinel("_NO_INHERITED_SCHEMA_MERGE")
 
 _PYTHON_UNION_BASE_TYPES = frozenset({"Union", "Optional"})
@@ -604,33 +576,8 @@ def _validation_keywords(
     return keywords
 
 
-_INTERSECTED_KEYWORDS = frozenset({
-    "exclusiveMaximum",
-    "exclusiveMinimum",
-    "enum",
-    "maxItems",
-    "maxLength",
-    "maxProperties",
-    "maximum",
-    "minItems",
-    "minLength",
-    "minProperties",
-    "minimum",
-    "multipleOf",
-    "nullable",
-    "pattern",
-    "required",
-    "type",
-    "uniqueItems",
-})
 _IMPLIED_SUBSCHEMA_KEYWORDS = frozenset({"items", "propertyNames"})
-_UNMATCHED_SCHEMA_KEYWORDS = frozenset({
-    "additionalItems",
-    "additionalProperties",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-})
-_PROPERTY_NAME_KEYWORDS = ("properties", "patternProperties")
+_UNMATCHED_SCHEMA_KEYWORDS = frozenset(schema_positions("unmatched"))
 
 
 def _schema_dump(schema: JsonSchemaObject | bool) -> object:  # ruff: ignore[boolean-type-hint-positional-argument]
@@ -673,11 +620,7 @@ def _schema_implies(declared: object, other: object, *, same_document: bool) -> 
         bounds_admit_no_value(other_keywords) and not bounds_admit_no_value(declared_keywords)
     ):
         return False
-    intersection = intersect_keywords(
-        [declared_keywords, other_keywords],
-        {**other_keywords, **declared_keywords},
-        extras_key=JsonSchemaObject.__extra_key__,
-    )
+    intersection = _intersect_dumps([declared_keywords, other_keywords], {**other_keywords, **declared_keywords})
     return (
         not intersection.unsatisfiable
         and not intersection.untaken_patterns
@@ -685,7 +628,7 @@ def _schema_implies(declared: object, other: object, *, same_document: bool) -> 
         and all(
             _keyword_implies(keyword, declared_keywords, other_keywords, same_document=same_document)
             for keyword in other_keywords
-            if keyword not in _INTERSECTED_KEYWORDS
+            if keyword not in INTERSECTED_KEYWORDS
         )
     )
 
@@ -706,7 +649,7 @@ def _keyword_implies(keyword: str, declared: dict[str, Any], other: dict[str, An
     if keyword in _UNMATCHED_SCHEMA_KEYWORDS:
         return _schema_keywords(other_value) == {} or (
             keyword == "additionalProperties"
-            and all(set(declared.get(names) or ()) == set(other.get(names) or ()) for names in _PROPERTY_NAME_KEYWORDS)
+            and all(set(declared.get(names) or ()) == set(other.get(names) or ()) for names in _MODELED_SCHEMA_MAPS)
             and _schema_implies(declared_value, other_value, same_document=same_document)
         )
     if keyword == JsonSchemaObject.__extra_key__ and isinstance(other_value, dict):
@@ -750,7 +693,7 @@ def _locate_dump(obj: JsonSchemaObject, data: dict[str, Any]) -> dict[str, Any]:
     The correspondence is the object's own structure (field, key, index), never a match across merge inputs.
     """
     fields = obj.__dict__
-    for name in obj.model_fields_set.intersection(_LOCATED_CHILD_FIELDS):
+    for name in obj.model_fields_set.intersection(_MODELED_POSITIONS):
         value, dumped = fields[name], data.get(name)
         if isinstance(dumped, dict):
             if isinstance(value, JsonSchemaObject):
@@ -823,27 +766,6 @@ def _json_schema_type_may_accept_container(
     return schema_type == container_type if isinstance(schema_type, str) else container_type in schema_type
 
 
-def _intersect_all_of_enum(parent: list[Any], child: list[Any]) -> list[Any]:
-    """Intersect JSON enum values while retaining order and already-correct enum aliases."""
-    intersection = intersect_enum_values(parent, child)
-    if not intersection or (
-        len(intersection) == len(parent) and len(intersect_enum_values(child, parent)) == len(child)
-    ):
-        return parent + child
-    return intersection
-
-
-def _align_all_of_enum_metadata(parent: dict[str, Any], child: dict[str, Any], result: dict[str, Any]) -> None:
-    """Keep annotations attached to their retained enum values, preferring parent annotations."""
-    retained_ids = {id(value) for value in result["enum"]}
-    indices = [index for index, value in enumerate(parent["enum"]) if id(value) in retained_ids]
-    result.update({
-        key: [enum_metadata((parent, child), key, index) for index in indices]
-        for key in ENUM_METADATA_KEYWORDS
-        if parent.get(key) or child.get(key)
-    })
-
-
 def _is_rw_model_variant_path(path: str) -> bool:
     """Return whether a path belongs to an internal Request/Response variant."""
     return any(marker in path for marker in _RW_MODEL_VARIANT_SPECIAL_MARKERS)
@@ -888,23 +810,8 @@ def _get_json_value_type(value: object) -> str:
     return value_type
 
 
-# Keep this in sync with _traverse_schema_objects(). Only schemas that did not
-# explicitly receive one of these fields can skip the child traversal below.
-_SCHEMA_OBJECT_CHILD_FIELDS = frozenset({
-    "items",
-    "prefixItems",
-    "additionalProperties",
-    "unevaluatedProperties",
-    "unevaluatedItems",
-    "patternProperties",
-    "propertyNames",
-    "anyOf",
-    "allOf",
-    "oneOf",
-    "properties",
-})
-_CONDITIONAL_SCHEMA_KEYWORDS = frozenset({"if", "then", "else"})
-_LOCATED_CHILD_FIELDS = _SCHEMA_OBJECT_CHILD_FIELDS | {"additionalItems"}
+_CONDITIONAL_SCHEMA_KEYWORDS = frozenset(schema_positions("conditional"))
+_REF_PRE_PASS_KEYWORDS = frozenset(REF_PRE_PASS_POSITIONS)
 
 
 def _get_data_type_constraint_kwargs(
@@ -1344,29 +1251,6 @@ def _split_json_pointer(schema: dict[str, YamlValue] | list[YamlValue], pointer:
     return parts, reference_parts
 
 
-_JSON_SCHEMA_MAP_KEYWORDS = frozenset({
-    "$defs",
-    "definitions",
-    "dependencies",
-    "dependentSchemas",
-    "properties",
-    "patternProperties",
-})
-_JSON_SCHEMA_SEQUENCE_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
-_JSON_SCHEMA_SINGLE_KEYWORDS = frozenset({
-    "additionalItems",
-    "additionalProperties",
-    "contains",
-    "contentSchema",
-    "else",
-    "if",
-    "not",
-    "propertyNames",
-    "then",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-})
-_JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS = frozenset({"extends", "items"})
 _NON_SCHEMA_KEYWORDS = frozenset({
     "const",
     "default",
@@ -1379,7 +1263,7 @@ _NON_SCHEMA_KEYWORDS = frozenset({
     "serverVariables",
     "servers",
 })
-_NAMED_ENTRY_MAP_KEYWORDS = _JSON_SCHEMA_MAP_KEYWORDS | {
+_NAMED_ENTRY_MAP_KEYWORDS = SCHEMA_MAP_KEYS | {
     "callbacks",
     "channels",
     "content",
@@ -1396,14 +1280,11 @@ _DocumentEntries = Literal["object", "names", "maps"]
 def _iter_ref_walk_children(data: dict[str, Any]) -> Iterator[dict[str, Any] | list[Any]]:
     """Yield the subschemas of a raw schema in keyword order, leaving instance values and metadata out."""
     for keyword, value in data.items():
-        if keyword in _JSON_SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
-            yield from (schema for schema in value.values() if isinstance(schema, dict))
-        elif (
-            keyword in _JSON_SCHEMA_SINGLE_KEYWORDS
-            or keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS
-            or keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
-        ) and isinstance(value, (dict, list)):
-            yield value
+        match SCHEMA_SHAPES.get(keyword), value:
+            case "map", dict():
+                yield from (schema for schema in value.values() if isinstance(schema, dict))
+            case "sequence" | "single" | "single-or-sequence", dict() | list():
+                yield value
 
 
 def _document_child_entries(
@@ -1428,10 +1309,7 @@ def _document_child_entries(
 _RefEdgeEntries = Literal["root", "object", "names", "maps"]
 _REF_EDGE_NAME_MAPS = frozenset({"bindings", "paths"})
 _REF_EDGE_KEYWORDS = (
-    _JSON_SCHEMA_MAP_KEYWORDS
-    | _JSON_SCHEMA_SEQUENCE_KEYWORDS
-    | _JSON_SCHEMA_SINGLE_KEYWORDS
-    | _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
+    frozenset(SCHEMA_POSITIONS)
     | _NAMED_ENTRY_MAP_KEYWORDS
     | _REF_EDGE_NAME_MAPS
     | {
@@ -1521,11 +1399,6 @@ def _single_value_enum_as_const(
     return {**result, _READ_AS_CONST_KEY: True} if "const" in result else result
 
 
-def _lists_null(type_: str | list[str] | None) -> bool:
-    """Return whether a ``type`` keyword is a list that holds null."""
-    return isinstance(type_, list) and "null" in type_
-
-
 def _read_type(obj: JsonSchemaObject) -> str | list[str] | None:
     """Return the ``type`` of a schema object, as a list holding null where OpenAPI reads ``nullable`` so.
 
@@ -1561,12 +1434,47 @@ def _type_null_sources(obj: JsonSchemaObject) -> NullSources:
         typed=type_ is not None,
         type_string=type_ == "string",
         member_null=any(
-            isinstance(item, JsonSchemaObject) and (item.type == "null" or _lists_null(item.type))
+            isinstance(item, JsonSchemaObject)
+            and (item.type == "null" or (isinstance(item.type, list) and "null" in item.type))
             for item in (*obj.oneOf, *obj.anyOf)
         ),
         nullable=obj.nullable,
         copied_nullable=bool(obj.__dict__.get(_COPIED_NULLABLE_KEY)),
         enum_null=None in obj.enum,
+    )
+
+
+def _dump_drops_inherited_null(dump: Mapping[str, Any]) -> bool:
+    """Return whether a dumped override drops the inherited null (row ``inherited-typed-without-null``)."""
+    return resolve_null_facts(dump_null_sources(dump), "inherited-child").rule == "inherited-typed-without-null"
+
+
+def _dump_parts_admit_null(parts: Sequence[Mapping[str, Any]]) -> bool:
+    """Return whether the dumped parts of an intersection admit null (site ``all-of-parts``); the last is its own."""
+    return bool(
+        resolve_null_facts(
+            dump_null_sources(parts[-1]),
+            "all-of-parts",
+            parts=[dump_null_sources(part) for part in parts if "type" in part],
+        ).admits_null
+    )
+
+
+def _intersect_dumps(
+    parts: Sequence[Mapping[str, Any]],
+    row: dict[str, Any],
+    *,
+    ref_siblings_are_parts: bool = True,
+    legacy_rows: Collection[str] = (),
+) -> KeywordIntersection:
+    """Return ``parser/_intersection.py:intersect_keywords`` of dumped schema objects, null by ``all-of-parts``."""
+    return intersect_keywords(
+        parts,
+        row,
+        extras_key=JsonSchemaObject.__extra_key__,
+        parts_admit_null=_dump_parts_admit_null,
+        ref_siblings_are_parts=ref_siblings_are_parts,
+        legacy_rows=legacy_rows,
     )
 
 
@@ -1601,6 +1509,11 @@ def _admits_arrays(type_: object) -> bool:
     return type_ == "array" or (isinstance(type_, list) and "array" in type_)
 
 
+def _excludes_objects(type_: str | list[str] | None) -> bool:
+    """Return whether a schema type is written and names no object."""
+    return type_ is not None and type_ != "object" and not (isinstance(type_, list) and "object" in type_)
+
+
 def _is_object_only_type(type_: str | list[str] | None) -> bool:
     """Return whether a schema type permits only object values."""
     match type_:
@@ -1628,6 +1541,14 @@ def _object_map_other_types(obj: JsonSchemaObject) -> list[str] | None:
         case list() as types if "object" in types and not set(types) <= {"object", "null"}:
             return types
     return None
+
+
+def _pattern_value_groups(patterns: list[str], value_types: list[DataType]) -> dict[str, tuple[list[str], DataType]]:
+    """Group the patterns of row ``legacy-map-union-of-dicts`` by the rendered hint of their value types."""
+    groups: dict[str, tuple[list[str], DataType]] = {}
+    for pattern, value_type in zip(patterns, value_types, strict=True):
+        groups.setdefault(value_type.type_hint, ([], value_type))[0].append(pattern)
+    return groups
 
 
 def _with_null(data_type: DataType) -> DataType:
@@ -1676,30 +1597,21 @@ def _find_json_schema_anchor_pointer(schema: YamlValue, anchor: str) -> str | No
         if value.get("$anchor") == anchor:
             return "/" + "/".join(part.replace("~", "~0").replace("/", "~1") for part in path)
         for keyword, child in value.items():
-            match keyword:
-                case _ if keyword in _JSON_SCHEMA_MAP_KEYWORDS and isinstance(child, dict):
+            match SCHEMA_SHAPES.get(keyword), child:
+                case "map", dict():
                     pending.extend(
                         (subschema, (*path, keyword, str(name)))
                         for name, subschema in child.items()
                         if isinstance(subschema, dict)
                     )
-                case _ if keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS and isinstance(child, list):
+                case "sequence" | "single-or-sequence", list():
                     pending.extend(
                         (subschema, (*path, keyword, str(index)))
                         for index, subschema in enumerate(child)
                         if isinstance(subschema, dict)
                     )
-                case _ if keyword in _JSON_SCHEMA_SINGLE_KEYWORDS and isinstance(child, dict):
+                case "single" | "single-or-sequence", dict():
                     pending.append((child, (*path, keyword)))
-                case _ if keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS:
-                    if isinstance(child, dict):
-                        pending.append((child, (*path, keyword)))
-                    elif isinstance(child, list):
-                        pending.extend(
-                            (subschema, (*path, keyword, str(index)))
-                            for index, subschema in enumerate(child)
-                            if isinstance(subschema, dict)
-                        )
     return None
 
 
@@ -1739,29 +1651,19 @@ class Discriminator(BaseModel):
     mapping: Optional[dict[str, str]] = None  # noqa: UP045
 
 
+_REF_KEYWORDS: Final = ("$ref", "$dynamicRef", "$recursiveRef")
 _IN_PLACE_APPLICATOR_KEYWORDS: Final = frozenset({
-    "allOf",
-    "anyOf",
-    "oneOf",
-    "not",
-    "if",
-    "dependentSchemas",
-    "dependencies",
-    "$ref",
-    "$dynamicRef",
-    "$recursiveRef",
+    *schema_positions("in-place", without=("then", "else", "extends")),
+    *_REF_KEYWORDS,
 })
+"""The keywords that apply a schema to the instance itself; ``then`` and ``else`` apply only through ``if``."""
 READ_UNEVALUATED_PROPERTIES_CONTEXT: Final = "read_unevaluated_properties"
 
 
 _PROPERTY_EVALUATING_KEYWORDS: Final = frozenset({
     *_IN_PLACE_APPLICATOR_KEYWORDS,
-    "then",
-    "else",
-    "properties",
-    "patternProperties",
-    "additionalProperties",
-    "unevaluatedProperties",
+    *_CONDITIONAL_SCHEMA_KEYWORDS,
+    *schema_positions("object", without=("propertyNames",)),
 })
 
 
@@ -2304,7 +2206,7 @@ EXCLUDE_FIELD_KEYS = (set(JsonSchemaObject.get_fields()) - DEFAULT_FIELD_KEYS - 
 }
 
 
-_ALL_OF_VALUE_ITEM_KEYWORDS: Final = ("items", "additionalItems", "unevaluatedItems")
+_ALL_OF_VALUE_ITEM_KEYWORDS: Final = schema_positions("modeled", "array", shapes=SINGLE_SCHEMA_SHAPES)
 """The item schemas an allOf value part writes, which the intersection of the parts keeps."""
 _ALL_OF_VALUE_KEYWORDS: Final = frozenset({
     "type",
@@ -2316,6 +2218,16 @@ _ALL_OF_VALUE_KEYWORDS: Final = frozenset({
 })
 """The keywords of an allOf site that its parts' intersection writes, not its own annotations."""
 _DEFAULT_SCHEMA_PATHS = ("#/definitions", "#/$defs")
+_PATTERN_SCAN_SKIPPED_KEYWORDS: Final = frozenset({
+    "enum",
+    "const",
+    "default",
+    "examples",
+    "example",
+    "patternProperties",
+    *DEFINITION_KEYS,
+})
+"""The keywords whose values hold no subschema a type carries; ``patternProperties`` counts by its keys and values."""
 _ALL_OF_MEMBER_SUFFIX: Final = re.compile(r"/allOf/\d+$")
 """The end of an allOf member's location, which a warning about the site leaves out."""
 
@@ -3435,11 +3347,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return the property counts of ``obj`` that the object map builder leaves out of its type-array union.
 
         A field takes the counts only on a type that is a map itself; they are keyed as the field writes the length
-        of a map, so the dropped-constraint warning names them. Only the builder of
-        ``--use-single-dict-for-object-maps`` joins the map with the other types.
+        of a map, so the dropped-constraint warning names them. Row ``legacy-map-null-left-to-field`` keeps the counts
+        on the field.
         """
         if (
-            not self.use_single_dict_for_object_maps
+            "legacy-map-null-left-to-field" in self._legacy_object_maps
             or not (obj.patternProperties or obj.propertyNames is not None)
             or _object_map_other_types(obj) is None
             or not any(member.is_dict or member.is_mapping for member in data_type.data_types)
@@ -3594,7 +3506,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         length = obj.minItems if explicit else self._get_effective_array_length(obj)
         if length is None or length < 0:
             return None
-        tail = cast("JsonSchemaObject | bool", self._get_inherited_positional_tail(obj, positional_key))
+        tail = cast("JsonSchemaObject | bool", inherited_positional_tail(partial(getattr, obj), positional_key))
         items = [*positions[:length], *(tail for _ in range(length - len(positions)))]
         if any(item is False for item in items):
             return None
@@ -3926,24 +3838,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             if (
                 inherited_field is None
                 or (
-                    resolved_field := self._copy_inherited_field(
-                        field,
-                        inherited_field,
-                        force_optional=self.force_optional_for_required_fields,
-                        partial_merge_mode=self.allof_merge_mode,
-                        register_references=False,
-                        reserved_names=reserved_names,
+                    resolved_field := self._overlay_inherited_field(
+                        field, inherited_field, reserved_names, register_references=False
                     )
                 )
                 is None
             ):
                 result.append(field)
                 continue
-            self._prepare_required_inherited_field(
-                resolved_field,
-                inherited_field,
-                overriding_field=field,
-            )
             if class_name := field.__dict__.get(_DEFERRED_INHERITED_FIELD_KEY):
                 self._apply_inherited_field_default(
                     resolved_field,
@@ -3951,19 +3853,54 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     class_name=class_name,
                 )
             elif class_name := field.__dict__.get(_DEFERRED_INHERITED_CLASS_KEY):
-                default_source = field
-                if self.allof_merge_mode == AllOfMergeMode.All and not (
-                    _RAW_SCHEMA_DEFAULT_KEY in field.__dict__
-                    and field.__dict__[_RAW_SCHEMA_DEFAULT_KEY] is not _RAW_SCHEMA_DEFAULT_UNDEFINED
-                ):
-                    default_source = inherited_field
                 self._apply_inherited_field_default(
                     resolved_field,
-                    default_source,
+                    self._inherited_default_source(field, inherited_field),
                     class_name=class_name,
                 )
             result.append(resolved_field)
         return result
+
+    def _overlay_inherited_field(
+        self,
+        field: DataModelFieldBase,
+        inherited_field: DataModelFieldBase,
+        reserved_names: set[str],
+        *,
+        register_references: bool = True,
+    ) -> DataModelFieldBase | None:
+        """Return the copy of ``inherited_field`` that the deferred override ``field`` resolves to, else None.
+
+        The copy takes the overlay of both fields (``parser/base.py:_copy_resolved_inherited_field``) and the required
+        state of the override, without the inherited constructor default.
+        """
+        if (
+            resolved_field := self._copy_inherited_field(
+                field,
+                inherited_field,
+                force_optional=self.force_optional_for_required_fields,
+                partial_merge_mode=self.allof_merge_mode,
+                register_references=register_references,
+                reserved_names=reserved_names,
+            )
+        ) is not None:
+            self._prepare_required_inherited_field(resolved_field, inherited_field, overriding_field=field)
+        return resolved_field
+
+    def _inherited_default_source(
+        self, field: DataModelFieldBase, inherited_field: DataModelFieldBase
+    ) -> DataModelFieldBase:
+        """Return the field whose default the override ``field`` of ``inherited_field`` takes.
+
+        The inherited one where the merge mode inherits ``default`` (``parser/_intersection.py:inherits_keyword``) and
+        ``field`` declares none.
+        """
+        if inherits_keyword(self.allof_merge_mode.value, "default") and not (
+            _RAW_SCHEMA_DEFAULT_KEY in field.__dict__
+            and field.__dict__[_RAW_SCHEMA_DEFAULT_KEY] is not _RAW_SCHEMA_DEFAULT_UNDEFINED
+        ):
+            return inherited_field
+        return field
 
     def _prepare_required_inherited_field(
         self,
@@ -4046,6 +3983,19 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         self._raw_inherited_fields_cache[resolved_ref] = tuple(result)
         return self._copy_unregistered_fields(result)
 
+    @cached_property
+    def _legacy_rw_variants(self) -> frozenset[str]:
+        """The rows of the request/response split kept: every row without --dedupe-request-response-variants.
+
+        ``legacy-rw-parsed-facts``: the read/write facts and graph node of a key come from a temporary parse of its
+        fields, the walk reads every reference of a key, and every model collects its inherited fields to decide its
+        split. ``legacy-rw-unowned-parent-fields``: the inline models of an allOf parent's own fields are parsed at no
+        owner path.
+        """
+        if self.dedupe_request_response_variants:
+            return frozenset()
+        return frozenset({"legacy-rw-parsed-facts", "legacy-rw-unowned-parent-fields"})
+
     def _collect_all_fields_for_request_response(
         self,
         fields: list[DataModelFieldBase],
@@ -4073,7 +4023,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """
         if self.read_only_write_only_model_type is None or self._is_base_stand_in(reference):
             return None
-        if not self.dedupe_request_response_variants:
+        if "legacy-rw-parsed-facts" in self._legacy_rw_variants:
             all_fields = self._collect_all_fields_for_request_response(fields, base_classes)
             return all_fields if self._splits_into_rw_model_variants(reference, all_fields, base_classes) else None
         all_fields: list[DataModelFieldBase] | None = None
@@ -4178,12 +4128,12 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return the read/write facts of the effective fields of the raw schema at ``resolved_ref``.
 
         Properties are read in allOf C3 order with their flags joined per name, and required names without a
-        declaration count as unflagged fields; nothing is parsed. Without --dedupe-request-response-variants the facts
-        of a temporary parse, ``None`` where it gives none (``_get_parsed_ref_schema_rw_model_field_facts``).
+        declaration count as unflagged fields; nothing is parsed. Under ``legacy-rw-parsed-facts`` the facts of a
+        temporary parse, ``None`` where it gives none (``_get_parsed_ref_schema_rw_model_field_facts``).
         """
         if (cached := self._rw_model_field_facts_cache.get(resolved_ref)) is not None:
             return cached
-        if not self.dedupe_request_response_variants:
+        if "legacy-rw-parsed-facts" in self._legacy_rw_variants:
             return self._get_parsed_ref_schema_rw_model_field_facts(resolved_ref)
         flags: dict[str, tuple[bool, bool]] = {}
         reference = self.model_resolver.add_ref(resolved_ref, resolved=True)
@@ -4207,7 +4157,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> tuple[bool, bool, bool, bool] | None:
         """Return the read/write facts of the fields a temporary parse of the schema at ``resolved_ref`` gives.
 
-        The facts of 0.86.0, kept without --dedupe-request-response-variants: the parse registers the inline models it
+        The facts of 0.86.0, kept under ``legacy-rw-parsed-facts``: the parse registers the inline models it
         meets. A key whose parse is already in progress, reached again through the models that parse builds, has no
         facts, so the parse never re-enters itself; ``None`` also for a key that names no loadable schema.
         """
@@ -4345,11 +4295,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _get_rw_model_variant_graph_node(self, resolved_ref: str) -> tuple[bool, tuple[str, ...]]:
         """Return whether the raw schema at a key declares a flagged property, and else the keys it references.
 
-        A special path has no raw schema of its own: its split is the one recorded when its model is parsed. Without
-        --dedupe-request-response-variants, the 0.86.0 node: the facts of a temporary parse of the key also split it,
+        A special path has no raw schema of its own: its split is the one recorded when its model is parsed. Under
+        ``legacy-rw-parsed-facts``, the 0.86.0 node: the facts of a temporary parse of the key also split it,
         and the models its parsed fields reference are edges too.
         """
-        if self.dedupe_request_response_variants:
+        if "legacy-rw-parsed-facts" not in self._legacy_rw_variants:
             if SPECIAL_PATH_MARKER in resolved_ref:
                 return False, ()
             return self._get_ref_schema_rw_model_reference_facts(resolved_ref)
@@ -4390,72 +4340,6 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     return True
         return False
 
-    def _iter_rw_model_schema_children(
-        self,
-        schema: JsonSchemaObject,
-        defining_ref: str,
-        *,
-        detect_inline_variant: bool,
-        types_map: bool,
-        extras: JsonSchemaObject | bool | None,
-    ) -> Iterator[tuple[JsonSchemaObject, bool, bool]]:
-        """Yield the children ``parse_item`` types, whether their inline models are generated and whether they merge.
-
-        The inline allOf members merge into the model of the schema; the values of patternProperties are children only
-        where ``types_map`` or where the patternProperties rules of --generate-schema-validators name them (not a value
-        that is false written as an allOf, ``_is_false_all_of``: the rules forbid its keys), the additionalProperties
-        the model types are ``extras``, and the item positions of an array are those array parsing types
-        (``_get_array_item_schemas``), not the entries it leaves untyped, as the prefixItems of an array with no tail
-        or boolean entry and the entries after a false one. A child typed by a customTypePath names no model
-        (``_site_writes_custom_type``).
-        """
-
-        def site(item: object) -> TypeGuard[JsonSchemaObject]:
-            return isinstance(item, JsonSchemaObject) and not self._site_writes_custom_type(item, defining_ref)
-
-        pattern_properties = schema.patternProperties
-        if self.generate_schema_validators and not types_map and pattern_properties:
-            pattern_properties = {
-                pattern: value for pattern, value in pattern_properties.items() if not _is_false_all_of(value)
-            }
-        mappings = (
-            (schema.properties, pattern_properties)
-            if self.generate_schema_validators
-            else (pattern_properties if types_map else schema.properties,)
-        )
-        yield from (
-            (item, detect_inline_variant, False)
-            for mapping in mappings
-            if mapping
-            for item in mapping.values()
-            if site(item)
-        )
-        if schema.is_array:
-            with self._inherited_ref_context(defining_ref):
-                positions = {id(item): item for item in self._get_array_item_schemas(schema)[0]}
-            yield from ((item, detect_inline_variant, False) for item in positions.values() if site(item))
-        if site(extras):
-            yield extras, detect_inline_variant, False
-        yield from ((item, detect_inline_variant, False) for item in chain(schema.oneOf, schema.anyOf) if site(item))
-        yield from ((item, detect_inline_variant, True) for item in schema.allOf if isinstance(item, JsonSchemaObject))
-        if self.generate_schema_validators:
-            yield from ((item, detect_inline_variant, False) for item in self._iter_conditional_branches(schema))
-
-    def _extra_items_type_reference_paths(self, extras: JsonSchemaObject) -> tuple[str, ...]:
-        """Return the keys of the models the extra_items type TypedDict writes for ``extras`` names.
-
-        The type is the one ``set_additional_properties`` writes, built by ``_build_lightweight_type``, which generates
-        no model; it is built here only to read its references, so its warnings stay with the model's own build.
-        """
-        with catch_warnings():
-            simplefilter("ignore")
-            data_type = self._build_lightweight_type(extras)
-        if data_type is None:
-            return ()
-        paths = tuple(item.reference.path for item in data_type.all_data_types if item.reference)
-        self._unregister_temporary_type(data_type)
-        return paths
-
     @cached_property
     def _writes_extra_items_type(self) -> bool:
         """Whether TypedDict writes the type of additional properties as extra_items, under --use-closed-typed-dict.
@@ -4473,19 +4357,10 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> tuple[bool, tuple[str, ...]]:
         """Return whether the raw schema at a key declares a flagged property, and else the keys its references name.
 
-        Every schema is read as the one its model is built from (``_merged_ref_model_schemas``), and its flags, its
-        references and its children all from that schema. The walk stops at the first flagged property: the
-        references of a node that needs variants are never read (without --dedupe-request-response-variants it reads
-        them all, as 0.86.0 did). A key that names no loadable schema has neither. patternProperties and propertyNames
-        type the values and keys of an object map, propertyNames only where no patternProperties give the keys; a
-        schema with properties or allOf, and each inline allOf member merged into it, builds a model whose fields hold
-        properties alone, so its map keywords type nothing. A model types the additionalProperties its builder types,
-        as its values where it is a map (``_schema_builds_map_model``) and beside its fields otherwise
-        (``_rw_typed_additional_properties``). TypedDict also records those of the key's model and of each inline model
-        with fields, unless an inline allOf member closes it (``_model_additional_properties``), as their extra_items
-        type (``set_additional_properties``); that type generates no model, so the walk takes the models it names
-        (``_extra_items_type_reference_paths``), and the model splits where one has variants. Those of an inline allOf
-        member type something only where the allOf merges into a map.
+        The walk asks the dispatch tables what the model of the key types (``_DEFINITION_TABLE``,
+        ``_typed_model_children``) and follows what that types in turn. It stops at the first flagged property: the
+        references of a node that needs variants are never read (under ``legacy-rw-parsed-facts`` it reads them all,
+        as 0.86.0 did). A key that names no loadable schema has neither.
         """
         if (cached := self._rw_model_references_cache.get(resolved_ref)) is not None:
             return cached
@@ -4496,100 +4371,143 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         has_inline_variant = False
         references: dict[str, None] = {}
-
-        def add_reference(ref: str | None) -> None:
-            if ref and (nested_ref := self._resolve_rw_model_reference(ref, resolved_ref)):
-                references.setdefault(nested_ref, None)
-
-        stack: list[tuple[JsonSchemaObject, bool, bool | None]] = [(root_schema, True, None)]
+        stack: list[_Site] = [SchemaSite("", root_schema, [resolved_ref])]
         while stack:
-            schema, detect_inline_variant, merged_into_map = stack.pop()
-            if merged_into_map is None:
-                is_key_model = schema is root_schema
-                schema, model_schema = map(
-                    self._read_false_all_of_values, self._merged_ref_model_schemas(schema, resolved_ref)
-                )
-                builds_map = self._schema_builds_map_model(model_schema, resolved_ref)
-                types_map = not (model_schema.properties or model_schema.allOf)
-                extras = self._rw_typed_additional_properties(schema, model_schema, resolved_ref, builds_map=builds_map)
-                if (
-                    (is_key_model or not builds_map)
-                    and self._writes_extra_items_type
-                    and isinstance(extra_items := self._model_additional_properties(model_schema), JsonSchemaObject)
-                ):
-                    with self._inherited_ref_context(resolved_ref):
-                        references.update(dict.fromkeys(self._extra_items_type_reference_paths(extra_items)))
-            else:
-                model_schema = schema
-                builds_map = merged_into_map
-                extras = schema.additionalProperties if merged_into_map else None
-                types_map = False
-            if (
-                detect_inline_variant
-                and not has_inline_variant
-                and self._schema_has_rw_model_fields(schema, resolved_ref)
-            ):
-                if self.dedupe_request_response_variants:
-                    self._rw_model_references_cache[resolved_ref] = result = (True, ())
-                    return result
-                has_inline_variant = True
-            for ref in (schema.ref, schema.recursiveRef, schema.dynamicRef):
-                add_reference(ref)
-            property_name_refs, property_name_schemas = (
-                self._get_rw_property_name_sources(property_names=schema.propertyNames, defining_ref=resolved_ref)
-                if types_map and not model_schema.patternProperties
-                else ((), ())
-            )
-            for ref in property_name_refs:
-                add_reference(ref)
-            stack.extend((item, True, None) for item in property_name_schemas)
-            stack.extend(
-                (item, detect, builds_map if merged else None)
-                for item, detect, merged in self._iter_rw_model_schema_children(
-                    schema,
-                    resolved_ref,
-                    detect_inline_variant=detect_inline_variant,
-                    types_map=types_map,
-                    extras=extras,
-                )
-            )
+            for child in self._DEFINITION_TABLE.typed_children(self, stack.pop()):
+                match child.position:
+                    case "fields":
+                        if has_inline_variant or not self._schema_has_rw_model_fields(
+                            cast("JsonSchemaObject", child.schema), resolved_ref
+                        ):
+                            continue
+                        if "legacy-rw-parsed-facts" not in self._legacy_rw_variants:
+                            self._rw_model_references_cache[resolved_ref] = result = (True, ())
+                            return result
+                        has_inline_variant = True
+                    case "ref":
+                        if nested_ref := self._resolve_rw_model_reference(cast("str", child.reference), resolved_ref):
+                            references.setdefault(nested_ref, None)
+                    case "key":
+                        references.setdefault(cast("str", child.reference), None)
+                    case _:
+                        stack.append(
+                            SchemaSite("", cast("JsonSchemaObject", child.schema), [resolved_ref], parent=child.into)
+                        )
         self._rw_model_references_cache[resolved_ref] = result = (has_inline_variant, tuple(references))
         return result
 
-    def _rw_typed_additional_properties(
-        self, schema: JsonSchemaObject, model_schema: JsonSchemaObject, defining_ref: str, *, builds_map: bool
-    ) -> JsonSchemaObject | bool | None:
-        """Return the additionalProperties the model built from ``model_schema`` types.
+    def _typed_model_children(self, site: _Site) -> Iterator[TypedChild[JsonSchemaObject]]:  # noqa: PLR0912
+        """Return what the model built from a schema types: the children and keys of the definition table's sites.
 
-        The patternProperties rules of --generate-schema-validators type the value that
-        ``_pattern_rule_additional_properties`` picks. Otherwise a map types those of the model as its values, except
-        where patternProperties give its values: there they type only the keys no pattern matches, where
-        ``_other_keys_schema`` says so. A model with fields types them in its typed extra field, where
-        ``_typed_extra_field_schema`` writes it. Those of the model are read from ``schema``, like its other children.
+        ``site.path`` holds the key the schema is defined under; with a ``parent``, the site is an inline allOf member
+        merged into the model built from ``parent``. A schema is read as the one its model is built from
+        (``_merged_ref_model_schemas``), and its properties, its references and its children all from that schema.
+        patternProperties and propertyNames type the values and keys of an object map, propertyNames only where no
+        patternProperties give the keys; a schema with properties or allOf, and each inline allOf member merged into it,
+        builds a model whose fields hold properties alone, so its map keywords type nothing. Under
+        --generate-schema-validators the properties and the patternProperties its rules name are children (not a value
+        that is false written as an allOf, ``_is_false_all_of``: the rules forbid its keys), and so are the conditional
+        branches. The item positions of an array are those array parsing types (``_get_array_item_schemas``), not the
+        entries it leaves untyped. A model types the additionalProperties its builder types: those the patternProperties
+        rules pick (``_pattern_rule_additional_properties``), as its values where it is a map
+        (``_schema_builds_map_model``) except where patternProperties give the values and ``_other_keys_schema`` types
+        no other key, and in its typed extra field otherwise (``_typed_extra_field_schema``); those of an inline allOf
+        member type something only where the allOf merges into a map. TypedDict also records those of the key's model
+        and of each inline model with fields, unless an inline allOf member closes it
+        (``_model_additional_properties``), as their extra_items type (``set_additional_properties``); that type
+        generates no model, so the site names the keys of the models it names (``_extra_items_type``, row
+        ``legacy-rw-extra-items-as-written``: as written, its false allOf values not read). Each property, item, value
+        and branch is a field site, typed as the row ``parse_item`` chooses for it declares (``_typed_field_site``).
         """
-        with self._inherited_ref_context(defining_ref):
-            if self._has_pattern_properties_validator(model_schema):
-                if (rule_extras := self._pattern_rule_additional_properties(model_schema)) is None:
-                    return None
-                _, source, value = rule_extras
-                return schema.additionalProperties if source is model_schema else value
-            if builds_map:
-                if model_schema.patternProperties and self._other_keys_schema(model_schema) is None:
-                    return None
-            elif self._typed_extra_field_schema(model_schema) is None:
-                return None
-        return schema.additionalProperties
-
-    def _site_writes_custom_type(self, schema: JsonSchemaObject, defining_ref: str) -> bool:
-        """Return whether ``parse_item`` types a site of ``schema`` by its customTypePath, which names no model.
-
-        A $ref beside it is read merged with the schema it names, and the customTypePath types the site where the
-        merged schema keeps no reference (``_FIELD_TABLE``).
-        """
-        if schema.custom_type_path and _merges_ref_siblings(schema):
+        schema, defining_ref, into = site.obj, site.path[0], site.parent
+        if into is None:
+            is_key_model = schema is self._load_inherited_schema_object(defining_ref)
+            schema, model_schema = map(
+                self._read_false_all_of_values, self._merged_ref_model_schemas(schema, defining_ref)
+            )
+            into = model_schema
+            builds_map = self._schema_builds_map_model(model_schema, defining_ref)
+            types_map = not (model_schema.properties or model_schema.allOf)
+            extras: JsonSchemaObject | bool | None = schema.additionalProperties
             with self._inherited_ref_context(defining_ref):
-                schema = self._merge_ref_with_schema(schema)
-        return bool(schema.custom_type_path and not (schema.ref or schema.recursiveRef or schema.dynamicRef))
+                if self._has_pattern_properties_validator(model_schema):
+                    rule = self._pattern_rule_additional_properties(model_schema)
+                    extras = None if rule is None else extras if rule[1] is model_schema else rule[2]
+                elif (
+                    self._typed_extra_field_schema(model_schema) is None
+                    if not builds_map
+                    else model_schema.patternProperties and self._other_keys_schema(model_schema) is None
+                ):
+                    extras = None
+            if (
+                (is_key_model or not builds_map)
+                and self._writes_extra_items_type
+                and isinstance(extra_items := self._model_additional_properties(model_schema), JsonSchemaObject)
+            ):
+                with self._inherited_ref_context(defining_ref), catch_warnings():
+                    simplefilter("ignore")
+                    data_type = self._extra_items_type(extra_items, reads_false_all_of=False)
+                    keys = (
+                        ()
+                        if data_type is None
+                        else tuple(item.reference.path for item in data_type.all_data_types if item.reference)
+                    )
+                    self._unregister_temporary_type(data_type)
+                yield from (TypedChild("key", reference=key) for key in keys)
+        else:
+            model_schema = schema
+            builds_map = self._schema_builds_map_model(into, defining_ref)
+            types_map = False
+            extras = schema.additionalProperties if builds_map else None
+        yield TypedChild("fields", schema)
+        yield from (
+            TypedChild("ref", reference=ref) for ref in (schema.ref, schema.recursiveRef, schema.dynamicRef) if ref
+        )
+        if types_map and not model_schema.patternProperties:
+            property_name_refs, property_name_schemas = self._get_rw_property_name_sources(
+                property_names=schema.propertyNames, defining_ref=defining_ref
+            )
+            yield from (TypedChild("ref", reference=ref) for ref in property_name_refs)
+            yield from (TypedChild("model", item) for item in property_name_schemas)
+        pattern_properties = schema.patternProperties
+        if self.generate_schema_validators and not types_map and pattern_properties:
+            pattern_properties = {
+                pattern: value for pattern, value in pattern_properties.items() if not _is_false_all_of(value)
+            }
+        for mapping in (
+            (schema.properties, pattern_properties)
+            if self.generate_schema_validators
+            else (pattern_properties if types_map else schema.properties,)
+        ):
+            for item in (mapping or {}).values():
+                yield from self._typed_field_site(item, defining_ref)
+        if schema.is_array:
+            with self._inherited_ref_context(defining_ref):
+                positions = {id(item): item for item in self._get_array_item_schemas(schema)[0]}
+            for item in positions.values():
+                yield from self._typed_field_site(item, defining_ref)
+        for item in (extras, *schema.oneOf, *schema.anyOf):
+            yield from self._typed_field_site(item, defining_ref)
+        yield from (
+            TypedChild("member", item, into=into) for item in schema.allOf if isinstance(item, JsonSchemaObject)
+        )
+        if self.generate_schema_validators:
+            yield from (TypedChild("model", item) for item in self._iter_conditional_branches(schema))
+
+    def _typed_field_site(self, item: object, defining_ref: str) -> Iterable[TypedChild[JsonSchemaObject]]:
+        """Return what a field site of a schema types, as the row ``parse_item`` chooses for it declares.
+
+        Row ``legacy-rw-field-site-as-written``: the row is chosen from the site as written, its $ref merged with its
+        sibling keywords only where the site itself writes a customTypePath.
+        """
+        if not isinstance(item, JsonSchemaObject):
+            return ()
+        site = SchemaSite("", item, [defining_ref])
+        as_parsed = None
+        if item.custom_type_path and _merges_ref_siblings(item):
+            with self._inherited_ref_context(defining_ref):
+                as_parsed = replace(site, obj=self._merge_ref_with_schema(item))
+        return self._FIELD_TABLE.typed_children(self, site, as_parsed=as_parsed)
 
     def _merged_ref_model_schemas(
         self, schema: JsonSchemaObject, defining_ref: str
@@ -4668,7 +4586,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Mirror propertyNames key parsing without following ignored nested shapes."""
         if not isinstance(property_names, JsonSchemaObject):
             return (), ()
-        if property_names.has_ref_with_schema_keywords and not property_names.is_ref_with_nullable_only:
+        if _merges_ref_siblings(property_names):
             with self._inherited_ref_context(defining_ref):
                 property_names = self._merge_ref_with_schema(property_names)
         combined = tuple(
@@ -4943,7 +4861,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         variants: list[tuple[Literal["Request", "Response"], list[DataModelFieldBase]]] = []
         match self.read_only_write_only_model_type:
             case ReadOnlyWriteOnlyModelType.RequestResponse:
-                if not self.dedupe_request_response_variants:
+                if "legacy-rw-parsed-facts" in self._legacy_rw_variants:
                     self._rw_model_field_facts_cache[reference.path] = facts
                 self._rw_model_variant_requirement_cache[reference.path, "Request"] = True
                 self._rw_model_variant_requirement_cache[reference.path, "Response"] = True
@@ -5201,13 +5119,15 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return the type of a type array from the types of its members other than null.
 
         The dict of an array of object and null is the type itself, admitting the null, so the property counts of
-        the object stay on it, under ``--use-single-dict-for-object-maps``.
+        the object stay on it, unless row ``legacy-map-null-left-to-field`` is kept.
         """
         match data_types:
             case []:
                 return self.data_type_manager.get_data_type(Types.null)
             case [map_type] if (
-                self.use_single_dict_for_object_maps and map_type.is_dict and set(types) <= {"object", "null"}
+                "legacy-map-null-left-to-field" not in self._legacy_object_maps
+                and map_type.is_dict
+                and set(types) <= {"object", "null"}
             ):
                 return _with_null(map_type) if "null" in types else map_type
         return build_union(self.data_type, data_types, nullable=len(data_types) != len(types))
@@ -5380,18 +5300,23 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             strict_nullable=self.strict_nullable,
             use_missing_sentinel=self.use_missing_sentinel,
             force_optional=self.force_optional_for_required_fields,
-            type_excludes_member_null=self.intersects_allof_keywords,
+            type_excludes_member_null="legacy-all-of-null-as-written" not in self._legacy_intersection,
             read_nullable_beside_type_list=self.config.read_nullable_beside_type_list,
         )
+
+    @cached_property
+    def _legacy_intersection(self) -> frozenset[str]:
+        """The rows of ``parser/_intersection.py:LEGACY_ROWS`` kept: every row without --intersect-allof-keywords."""
+        return frozenset() if self.intersects_allof_keywords else frozenset(LEGACY_ROWS)
 
     def _type_has_null(self, obj: JsonSchemaObject) -> bool:
         """Return ``JsonSchemaObject.type_has_null``, false where a ``type`` excludes the null of its members.
 
-        With --intersect-allof-keywords a ``type`` that is neither null nor a list holding null, beside a null member
-        of its ``anyOf`` or ``oneOf``, admits no null (row ``type-excludes-member-null``).
+        A ``type`` that is neither null nor a list holding null, beside a null member of its ``anyOf`` or ``oneOf``,
+        admits no null (row ``type-excludes-member-null``) unless ``legacy-all-of-null-as-written`` is kept.
         """
         if (
-            self.intersects_allof_keywords
+            self._null_mode.type_excludes_member_null
             and resolve_null_facts(_type_null_sources(obj), "schema-type", self._null_mode).rule
             == "type-excludes-member-null"
         ):
@@ -5405,16 +5330,16 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         *,
         required: bool = False,
         has_default: bool = False,
-        parts_null: bool = False,
+        parts: Sequence[NullSources] = (),
     ) -> NullFacts:
-        """Return what ``site`` reads from where the null of ``obj`` comes from."""
+        """Return what ``site`` reads from where the null of ``obj`` comes from (``parts``: of its typed parts)."""
         return resolve_null_facts(
             _null_sources(obj, site, self._type_has_null),
             site,
             self._null_mode,
             required=required,
             has_default=has_default,
-            parts_null=parts_null,
+            parts=parts,
         )
 
     def _object_nullable(self, obj: JsonSchemaObject) -> bool:
@@ -5499,6 +5424,19 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return False
         return obj.additionalProperties
 
+    def _extra_items_type(
+        self, additional_properties: JsonSchemaObject, *, reads_false_all_of: bool = True
+    ) -> DataType | None:
+        """Return the type TypedDict writes as extra_items for schema-valued additionalProperties.
+
+        It is their lightweight type (``_build_lightweight_type``), which names models and generates none, with the
+        positions that are false written as an allOf read as false (``_read_false_all_of_values``) unless
+        ``reads_false_all_of`` is off (row ``legacy-rw-extra-items-as-written`` of the request/response walk).
+        """
+        if reads_false_all_of:
+            additional_properties = self._read_false_all_of_values(additional_properties, lightweight=True)
+        return self._build_lightweight_type(additional_properties)
+
     def set_additional_properties(self, path: str, obj: JsonSchemaObject) -> None:
         """Set additional properties flag in extra template data.
 
@@ -5529,9 +5467,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             )
             if not self.use_closed_typed_dict:
                 return
-            additional_props_type = self._build_lightweight_type(
-                self._read_false_all_of_values(additional_properties, lightweight=True)
-            )
+            additional_props_type = self._extra_items_type(additional_properties)
             if additional_props_type:  # pragma: no branch
                 reference_classes = (
                     {
@@ -5597,9 +5533,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         *,
         variant_of: Reference | None = None,
     ) -> None:
-        """Record the schema object the model of ``reference`` is built from, and take its template data."""
+        """Record the schema object the model of ``reference`` is built from, and take its template data and marks."""
         self._record_schema_location(reference, obj.schema_location, variant_of=variant_of)
         self._record_derived_from(reference, obj)
+        if obj.__dict__.get(FIELDLESS_SITE_KEY):
+            reference.__dict__[FIELDLESS_SITE_KEY] = True
         self._set_schema_metadata(reference.path, obj)
         self.set_schema_extensions(reference.path, obj)
 
@@ -6076,20 +6014,6 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             )
             for index, item in enumerate(combined_schemas)
         ]
-
-    def _deep_merge(self, dict1: dict[Any, Any], dict2: dict[Any, Any]) -> dict[Any, Any]:
-        """Deep merge two dictionaries, combining nested dicts and lists."""
-        result = dict1.copy()
-        for key, value in dict2.items():
-            if key in result:
-                if isinstance(result[key], dict) and isinstance(value, dict):
-                    result[key] = _located(self._deep_merge(result[key], value), _dump_location(value))
-                    continue
-                if isinstance(result[key], list) and isinstance(value, list):
-                    result[key] = result[key] + value  # noqa: PLR6104
-                    continue
-            result[key] = value
-        return result
 
     def _get_ref_raw_schema(self, resolved_ref: str) -> dict[str, YamlValue] | YamlValue:
         return self._read_ref_value(resolved_ref)
@@ -6680,11 +6604,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         which array parsing appends as the tail item. References under keywords the parser ignores and
         definitions that apply only through references are not analyzed.
         """
-        keywords = (
-            _SCHEMA_OBJECT_CHILD_FIELDS | _CONDITIONAL_SCHEMA_KEYWORDS
-            if self.generate_schema_validators
-            else _SCHEMA_OBJECT_CHILD_FIELDS
-        )
+        keywords = _REF_PRE_PASS_KEYWORDS if self.generate_schema_validators else REF_PRE_PASS_FIELDS
         stack = [(pointer, cast("dict[str, Any]", schema))] if isinstance(schema, dict) else []
         while stack:
             current_pointer, current = stack.pop()
@@ -6946,32 +6866,21 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         cached = self._ref_target_dumps[key]
         return deepcopy(cached[0]), cached[1]
 
-    def _intersect_parts(
-        self, parts: Sequence[dict[str, Any]], row: dict[str, Any], *, ref_siblings_are_parts: bool = True
-    ) -> KeywordIntersection:
-        """Return the intersection of the ``parts`` of a site, whose earlier merge wrote them as ``row``.
-
-        Without --intersect-allof-keywords the schema is ``row``, the merge of 0.86.0 (a sibling's or a child's value
-        winning), whatever the parts say.
-        """
-        if not self.intersects_allof_keywords:
-            return KeywordIntersection(row, ())
-        return intersect_keywords(
-            parts, row, extras_key=JsonSchemaObject.__extra_key__, ref_siblings_are_parts=ref_siblings_are_parts
-        )
-
     def _intersect_ref_siblings(
         self, target: dict[str, Any], siblings: dict[str, Any], where: str, *, siblings_are_parts: bool
     ) -> tuple[dict[str, Any], tuple[str, ...]]:
         """Merge the dump of a referenced schema with the sibling keywords of its $ref into their intersection.
 
-        The earlier merge (``_deep_merge``: lists concatenated, a sibling's value winning) stays wherever it enforces
-        what the intersection enforces; ``intersect_keywords`` replaces the keywords where it does not. A keyword whose
-        parts have no value in common keeps the earlier merge's value, with a warning. Returns the merged keywords and
-        the keywords with no value in common. Without --intersect-allof-keywords the earlier merge alone.
+        The earlier merge (``concatenating_row``: lists concatenated, a sibling's value winning) stays wherever it
+        enforces what the intersection enforces; ``intersect_keywords`` replaces the keywords where it does not. A
+        keyword whose parts have no value in common keeps the earlier merge's value, with a warning. Returns the merged
+        keywords and the keywords with no value in common. Under ``legacy-merge-row`` the earlier merge alone.
         """
-        intersection = self._intersect_parts(
-            [target, siblings], self._deep_merge(target, siblings), ref_siblings_are_parts=siblings_are_parts
+        intersection = _intersect_dumps(
+            [target, siblings],
+            concatenating_row(target, siblings),
+            ref_siblings_are_parts=siblings_are_parts,
+            legacy_rows=self._legacy_intersection,
         )
         self._warn_intersection(where, intersection)
         return intersection.keywords, intersection.unsatisfiable
@@ -7009,9 +6918,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _conjoined_pattern(self, patterns: Sequence[str], where: str) -> str:
         """Return the conjoined pattern (``conjoin_patterns``), warning about the patterns it leaves out.
 
-        Without --intersect-allof-keywords the lookaheads 0.86.0 wrote (``lookahead_patterns``), without a warning.
+        Under ``legacy-lookahead-patterns`` the lookaheads 0.86.0 wrote (``lookahead_patterns``), without a warning.
         """
-        if not self.intersects_allof_keywords:
+        if "legacy-lookahead-patterns" in self._legacy_intersection:
             return lookahead_patterns(patterns)
         conjunction = conjoin_patterns(patterns)
         self._warn_untaken_patterns(where, conjunction.pattern, conjunction.untaken)
@@ -7703,7 +7612,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             const_part := next((dump for dump in dumps if "const" in dump.get(extras_key, {})), None)
         ):
             row_extras["const"] = added["const"] = const_part[extras_key]["const"]
-        intersection = intersect_keywords(dumps, row, extras_key=extras_key)
+        intersection = _intersect_dumps(dumps, row)
         keywords = intersection.keywords
         if where is not None:
             self._warn_intersection(where, intersection, _ALL_OF_PARTS)
@@ -7732,21 +7641,6 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 self._schema_object({"allOf": [{"$ref": ref}]}), parts, resolve_refs=True
             )
             else None
-        )
-
-    def _all_of_value_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
-        """Return the schema of the values an inline allOf value schema admits: its parts intersected.
-
-        The lightweight merge (``_all_of_value_row``) stays wherever it enforces what the intersection enforces; the
-        values of an ``enum`` or ``const`` are written as the literal check filters them (``_build_lightweight_type``).
-        None when a member is a reference or no schema of one value: such a site keeps its earlier form, as does
-        every site without --intersect-allof-keywords.
-        """
-        parts: list[JsonSchemaObject] = []
-        if not self.intersects_allof_keywords or not self._collect_all_of_value_parts(obj, parts):
-            return None
-        return self._intersect_all_of_value_parts(
-            parts, self._all_of_value_row(obj), str(obj.schema_location or "allOf")
         )
 
     def _enforced_value_keywords(
@@ -7863,7 +7757,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         the output takes the constraints beside the reference, else it takes the reference alone where the intersection
         of its parts enforces nothing beyond it, and else that intersection. None for every other site, which keeps its
         earlier form: a site without own constraints the referenced type takes, members that are no value schemas and
-        nested combinators. Without --intersect-allof-keywords a site leaves its earlier form only where that form
+        nested combinators. Under ``legacy-all-of-site-form`` a site leaves its earlier form only where that form
         fails, so it keeps it under ``--collapse-root-models``, whose holders merge the constraints.
         """
         members = [item for item in obj.allOf if isinstance(item, JsonSchemaObject)]
@@ -7875,7 +7769,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return None if site is None else _derived_site(self.SCHEMA_OBJECT_TYPE.model_validate(site[1]), refs)
         parts: list[JsonSchemaObject] = []
         if (
-            (self.collapse_root_models and not self.intersects_allof_keywords)
+            (self.collapse_root_models and "legacy-all-of-site-form" in self._legacy_intersection)
             or any(member.allOf or member.anyOf or member.oneOf for member in members)
             or (target_parts := self._reference_value_parts(refs[0])) is None
             or not self._collect_all_of_value_parts(obj, parts, resolve_refs=True)
@@ -8004,102 +7898,6 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             else:
                 break
         return item_type.type == ANY
-
-    def _merge_property_schemas(
-        self,
-        parent_dict: dict[str, Any],
-        child_dict: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge parent and child property schemas for allOf; the result stands for the child schema."""
-        if self.allof_merge_mode == AllOfMergeMode.NoMerge or "$ref" in child_dict:
-            return _located(child_dict.copy(), _dump_location(child_dict))
-
-        non_merged_fields: set[str] = set()
-        if self.allof_merge_mode == AllOfMergeMode.Constraints:
-            non_merged_fields = {"default", "examples", "example"}
-
-        result = {key: value for key, value in parent_dict.items() if key not in non_merged_fields}
-        if (
-            (child_type := child_dict.get("type")) is not None
-            and child_dict.get("nullable") is not True
-            and (not isinstance(child_type, list) or "null" not in child_type)
-        ):
-            result.pop("nullable", None)
-
-        for key, value in child_dict.items():
-            if (
-                key in result
-                and (
-                    merged_schema_keyword := self._merge_inherited_schema_keyword(
-                        key,
-                        result[key],
-                        value,
-                        result,
-                    )
-                )
-                is not _NO_INHERITED_SCHEMA_MERGE
-            ):
-                result[key] = merged_schema_keyword
-            elif key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                if "$ref" in value:
-                    result[key] = value
-                else:
-                    result[key] = self._merge_property_schemas(result[key], value)
-            else:
-                result[key] = value
-        return _located(result, _dump_location(child_dict))
-
-    def _merge_inherited_nested_schemas(self, parent: object, child: object) -> object:
-        """Intersect two schema-valued container keywords."""
-        result = child
-        match parent, child:
-            case (False, _) | (_, False):
-                result = False
-            case True, _:
-                pass
-            case _, True:
-                result = parent
-            case dict() as parent_schema, dict() as child_schema:
-                result = self._merge_property_schemas(parent_schema, child_schema)
-            case _:
-                pass
-        return result
-
-    def _get_inherited_positional_tail(  # noqa: PLR6301
-        self,
-        schema: JsonSchemaObject | dict[str, Any],
-        key: str,
-    ) -> object:
-        """Return the schema governing positions beyond a tuple declaration."""
-        items = schema.get("items") if isinstance(schema, dict) else schema.items
-        additional_items = schema.get("additionalItems") if isinstance(schema, dict) else schema.additionalItems
-        unevaluated_items = schema.get("unevaluatedItems") if isinstance(schema, dict) else schema.unevaluatedItems
-        if key == "items":
-            return additional_items if additional_items is not None else True
-        if items is not None and not isinstance(items, list):
-            return items
-        return unevaluated_items if unevaluated_items is not None else True
-
-    def _merge_inherited_schema_keyword(
-        self,
-        key: str,
-        parent: object,
-        child: object,
-        parent_schema: dict[str, Any],
-    ) -> object:
-        """Merge schema-valued keywords while leaving ordinary values untouched."""
-        if key in _INHERITED_POSITIONAL_SCHEMA_FIELDS and isinstance(parent, list) and isinstance(child, list):
-            parent_tail = self._get_inherited_positional_tail(parent_schema, key)
-            return [
-                self._merge_inherited_nested_schemas(
-                    parent[index] if index < len(parent) else parent_tail,
-                    child_item,
-                )
-                for index, child_item in enumerate(child)
-            ] + parent[len(child) :]
-        if key in _INHERITED_NESTED_SCHEMA_FIELDS:
-            return self._merge_inherited_nested_schemas(parent, child)
-        return _NO_INHERITED_SCHEMA_MERGE
 
     def _get_inherited_override_shape(  # noqa: PLR6301
         self,
@@ -8414,7 +8212,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Flatten constraint-only compositions before resolving their inherited type."""
         nested_updates = {
             field_name: normalized
-            for field_name in _INHERITED_NESTED_SCHEMA_FIELDS
+            for field_name in INHERITED_SCHEMA_KEYWORDS
             if (normalized := self._normalize_inherited_nested_schema_value(getattr(schema, field_name))) is not None
         }
         if not (nested_updates or schema.allOf or schema.anyOf or schema.oneOf):
@@ -8473,14 +8271,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return False
 
         for field_name, nested_child in child_dict.items():
-            if field_name not in _INHERITED_NESTED_SCHEMA_FIELDS:
+            if field_name not in INHERITED_SCHEMA_KEYWORDS:
                 return False
             nested_parent = getattr(parent, field_name)
             if nested_parent is None:
                 continue
             parent_tail = (
-                self._get_inherited_positional_tail(parent, field_name)
-                if field_name in _INHERITED_POSITIONAL_SCHEMA_FIELDS and isinstance(nested_parent, list)
+                inherited_positional_tail(partial(getattr, parent), field_name)
+                if field_name in POSITIONAL_SCHEMA_KEYWORDS and isinstance(nested_parent, list)
                 else True
             )
             if not self._is_partial_inherited_nested_value(
@@ -8488,7 +8286,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 nested_parent,
                 parent_tail=parent_tail,
                 context=context,
-                schema_map=field_name in _INHERITED_SCHEMA_MAP_FIELDS,
+                schema_map=field_name in _MODELED_SCHEMA_MAPS,
             ):
                 return False
         return True
@@ -8559,7 +8357,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             or schema.model_fields_set & PROPERTY_COUNT_KEYWORDS
         ):
             return True
-        for field_name in _INHERITED_NESTED_SCHEMA_FIELDS:
+        for field_name in INHERITED_SCHEMA_KEYWORDS:
             match getattr(schema, field_name):
                 case JsonSchemaObject() as nested_schema if self._has_inherited_constraints(nested_schema):
                     return True
@@ -8578,7 +8376,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _mark_inherited_materialized_type_shapes(self, schema: JsonSchemaObject) -> None:
         """Mark synthesized schemas whose container constraints need a root wrapper."""
         schema.__dict__[_INHERITED_MATERIALIZED_TYPE_SHAPE_KEY] = True
-        for field_name in (*_INHERITED_NESTED_SCHEMA_FIELDS, "allOf", "anyOf", "oneOf"):
+        for field_name in _MODELED_POSITIONS:
             match getattr(schema, field_name):
                 case JsonSchemaObject() as nested_schema:
                     self._mark_inherited_materialized_type_shapes(nested_schema)
@@ -8662,82 +8460,6 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if child and isinstance(parent_ref := parent.get("$ref"), str):
             return active - {self._inherited_node(self._ref_path(parent_ref))}
         return active
-
-    def _merge_inherited_type_shape_value(
-        self,
-        parent: object,
-        child: object,
-        parent_ref: str,
-        active: frozenset[_TargetNode],
-    ) -> object:
-        """Fill a child schema value from its inherited type without parent constraints."""
-        result = child
-        match parent, child:
-            case False, _:
-                result = False
-            case _, False:
-                result = False
-            case _, True:
-                result = parent
-            case True, _:
-                result = True
-            case dict() as parent_schema, dict() as child_schema:
-                result = self._merge_inherited_type_shape_dict(
-                    parent_schema,
-                    child_schema,
-                    parent_ref,
-                    self._get_nested_inherited_active(
-                        parent_schema,
-                        child_schema,
-                        active,
-                    ),
-                )
-            case _:
-                pass
-        return result
-
-    def _merge_inherited_type_shape_keyword(
-        self,
-        key: str,
-        parent: object,
-        child: object,
-        context: tuple[dict[str, Any], str, frozenset[_TargetNode]],
-    ) -> object:
-        """Merge one nested schema keyword while preserving the parent's type shape."""
-        parent_schema, parent_ref, active = context
-        if key in _INHERITED_POSITIONAL_SCHEMA_FIELDS and isinstance(parent, list) and isinstance(child, list):
-            parent_tail = self._get_inherited_positional_tail(parent_schema, key)
-            return [
-                self._merge_inherited_type_shape_value(
-                    parent[index] if index < len(parent) else parent_tail,
-                    child_item,
-                    parent_ref,
-                    active,
-                )
-                for index, child_item in enumerate(child)
-            ] + parent[len(child) :]
-        if key in _INHERITED_SCHEMA_MAP_FIELDS and isinstance(parent, dict) and isinstance(child, dict):
-            parent_map = cast("dict[str, object]", parent)
-            child_map = cast("dict[str, object]", child)
-            result = parent_map.copy()
-            for name, child_schema in child_map.items():
-                result[name] = (
-                    self._merge_inherited_type_shape_value(
-                        parent_schema_value,
-                        child_schema,
-                        parent_ref,
-                        active,
-                    )
-                    if (parent_schema_value := parent_map.get(name)) is not None
-                    else child_schema
-                )
-            return result
-        return self._merge_inherited_type_shape_value(
-            parent,
-            child,
-            parent_ref,
-            active,
-        )
 
     def _merge_inherited_union_branch(
         self,
@@ -8890,47 +8612,74 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             and len(parent_types) == 1
         ):
             parent_shape["type"] = next(iter(parent_types))
+        merge_value = partial(
+            merge_inherited_value,
+            merge_schemas=lambda parent_schema, child_schema: self._merge_inherited_type_shape_dict(
+                parent_schema,
+                child_schema,
+                effective_ref,
+                self._get_nested_inherited_active(parent_schema, child_schema, next_active),
+            ),
+            row="type-shape",
+        )
         result: dict[str, Any] = parent_shape.copy()
         for key, value in child_shape.items():
-            if key in _INHERITED_NESTED_SCHEMA_FIELDS and key in parent_shape:
-                result[key] = self._merge_inherited_type_shape_keyword(
-                    key,
-                    parent_shape[key],
-                    value,
-                    (parent_shape, effective_ref, next_active),
+            if key in INHERITED_SCHEMA_KEYWORDS and key in parent_shape:
+                result[key] = merge_inherited_keyword(
+                    key, parent_shape[key], value, parent_shape.get, merge_value, maps_by_name=True
                 )
             else:
                 result[key] = value
         return _located(result, _dump_location(child))
 
-    def _merge_no_merge_inherited_property(
-        self,
-        parent: JsonSchemaObject,
-        child: JsonSchemaObject,
-        parent_ref: str,
+    def _inherited_override_row(self, parent: dict[str, Any], child: dict[str, Any]) -> dict[str, Any]:
+        """Return ``parser/_intersection.py:inherited_override_row`` under the merge mode of this parse.
+
+        An override drops the inherited ``nullable`` by the null rule ``inherited-typed-without-null``, read from its
+        own ``type`` and ``nullable`` (``parser/_null_facts.py:dump_null_sources``).
+        """
+        return inherited_override_row(
+            parent, child, merge_mode=self.allof_merge_mode.value, drops_null=_dump_drops_inherited_null
+        )
+
+    def _inherited_override_schema(
+        self, parent: JsonSchemaObject, child: JsonSchemaObject, parent_ref: str, where: str
     ) -> JsonSchemaObject:
-        """Materialize child constraints on the inherited type shape in no-merge mode."""
-        effective_parent, effective_ref, active = self._resolve_inherited_parent_property(
-            parent,
-            parent_ref,
-        )
-        if not self._is_partial_inherited_property(
-            child,
-            effective_parent,
-            (effective_ref, active),
-        ):
-            return child
+        """Return the schema of a property ``child`` that overrides the inherited property ``parent``.
+
+        The row of ``--allof-merge-mode`` decides: ``none`` writes the child's constraints on the inherited type shape
+        (``_merge_inherited_type_shape_dict``) where the child only narrows it, and keeps the child otherwise; ``all``
+        and ``constraints`` give the intersection of both (``intersect_keywords``) over their presentation row
+        (``parser/_intersection.py:inherited_override_row``).
+        """
+        if self.allof_merge_mode == AllOfMergeMode.NoMerge:
+            if not self._has_inherited_constraints(child):
+                return child
+            effective_parent, effective_ref, active = self._resolve_inherited_parent_property(parent, parent_ref)
+            if not self._is_partial_inherited_property(child, effective_parent, (effective_ref, active)):
+                return child
+            child_dict = child.model_dump(exclude_unset=True, by_alias=True)
+            merged_dict = self._merge_inherited_type_shape_dict(
+                parent.model_dump(exclude_unset=True, by_alias=True), child_dict, parent_ref
+            )
+            if merged_dict == child_dict:
+                return child
+            merged_schema = self._schema_object(merged_dict)
+            self._mark_inherited_materialized_type_shapes(merged_schema)
+            return merged_schema
+        parent_dict = parent.model_dump(exclude_unset=True, by_alias=True)
         child_dict = child.model_dump(exclude_unset=True, by_alias=True)
-        merged_dict = self._merge_inherited_type_shape_dict(
-            parent.model_dump(exclude_unset=True, by_alias=True),
-            child_dict,
-            parent_ref,
+        intersection = _intersect_dumps(
+            [parent_dict, child_dict],
+            self._inherited_override_row(parent_dict, child_dict),
+            legacy_rows=self._legacy_intersection,
         )
-        if merged_dict == child_dict:
-            return child
-        merged_schema = self._schema_object(merged_dict)
-        self._mark_inherited_materialized_type_shapes(merged_schema)
-        return merged_schema
+        self._warn_intersection(where, intersection)
+        merged_property = self._schema_object(intersection.keywords)
+        self._mark_reported_value_conflict(merged_property, intersection.unsatisfiable)
+        merged_property.__dict__[_RAW_SCHEMA_EXPLICIT_FIELD_EXTRAS_KEY] = frozenset(self.get_field_extras(child))
+        merged_property.__dict__[_INHERITED_OVERRIDE_KEY] = True
+        return merged_property
 
     def _get_deferred_inherited_property_names(
         self,
@@ -8992,7 +8741,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             field.__dict__[_DEFERRED_INHERITED_TYPE_KEY] = _get_inherited_type_modifiers(
                 field.data_type,
                 null_rule=facts.rule if facts is not None and facts.admits_null is False else None,
-                drops_null_members=self.intersects_allof_keywords
+                drops_null_members=self._null_mode.type_excludes_member_null
                 and facts is not None
                 and facts.rule == "inherited-typed-without-null",
             )
@@ -9012,7 +8761,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 continue
             updates = {
                 schema_field: None
-                for schema_field in _INHERITED_NESTED_SCHEMA_FIELDS
+                for schema_field in INHERITED_SCHEMA_KEYWORDS
                 if getattr(property_schema, schema_field) is not None
             }
             if property_schema.title is not None:
@@ -9097,33 +8846,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 )
                 merged_changed = merged_changed or normalized_dict != child_dict
                 continue
-            if self.allof_merge_mode == AllOfMergeMode.NoMerge:
-                merged_property = (
-                    self._merge_no_merge_inherited_property(
-                        parent_prop,
-                        effective_child,
-                        parent_ref,
-                    )
-                    if self._has_inherited_constraints(effective_child)
-                    else effective_child
-                )
-                merged_properties[prop_name] = merged_property
-                merged_changed = merged_changed or merged_property is not effective_child
-                continue
-            parent_dict = parent_prop.model_dump(exclude_unset=True, by_alias=True)
-            child_dict = effective_child.model_dump(exclude_unset=True, by_alias=True)
-            intersection = self._intersect_parts(
-                [parent_dict, child_dict], self._merge_property_schemas(parent_dict, child_dict)
+            merged_property = self._inherited_override_schema(
+                parent_prop,
+                effective_child,
+                parent_ref,
+                str(child_prop.schema_location or f"property {prop_name!r}"),
             )
-            self._warn_intersection(str(child_prop.schema_location or f"property {prop_name!r}"), intersection)
-            merged_property = self._schema_object(intersection.keywords)
-            self._mark_reported_value_conflict(merged_property, intersection.unsatisfiable)
-            merged_property.__dict__[_RAW_SCHEMA_EXPLICIT_FIELD_EXTRAS_KEY] = frozenset(
-                self.get_field_extras(effective_child)
-            )
-            merged_property.__dict__[_INHERITED_OVERRIDE_KEY] = True
             merged_properties[prop_name] = merged_property
-            merged_changed = True
+            merged_changed = merged_changed or merged_property is not effective_child
 
         if not merged_changed:
             return child_obj
@@ -9419,7 +9149,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             target_python_version=self.target_python_version,
         )
         fields: list[DataModelFieldBase] = []
-        owner_path = [reference.path] if self.dedupe_request_response_variants else []
+        owner_path = [] if "legacy-rw-unowned-parent-fields" in self._legacy_rw_variants else [reference.path]
 
         def parse_inline(source: JsonSchemaObject) -> None:
             if source.properties:
@@ -9744,7 +9474,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if ref_value is None:
             return None  # pragma: no cover
 
-        if ref_item.has_ref_with_schema_keywords and not ref_item.is_ref_with_nullable_only:
+        if _merges_ref_siblings(ref_item):
             ref_schema = self._merge_ref_with_schema(ref_item)
         else:
             ref_schema = self._load_ref_schema_object(ref_value)
@@ -9831,67 +9561,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return self.parse_root_type(name, merged_schema, path)
         return self.parse_root_type(name, merged_schema, path)
 
-    def _merge_all_of_schema(
-        self,
-        parent: dict[str, Any],
-        child: dict[str, Any],
-        *,
-        schema_map: bool = False,
-        intersect_bounds: bool = True,
-    ) -> dict[str, Any]:
-        """Intersect allOf bounds and enums only in positive schema positions."""
-        result = parent.copy()
-        conjoins_patterns = self.intersects_allof_keywords and intersect_bounds and not schema_map
-        for key, value in child.items():
-            if key not in result:
-                result[key] = value
-                continue
-            previous = result[key]
-            if isinstance(previous, dict) and isinstance(value, dict):
-                if schema_map or key in _INHERITED_NESTED_SCHEMA_FIELDS:
-                    result[key] = _located(
-                        self._merge_all_of_schema(
-                            previous,
-                            value,
-                            schema_map=not schema_map and key in _INHERITED_SCHEMA_MAP_FIELDS,
-                            intersect_bounds=intersect_bounds,
-                        ),
-                        _dump_location(value),
-                    )
-                else:
-                    result[key] = self._deep_merge(previous, value)
-            elif (
-                intersect_bounds
-                and not schema_map
-                and key in _ALLOF_BOUND_CONSTRAINT_FIELDS
-                and previous is not None
-                and value is not None
-            ):
-                # Preserve the legacy child representation when two bounds are equal.
-                result[key] = JsonSchemaParser._intersect_constraint(key, value, previous)
-            elif isinstance(previous, list) and isinstance(value, list):
-                if not schema_map and key == "enum":
-                    result[key] = _intersect_all_of_enum(previous, value)
-                else:
-                    result[key] = previous + value
-            elif (
-                conjoins_patterns
-                and key == "pattern"
-                and isinstance(previous, str)
-                and isinstance(value, str)
-                and previous != value
-            ):
-                result[key] = self._conjoined_pattern((previous, value), "allOf")
-            else:
-                result[key] = value
-        if (
-            not schema_map
-            and isinstance(parent_enum := parent.get("enum"), list)
-            and isinstance(child_enum := child.get("enum"), list)
-            and len(result["enum"]) < len(parent_enum) + len(child_enum)
-        ):
-            _align_all_of_enum_metadata(parent, child, result)
-        return result
+    def _all_of_pattern_conjunction(self) -> Callable[[Sequence[str]], str] | None:
+        """Return how ``all_of_member_row`` conjoins two patterns, or None under ``legacy-lookahead-patterns``."""
+        return (
+            None
+            if "legacy-lookahead-patterns" in self._legacy_intersection
+            else partial(self._conjoined_pattern, where="allOf")
+        )
 
     def _merge_all_of_object(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
         """Merge allOf items when they share object properties to avoid duplicate models.
@@ -9926,7 +9602,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         merged_schema: dict[str, Any] = obj.model_dump(exclude={"allOf"}, exclude_unset=True, by_alias=True)
         merge_schema = (
-            self._deep_merge if self.allof_merge_mode == AllOfMergeMode.NoMerge else self._merge_all_of_schema
+            concatenating_row
+            if self.allof_merge_mode == AllOfMergeMode.NoMerge
+            else partial(all_of_member_row, conjoin_patterns=self._all_of_pattern_conjunction())
         )
         for resolved_item in resolved_items:
             merged_schema = merge_schema(merged_schema, resolved_item.model_dump(exclude_unset=True, by_alias=True))
@@ -9951,11 +9629,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """
         literal_sets = [values for source in sources if (values := self._schema_literal_values(source)) is not None]
         if literal_sets:
-            literal_values = [
-                value
-                for value in literal_sets[0]
-                if all(any(_json_literal_values_equal(value, other) for other in values) for values in literal_sets[1:])
-            ]
+            literal_values = reduce(intersect_enum_values, literal_sets[1:], list(literal_sets[0]))
             if not literal_values:
                 self._warn_unsatisfiable(
                     str(sources[-1].schema_location or "allOf"),
@@ -10090,7 +9764,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             schema.properties
             or schema.patternProperties
             or schema.propertyNames is not None
-            or not _is_object_only_type(_non_null_types(schema.type) if self.intersects_allof_keywords else schema.type)
+            or not _is_object_only_type(
+                _non_null_types(schema.type) if self._null_mode.type_excludes_member_null else schema.type
+            )
             or not isinstance(schema.additionalProperties, JsonSchemaObject)
         )
 
@@ -10173,20 +9849,17 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
 
         merged: dict[str, Any] = {}
         for schema in mapping_schemas:
-            merged = self._merge_property_schemas(
-                merged,
-                schema.model_dump(exclude_unset=True, by_alias=True),
-            )
-        merged = self._merge_property_schemas(
-            merged,
-            obj.model_dump(exclude={"allOf"}, exclude_unset=True, by_alias=True),
+            merged = self._inherited_override_row(merged, schema.model_dump(exclude_unset=True, by_alias=True))
+        merged = self._inherited_override_row(
+            merged, obj.model_dump(exclude={"allOf"}, exclude_unset=True, by_alias=True)
         )
-        typed = [*sibling_types, *(schema.type for schema in (*mapping_schemas, obj) if schema.type)]
-        if self.intersects_allof_keywords and any(_lists_null(type_) for type_ in typed):
+        typed = [
+            dump_null_sources({"type": type_})
+            for type_ in (*sibling_types, *(schema.type for schema in (*mapping_schemas, obj) if schema.type))
+        ]
+        if self._null_mode.type_excludes_member_null and any(part.type_lists_null for part in typed):
             merged["type"] = (
-                ["object", "null"]
-                if self._null_facts(obj, "all-of-map", parts_null=all(map(_lists_null, typed))).admits_null
-                else "object"
+                ["object", "null"] if self._null_facts(obj, "all-of-map", parts=typed).admits_null else "object"
             )
         elif merged.get("type") == ["object"]:
             merged["type"] = "object"
@@ -10208,7 +9881,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return None
         merged: dict[str, Any] = {}
         for schema in schemas:
-            merged = self._deep_merge(
+            merged = concatenating_row(
                 merged,
                 schema.model_dump(
                     exclude={"allOf", *JsonSchemaObject.__constraint_fields__}, exclude_unset=True, by_alias=True
@@ -10270,7 +9943,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         if (
             sum(bool(schema.ref) for schema in own_schemas) == 1
             and (reference := self._merge_value_schemas(own_schemas))
-            and (not reference.has_ref_with_schema_keywords or reference.is_ref_with_nullable_only)
+            and not _merges_ref_siblings(reference)
         ):
             return reference
         return merged
@@ -10289,17 +9962,15 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _satisfiable_all_of_value_parts(self, obj: JsonSchemaObject) -> list[JsonSchemaObject] | None:
         """Return the parts of an allOf site whose members each describe one value, references resolved, else None.
 
-        A site whose parts no value meets in common gets None, and a warning with --intersect-allof-keywords: it keeps
-        the form it is written in, and a form that cannot be generated takes its first part.
+        A site whose parts no value meets in common gets None, and a warning unless ``legacy-all-of-site-form`` is kept:
+        it keeps the form it is written in, and a form that cannot be generated takes its first part.
         """
         if (parts := self._all_of_value_parts(obj)) is None or len(parts) <= 1:
             return parts
         dumps = [part.model_dump(exclude_unset=True, by_alias=True) for part in parts]
-        row: dict[str, Any] = {}
-        for dump in dumps:
-            row.update(dump)
-        unsatisfiable = intersect_keywords(dumps, row, extras_key=JsonSchemaObject.__extra_key__).unsatisfiable
-        if self.intersects_allof_keywords:
+        row = {keyword: value for dump in dumps for keyword, value in dump.items()}
+        unsatisfiable = _intersect_dumps(dumps, row).unsatisfiable
+        if "legacy-all-of-site-form" not in self._legacy_intersection:
             self._warn_unsatisfiable(str(obj.schema_location or "allOf"), unsatisfiable, _ALL_OF_PARTS)
         return None if unsatisfiable else parts
 
@@ -10317,24 +9988,33 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         )
 
     def _all_of_site_schema(
-        self, obj: JsonSchemaObject, parts: Sequence[JsonSchemaObject], value: dict[str, Any]
+        self,
+        obj: JsonSchemaObject,
+        parts: Sequence[JsonSchemaObject],
+        value: dict[str, Any],
+        *,
+        null_member: bool = False,
     ) -> JsonSchemaObject:
         """Return the schema of an allOf site with the ``value`` of its parts; its own annotations win, the parts' fill.
 
-        The site admits null as its null facts say (``all-of-value``).
+        The site admits null as its null facts say (``all-of-value``): in the value's type, else as ``nullable``. With
+        ``null_member`` a value without a type, such as a lone ``$ref``, takes the null as an ``anyOf`` member instead,
+        which the root-model rules read as they read a ``null`` in a type list; ``nullable`` they read only as legacy.
         """
         annotations: dict[str, Any] = {}
         for part in reversed(parts):
             annotations.update(part.model_dump(include=_ALL_OF_MEMBER_ANNOTATIONS, exclude_unset=True, by_alias=True))
         own = obj.model_dump(exclude={"allOf", *_ALL_OF_VALUE_KEYWORDS}, exclude_unset=True, by_alias=True)
         if value.pop("nullable", False) or self._null_facts(obj, "all-of-value").admits_null:
-            if (type_ := value.get("type")) is None:
-                value["nullable"] = True
-            else:
+            if (type_ := value.get("type")) is not None:
                 value["type"] = [
                     *(item for item in (type_ if isinstance(type_, list) else [type_]) if item != "null"),
                     "null",
                 ]
+            elif null_member:
+                value = {"anyOf": [value, {"type": "null"}]}
+            else:
+                value["nullable"] = True
         return self._schema_object({**value, **annotations, **own})
 
     def _all_of_root_value_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
@@ -10344,15 +10024,25 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         The site's own annotations win, the members' fill in (``_all_of_site_schema``). None when no part has a value
         keyword, and where the site keeps its earlier form: a part with an ``enum`` or ``const`` (an allOf of enum
         references is decided by ``_all_of_enum_site_schema``) and the parts ``_intersects_value_parts`` leaves out.
-        None without --intersect-allof-keywords.
+        Under ``legacy-all-of-site-form`` only where that model is the type of the site, not the member an array site
+        writes beside its own array, and the intersection names a type without objects, whose values the model would
+        all reject; the site schema is then marked as one (``FIELDLESS_SITE_KEY``) and admits null as a JSON Schema
+        null (``null_member``). Such a site keeps the model where a pattern of the intersection needs a regex engine of
+        the models that use its type (``_patterns_need_holder_engine``): that engine would apply to their other
+        patterns.
         """
+        legacy = "legacy-all-of-site-form" in self._legacy_intersection
         if (
-            not self.intersects_allof_keywords
+            (obj.is_array and legacy)
             or (parts := self._satisfiable_all_of_value_parts(obj)) is None
             or not self._intersects_value_parts(parts, literals=False)
+            or not (
+                _excludes_objects((intersection := self._intersect_typed_value_parts(parts, None)).type) or not legacy
+            )
         ):
             return None
-        intersection = self._intersect_typed_value_parts(parts, None)
+        if legacy and self._patterns_need_holder_engine(intersection):
+            return None
         value: dict[str, Any] = intersection.model_dump(exclude_unset=True, by_alias=True)
         if (
             len(refs := [item.ref for item in obj.allOf if isinstance(item, JsonSchemaObject) and item.ref]) == 1
@@ -10361,7 +10051,47 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             == self._enforced_value_keywords(self._intersect_typed_value_parts(target_parts, None))
         ):
             value = {"$ref": refs[0]}
-        return self._all_of_site_schema(obj, parts, value)
+        site = self._all_of_site_schema(obj, parts, value, null_member=legacy)
+        if legacy:
+            site.__dict__[FIELDLESS_SITE_KEY] = True
+        return site
+
+    def _patterns_need_holder_engine(self, schema: JsonSchemaObject) -> bool:
+        """Return whether a pattern of a value schema needs a regex engine of the models that use its root type.
+
+        Every pattern its type carries counts: those of its subschemas, the keys of its ``patternProperties`` and those
+        of the schemas it names, which the models that use the type reach through it.
+        """
+        if (needs_engine := self.data_model_field_type.PATTERN_NEEDS_HOLDER_ENGINE) is None:
+            return False
+        pending: list[object] = [schema.model_dump(exclude_unset=True, by_alias=True)]
+        named: set[str] = set()
+        while pending:
+            match value := pending.pop():
+                case list():
+                    pending.extend(value)
+                case dict():
+                    pattern_properties: dict[str, object] = value.get("patternProperties", {})
+                    patterns = [*pattern_properties]
+                    if isinstance(pattern := value.get("pattern"), str):
+                        patterns.append(pattern)
+                    if any(
+                        needs_engine(
+                            self.data_model_root_type, pattern, self.target_python_version, self.target_pydantic_version
+                        )
+                        for pattern in patterns
+                    ):
+                        return True
+                    if isinstance(ref := value.get("$ref"), str) and ref not in named:
+                        named.add(ref)
+                        pending.append(
+                            self._merge_ref_with_schema(self._schema_object({"$ref": ref}), "allOf").model_dump(
+                                exclude_unset=True, by_alias=True
+                            )
+                        )
+                    pending.extend(pattern_properties.values())
+                    pending.extend(item for key, item in value.items() if key not in _PATTERN_SCAN_SKIPPED_KEYWORDS)
+        return False
 
     def _reference_site_schema(self, obj: JsonSchemaObject, *, layered: bool = False) -> JsonSchemaObject | None:
         """Return the schema of an allOf site whose earlier form, the type of its first ``$ref`` member, it leaves.
@@ -10410,8 +10140,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         )
         literals = intersection.enum
         if all(
-            all(any(_json_literal_values_equal(value, other) for other in literals) for value in target.enum)
-            and all(any(_json_literal_values_equal(value, other) for other in target.enum) for value in literals)
+            len(intersect_enum_values(target.enum, literals)) == len(target.enum)
+            and len(intersect_enum_values(literals, target.enum)) == len(literals)
             for target in enums
         ):
             return None
@@ -10426,7 +10156,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         ``StrEnum`` holds only a str, as ``extract_inherited_enum`` decides.
         ``extract_inherited_enum`` leaves out the members it cannot construct (``holds_inherited_member_value``), so
         the merge imports; this decides only whether a site whose parts admit no value in common takes its first part,
-        as it did when the merge failed at import. A ``None`` member counts only with --intersect-allof-keywords. An
+        as it did when the merge failed at import. A ``None`` member counts unless ``legacy-all-of-null-as-written``. An
         output that writes the first enum as a ``Literal`` or as its const merges no enum class.
         """
         first = enums[0]
@@ -10436,7 +10166,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         value_type = "int" if issubclass(enum_class, IntEnum) else "str" if issubclass(enum_class, StrEnum) else None
         keep = self.config.keep_enum_member_values
         return value_type is not None and any(
-            self.intersects_allof_keywords
+            self._null_mode.type_excludes_member_null
             if value is None
             else not (
                 holds_inherited_member_value(value_type, value)
@@ -10544,13 +10274,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return an array site with ``allOf`` as the intersection of its own keywords and its members, else ``obj``.
 
         The site is then one value schema, as a site of another type is in ``parse_all_of``, instead of its own array
-        beside a model of its members. It keeps its form where the root rule (``_all_of_root_value_schema``) does, and
-        without --intersect-allof-keywords.
+        beside a model of its members. It keeps its form where the root rule (``_all_of_root_value_schema``) does.
         """
-        if (
-            not (self.intersects_allof_keywords and obj.allOf and obj.is_array)
-            or (value := self._all_of_root_value_schema(obj)) is None
-        ):
+        if not (obj.allOf and obj.is_array) or (value := self._all_of_root_value_schema(obj)) is None:
             return obj
         return value.with_schema_location(obj.schema_location)
 
@@ -10559,11 +10285,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> bool:
         """Return whether the sibling ``enum`` or ``const`` of a ``$ref`` member admits some, not all, target literals.
 
-        Only in a dialect that reads ``$ref`` siblings as parts, and with --intersect-allof-keywords; siblings that
-        admit none keep the reference.
+        Only in a dialect that reads ``$ref`` siblings as parts, and unless ``legacy-all-of-site-form`` is kept;
+        siblings that admit none keep the reference.
         """
         if not (
-            self.intersects_allof_keywords
+            "legacy-all-of-site-form" not in self._legacy_intersection
             and self._ref_sibling_keywords_enabled
             and (member.enum or "const" in member.extras)
         ):
@@ -10627,7 +10353,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                         use_builtin_facts=use_builtin_false_ref_facts,
                     ):
                         continue
-                if target_attribute.has_ref_with_schema_keywords and not target_attribute.is_ref_with_nullable_only:
+                if _merges_ref_siblings(target_attribute):
                     merged_attr = self._merge_ref_with_schema(target_attribute)
                     self._preserve_inherited_materialized_type_shape(target_attribute, merged_attr)
                     if merged_attr.ref:
@@ -10640,7 +10366,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                                     self._preserve_inherited_materialized_type_shape(
                                         target_attribute,
                                         self._schema_object(
-                                            self._merge_all_of_schema(
+                                            all_of_member_row(
                                                 base_object,
                                                 merged_attr.model_dump(exclude_unset=True, by_alias=True),
                                                 intersect_bounds=False,
@@ -10664,7 +10390,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                             self._preserve_inherited_materialized_type_shape(
                                 target_attribute,
                                 self._schema_object(
-                                    self._merge_all_of_schema(
+                                    all_of_member_row(
                                         base_object,
                                         target_attribute.model_dump(exclude_unset=True, by_alias=True),
                                         intersect_bounds=False,
@@ -10757,9 +10483,9 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _get_conditional_schema(
         self,
         obj: JsonSchemaObject,
-        keyword: Literal["if", "then", "else", "not"],
+        keyword: str,
     ) -> JsonSchemaObject | bool | None:
-        """Return the branch schema named by keyword, which the schema graph validates once from extras."""
+        """Return the schema of an applicator kept in extras, such as ``if``, which the schema graph validates once."""
         item = obj.extras.get(keyword)
         if isinstance(item, (JsonSchemaObject, bool)):
             return item
@@ -11061,7 +10787,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return None
         if not has_const:
             return tuple(obj.enum)
-        if not has_enum or any(_json_literal_values_equal(const, value) for value in obj.enum):
+        if not has_enum or intersect_enum_values([const], obj.enum):
             return (const,)
         return ()
 
@@ -11959,7 +11685,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             any((self.config.base_class, self.config.base_class_map, self.config.custom_template_dir))
             or self.config.extra_template_data is not None
         )
-        declared_witness = not self.check_pattern_maps_strictly
+        declared_witness = "legacy-validated-pattern-maps" in self._legacy_object_maps
         intersection = (
             None
             if helpers_kept
@@ -12259,30 +11985,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                         )
                     continue
                 if inherited_field is not None:
-                    resolved_field = self._copy_inherited_field(
-                        field,
-                        inherited_field,
-                        force_optional=self.force_optional_for_required_fields,
-                        partial_merge_mode=self.allof_merge_mode,
-                        reserved_names=reserved_names,
-                    )
+                    resolved_field = self._overlay_inherited_field(field, inherited_field, reserved_names)
                     if resolved_field is None:  # pragma: no cover
                         continue
-                    self._prepare_required_inherited_field(
-                        resolved_field,
-                        inherited_field,
-                        overriding_field=field,
-                    )
                     if self.model_resolver.default_value_overrides:
-                        default_source = field
-                        if self.allof_merge_mode == AllOfMergeMode.All and not (
-                            _RAW_SCHEMA_DEFAULT_KEY in field.__dict__
-                            and field.__dict__[_RAW_SCHEMA_DEFAULT_KEY] is not _RAW_SCHEMA_DEFAULT_UNDEFINED
-                        ):
-                            default_source = inherited_field
                         self._apply_inherited_field_default(
                             resolved_field,
-                            default_source,
+                            self._inherited_default_source(field, inherited_field),
                             class_name=name,
                         )
                     fields[index] = resolved_field
@@ -12624,11 +12333,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 or self._rw_model_writes_variant_beside_fields(reference.path)
             )
         )
-        if self.dedupe_request_response_variants:
+        if "legacy-rw-parsed-facts" not in self._legacy_rw_variants:
             self._check_rw_model_split(reference, splits=splits)
         if splits:
             self._request_response_fields[reference.path] = tuple(self._copy_unregistered_fields(fields))
-            if not self.dedupe_request_response_variants:
+            if "legacy-rw-parsed-facts" in self._legacy_rw_variants:
                 self._rw_model_field_facts_cache[reference.path] = self._get_rw_model_field_facts(fields)
             variants: list[DataModel] = []
             for suffix in ("Request", "Response"):
@@ -12880,7 +12589,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Parse allOf schema into a single data type with combined properties."""
         if self._contains_false_schema(obj.allOf):
             self._raise_unsatisfiable_schema(obj, path, "allOf")
-        if self.intersects_allof_keywords:
+        if "legacy-all-of-site-form" not in self._legacy_intersection:
             self._satisfiable_all_of_value_parts(obj)
 
         single_ref_result = self._parse_all_of_single_ref(name, obj, path)
@@ -13082,7 +12791,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 continue
 
             field = self._array_all_of_site_schema(field)  # noqa: PLW2901
-            if field.has_ref_with_schema_keywords and not field.is_ref_with_nullable_only:
+            if _merges_ref_siblings(field):
                 field = self._merge_ref_with_schema(field)  # noqa: PLW2901
             field = self._read_false_all_of_values(field)  # noqa: PLW2901
 
@@ -13138,11 +12847,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             additional_properties=additional_props,
             constrained_name=additional_property_name,
         )
-        dict_key = (
-            self._parse_simple_property_name_key_type(property_names)
-            if (property_names := obj.propertyNames) is not None
-            else None
-        )
+        dict_key = self._object_map_key_type(obj.propertyNames, "extra-field")
 
         return self.data_model_type.create_typed_extra_field(
             field_model=self.data_model_field_type,
@@ -13166,7 +12871,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             or self._has_pattern_properties_validator(obj)
         ):
             return None
-        if additional_props.has_ref_with_schema_keywords and not additional_props.is_ref_with_nullable_only:
+        if _merges_ref_siblings(additional_props):
             additional_props = self._merge_ref_with_schema(additional_props)
         if additional_props.allOf and self._contains_false_schema(additional_props.allOf):
             return None
@@ -13280,11 +12985,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 return self.parse_item(name, additional_properties, path)
         else:
             value_schema = additional_properties
-        if (
-            not preserve_root_model
-            and value_schema.has_ref_with_schema_keywords
-            and not value_schema.is_ref_with_nullable_only
-        ):
+        if not preserve_root_model and _merges_ref_siblings(value_schema):
             value_schema = self._merge_ref_with_schema(value_schema)
             if value_schema.title:
                 extras = value_schema.extras
@@ -13323,6 +13024,25 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             ],
             **(self._get_python_type_flags(obj) or {"is_dict": True}),
         )
+
+    @cached_property
+    def _legacy_object_maps(self) -> frozenset[str]:
+        """The rows of 0.86.0 object maps kept: the rows each map option leaves out of ``_parse_object_map``.
+
+        Without ``--use-single-dict-for-object-maps``: ``legacy-map-union-of-dicts`` (patternProperties give a union
+        of dicts, one per value type, with no inexact-map warning), ``legacy-map-pattern-keys-only``
+        (additionalProperties beside patternProperties types no key) and ``legacy-map-null-left-to-field`` (the dict
+        takes neither the null nor the property counts of its type array or ``nullable``). Without
+        ``--check-pattern-maps-strictly``: ``legacy-validated-pattern-maps`` (a map the patternProperties validator
+        checks keys its root dict ``str`` and counts no pattern, a declared key witnesses the check, and its model
+        joins no other type of its type array).
+        """
+        rows: set[str] = set()
+        if not self.use_single_dict_for_object_maps:
+            rows |= {"legacy-map-union-of-dicts", "legacy-map-pattern-keys-only", "legacy-map-null-left-to-field"}
+        if not self.check_pattern_maps_strictly:
+            rows.add("legacy-validated-pattern-maps")
+        return frozenset(rows)
 
     @property
     def _types_nullable_map_values(self) -> bool:
@@ -13394,12 +13114,11 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Build the dict root field of an object without declared fields, without leaking value constraints.
 
         additionalProperties types the values. Where the patternProperties validator checks the map, the values are
-        ``Any``; under ``--check-pattern-maps-strictly`` its keys are read from propertyNames as a pattern map reads
-        them and the field reads the keywords that count the keys of the object, patternProperties included, so a key
-        that a pattern admits counts. Elsewhere the keys are ``str``: an object with propertyNames and without
-        properties reaches this field only where the validator checks its patterns. The object map builder's null
-        reaches the dict under ``--use-single-dict-for-object-maps``. Without the options the keys are ``str``, the
-        counts leave the patterns out and the dict has no null, as in 0.86.0.
+        ``Any``; its keys are read from propertyNames as a pattern map reads them and the field reads the keywords that
+        count the keys of the object, patternProperties included, so a key that a pattern admits counts, unless row
+        ``legacy-validated-pattern-maps`` keeps ``str`` keys and counts without the patterns. Elsewhere the keys are
+        ``str``: an object with propertyNames and without properties reaches this field only where the validator checks
+        its patterns. The dict takes the object map builder's null unless row ``legacy-map-null-left-to-field`` is kept.
         """
         value_type = self.data_type_manager.get_data_type(Types.any)
         key_type = None
@@ -13410,8 +13129,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             "additionalProperties": obj.additionalProperties,
         }
         if self._has_pattern_properties_validator(obj):
-            if self.check_pattern_maps_strictly:
-                key_type = self._pattern_map_key_type(obj.propertyNames, None)
+            if "legacy-validated-pattern-maps" not in self._legacy_object_maps:
+                key_type = self._object_map_key_type(obj.propertyNames, "pattern-map")
                 counts["patternProperties"] = obj.patternProperties
         else:
             match obj.additionalProperties:
@@ -13430,7 +13149,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             original_field_name=None,
             field_type=(
                 _with_null(map_type)
-                if self.use_single_dict_for_object_maps and self._object_map_admits_null(obj)
+                if "legacy-map-null-left-to-field" not in self._legacy_object_maps and self._object_map_admits_null(obj)
                 else map_type
             ),
             alias=None,
@@ -13571,73 +13290,30 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         type is written, and a value that admits anything makes the whole value ``Any``. The patterns are joined
         into one key pattern, intersected with ``property_names``. A ``false`` pattern admits no key. A map whose
         additionalProperties types the keys that match no pattern (``_other_keys_schema``) is not built here.
-        Without ``--use-single-dict-for-object-maps`` the map is a union of dicts, one per value type, whose keys match
-        its patterns; an output that cannot decode a union of several dicts, such as msgspec, gets the one dict.
+        Row ``legacy-map-union-of-dicts`` keeps the map of 0.86.0, a union of dicts, one per value type, whose keys
+        match its patterns; an output that cannot decode a union of several dicts, such as msgspec, gets the one dict.
         """
-        if self.use_single_dict_for_object_maps:
-            return self._parse_pattern_map(name, pattern_properties, path, property_names, None)
-        pattern_value_pairs: list[tuple[str, DataType]] = []
-        for i, (pattern, schema) in enumerate(pattern_properties.items()):
-            if schema is False:
-                continue
-
-            if schema is True:
-                value_type = self.data_type_manager.get_data_type(Types.any)
-            else:
-                value_type = self.parse_item(
-                    name,
-                    schema,
-                    get_special_path(f"patternProperties/{i}", path),
-                )
-            pattern_value_pairs.append((pattern, value_type))
-
-        if not pattern_value_pairs:
+        patterns, value_types = self._parse_pattern_values(name, pattern_properties, path)
+        if (
+            "legacy-map-union-of-dicts" in self._legacy_object_maps
+            and value_types
+            and (
+                len(groups := _pattern_value_groups(patterns, value_types)) == 1
+                or self._output_model_context.decodes_value_unions
+            )
+        ):
             return self.data_type(
-                data_types=[self.data_type_manager.get_data_type(Types.any)],
-                is_dict=True,
+                data_types=[
+                    self._pattern_map_type(group_patterns, [value_type], property_names, joins_patterns=True)
+                    for group_patterns, value_type in groups.values()
+                ]
             )
+        return self._pattern_map_type(patterns, value_types, property_names, joins_patterns=True)
 
-        groups: dict[str, tuple[list[str], DataType]] = {}
-        for pattern, value_type in pattern_value_pairs:
-            key = value_type.type_hint
-            if key not in groups:
-                groups[key] = ([], value_type)
-            groups[key][0].append(pattern)
-
-        if len(groups) > 1 and not self._output_model_context.decodes_value_unions:
-            return self._pattern_map_type(
-                [pattern for pattern, _ in pattern_value_pairs],
-                [value_type for _, value_type in pattern_value_pairs],
-                property_names,
-                joins_patterns=True,
-            )
-
-        data_types: list[DataType] = []
-        for patterns, value_type in groups.values():
-            merged_pattern = patterns[0] if len(patterns) == 1 else "|".join(patterns)
-            data_types.append(
-                self.data_type(
-                    data_types=[value_type],
-                    is_dict=True,
-                    dict_key=self._pattern_map_key_type(property_names, merged_pattern),
-                )
-            )
-
-        return self.data_type(data_types=data_types)
-
-    def _parse_pattern_map(
-        self,
-        name: str,
-        pattern_properties: dict[str, JsonSchemaObject | bool],
-        path: list[str],
-        property_names: JsonSchemaObject | bool | None,  # ruff: ignore[boolean-type-hint-positional-argument]
-        other_keys: JsonSchemaObject | None,
-    ) -> DataType:
-        """Build the dict of ``parse_pattern_properties``, admitting the keys that ``other_keys`` types.
-
-        Where ``other_keys`` types the keys that match no pattern, the dict's keys are those of ``property_names`` and
-        its value joins the value of ``other_keys`` last.
-        """
+    def _parse_pattern_values(
+        self, name: str, pattern_properties: dict[str, JsonSchemaObject | bool], path: list[str]
+    ) -> tuple[list[str], list[DataType]]:
+        """Return the patterns that admit a key and their value types, parsed where each pattern declares its value."""
         patterns: list[str] = []
         value_types: list[DataType] = []
         for i, (pattern, schema) in enumerate(pattern_properties.items()):
@@ -13649,17 +13325,30 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 if schema is True
                 else self.parse_item(name, schema, get_special_path(f"patternProperties/{i}", path))
             )
-        if other_keys is not None:
-            value_types.append(
-                self._parse_additional_properties_value(
-                    name,
-                    get_special_path("additionalProperties", path),
-                    other_keys,
-                    additional_properties=other_keys,
-                )
-            )
+        return patterns, value_types
 
-        return self._pattern_map_type(patterns, value_types, property_names, joins_patterns=other_keys is None)
+    def _parse_pattern_map(
+        self,
+        name: str,
+        pattern_properties: dict[str, JsonSchemaObject | bool],
+        path: list[str],
+        property_names: JsonSchemaObject | bool | None,  # ruff: ignore[boolean-type-hint-positional-argument]
+        other_keys: JsonSchemaObject,
+    ) -> DataType:
+        """Build the dict of a pattern map whose additionalProperties ``other_keys`` types the keys no pattern matches.
+
+        The dict's keys are those of ``property_names`` and its value joins the value of ``other_keys`` last.
+        """
+        patterns, value_types = self._parse_pattern_values(name, pattern_properties, path)
+        value_types.append(
+            self._parse_additional_properties_value(
+                name,
+                get_special_path("additionalProperties", path),
+                other_keys,
+                additional_properties=other_keys,
+            )
+        )
+        return self._pattern_map_type(patterns, value_types, property_names, joins_patterns=False)
 
     def _pattern_map_type(
         self,
@@ -13671,8 +13360,8 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> DataType:
         """Return the one dict of a pattern map whose value is the union of ``value_types``.
 
-        Its keys match one of ``patterns`` where ``joins_patterns``, else those of ``property_names``. It is also the
-        map of 0.86.0 patternProperties whose union of dicts the output cannot decode.
+        Its keys match one of ``patterns`` where ``joins_patterns``, else those of ``property_names``. Each dict of row
+        ``legacy-map-union-of-dicts`` is one too.
         """
         if not value_types:
             return self.data_type(
@@ -13687,18 +13376,20 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         return self.data_type(
             data_types=value_types,
             is_dict=True,
-            dict_key=self._pattern_map_key_type(property_names, "|".join(patterns) if joins_patterns else None),
+            dict_key=self._object_map_key_type(
+                property_names, "pattern-map", pattern="|".join(patterns) if joins_patterns else None
+            ),
         )
 
     def _other_keys_schema(self, obj: JsonSchemaObject) -> JsonSchemaObject | None:
         """Return the additionalProperties schema that types the keys no pattern of the pattern map of ``obj`` matches.
 
-        Only the builder of ``--use-single-dict-for-object-maps`` types them, only with a schema that asserts
-        something, and only where the output decodes a union of any value types (msgspec keeps its earlier type until
-        its union fallbacks are decided); otherwise the map admits the keys of its patterns only.
+        Only a schema that asserts something types them, only where the output decodes a union of any value types
+        (msgspec keeps its earlier type until its union fallbacks are decided), and not where row
+        ``legacy-map-pattern-keys-only`` is kept; otherwise the map admits the keys of its patterns only.
         """
         if (
-            self.use_single_dict_for_object_maps
+            "legacy-map-pattern-keys-only" not in self._legacy_object_maps
             and isinstance(additional_properties := obj.additionalProperties, JsonSchemaObject)
             and self._output_model_context.decodes_value_unions
             and _schema_assertions(additional_properties)
@@ -13706,16 +13397,41 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return additional_properties
         return None
 
-    def _pattern_map_key_type(
+    def _object_map_key_type(
         self,
         property_names: JsonSchemaObject | bool | None,  # ruff: ignore[boolean-type-hint-positional-argument]
-        pattern: str | None,
+        row: Literal["pattern-map", "property-names-map", "extra-field"],
+        *,
+        pattern: str | None = None,
+        name: str = "",
+        path: Sequence[str] = (),
     ) -> DataType | None:
-        """Return the key type of a pattern map: propertyNames read as a string schema, its ``$ref`` resolved.
+        """Return the key type of the dict of an object map, ``None`` for ``str`` keys.
 
-        ``pattern`` joins the key when the map admits only the keys of its patterns. ``None`` means ``str`` keys.
+        Every row reads the key schema it keeps through ``_parse_property_name_key_schema``; the rows differ by the
+        position of the dict:
+
+        - ``pattern-map``, the dict of patternProperties and the root dict a pattern validator checks: propertyNames
+          read as a string schema, its ``$ref`` resolved; ``pattern`` joins it when the map admits only the keys of its
+          patterns, and gives ``str`` keys of that pattern without a propertyNames schema.
+        - ``property-names-map``, the dict of ``parse_property_names``: a ``$ref`` merged with its siblings; an anyOf,
+          oneOf or allOf parsed as a type under ``name`` and ``path`` (``_parse_combined_property_names_key_type``).
+        - ``extra-field``, the typed extra field of a model: only a direct schema that constrains the keys.
         """
-        if not isinstance(property_names, JsonSchemaObject):
+        if row == "pattern-map" and isinstance(property_names, JsonSchemaObject):
+            schema = property_names.model_copy(deep=True)
+            schema.type = "string"
+            if pattern is not None:
+                schema.pattern = (
+                    pattern
+                    if schema.pattern is None
+                    else self._conjoined_pattern(
+                        (schema.pattern, pattern), str(property_names.schema_location or "propertyNames")
+                    )
+                )
+            if schema.ref:
+                schema = self._merge_ref_with_schema(schema)
+        elif row == "pattern-map":
             return (
                 None
                 if pattern is None
@@ -13726,22 +13442,42 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     target_pydantic_version=self.target_pydantic_version,
                 )
             )
-        merged_property_names = property_names.model_copy(deep=True)
-        merged_property_names.type = "string"
-        if pattern is not None:
-            merged_property_names.pattern = (
-                pattern
-                if merged_property_names.pattern is None
-                else self._conjoined_pattern(
-                    (merged_property_names.pattern, pattern),
-                    str(property_names.schema_location or "propertyNames"),
-                )
-            )
-        if merged_property_names.ref:
-            merged_property_names = self._merge_ref_with_schema(merged_property_names)
-        return self._parse_property_name_key_schema(merged_property_names)
+        elif row == "property-names-map":
+            schema = cast("JsonSchemaObject | bool", property_names)
+            if isinstance(schema, JsonSchemaObject) and _merges_ref_siblings(schema):
+                schema = self._merge_ref_with_schema(schema)
+            if isinstance(schema, JsonSchemaObject) and (schema.anyOf or schema.oneOf or schema.allOf):
+                return self._parse_combined_property_names_key_type(name, schema, [*path])
+        elif self._is_direct_key_schema(property_names):
+            schema = cast("JsonSchemaObject", property_names)
+        else:
+            return None
+        return self._parse_property_name_key_schema(schema)
 
-    def _parse_object_map(  # noqa: PLR0911
+    def _is_direct_key_schema(
+        self,
+        property_names: JsonSchemaObject | bool | None,  # ruff: ignore[boolean-type-hint-positional-argument]
+    ) -> bool:
+        """Return whether propertyNames is a schema that constrains keys without a ``$ref`` or a combined schema."""
+        match property_names:
+            case JsonSchemaObject(ref=None, anyOf=[], oneOf=[], allOf=[]) as property_names if (
+                not type(self)._property_names_forbids_all_keys(property_names)  # noqa: SLF001
+                and (
+                    (
+                        bool(x_python_type := property_names.extras.get("x-python-type"))
+                        and (isinstance(x_python_type, str) or self._get_x_python_type(property_names) is not None)
+                    )
+                    or property_names.pattern is not None
+                    or property_names.minLength is not None
+                    or property_names.maxLength is not None
+                    or any(isinstance(value, str) for value in property_names.enum)
+                    or isinstance(property_names.extras.get("const"), str)
+                )
+            ):
+                return True
+        return False
+
+    def _parse_object_map(
         self,
         name: str,
         obj: JsonSchemaObject,
@@ -13759,31 +13495,17 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         ``--strict-nullable``, so its property counts stay on it; other types of the type array join it in a union.
         The members of the dict are parsed under ``object_path``, the other types under ``path``.
 
-        Without ``--use-single-dict-for-object-maps`` the map is built as 0.86.0 built it: patternProperties give a
-        union of dicts, one per value type (``parse_pattern_properties``), else propertyNames and additionalProperties
-        one dict; the null and the other types of its type array are left to the field. The values typed under
-        ``--use-typed-nullable-map-values`` make one dict, optional where its type array lists null, and the union
-        with the other types of its type array.
+        Row ``legacy-map-union-of-dicts`` keeps the patternProperties of 0.86.0, a union of dicts, one per value type
+        (``parse_pattern_properties``), with no inexact-map warning. Row ``legacy-map-null-left-to-field`` leaves the
+        null and the other types of its type array to the field; only the values typed under
+        ``--use-typed-nullable-map-values`` make one dict, optional where its type array lists null, and the union with
+        the other types of its type array.
         """
-        if not self.use_single_dict_for_object_maps:
-            if pattern_properties := obj.patternProperties:
-                return self.parse_pattern_properties(
-                    name, pattern_properties, object_path, property_names=obj.propertyNames
-                )
-            if obj.propertyNames is not None:
-                return self.parse_property_names(
-                    name, obj.propertyNames, obj.additionalProperties, object_path, parent_obj=obj
-                )
-            if typed_values is not None:
-                map_type = self._parse_nullable_map(name, obj, object_path, typed_values)
-                if (union := self._object_map_type_union(name, obj, path, map_type)) is not None:
-                    return union
-                return self.data_type(data_types=[map_type], is_optional=obj.type_has_null)
-            if isinstance(obj.additionalProperties, JsonSchemaObject):
-                return self._parse_additional_properties_map(name, obj, object_path, obj.additionalProperties)
-            return self.data_type_manager.get_data_type(Types.object)
+        rows = self._legacy_object_maps
+        typed = False
         if pattern_properties := obj.patternProperties:
-            self._warn_inexact_object_map(name, obj, pattern_properties)
+            if "legacy-map-union-of-dicts" not in rows:
+                self._warn_inexact_object_map(name, obj, pattern_properties)
             map_type = (
                 self.parse_pattern_properties(name, pattern_properties, object_path, property_names=obj.propertyNames)
                 if (other_keys := self._other_keys_schema(obj)) is None
@@ -13794,13 +13516,19 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                 name, obj.propertyNames, obj.additionalProperties, object_path, parent_obj=obj
             )
         elif typed_values is not None:
+            typed = True
             map_type = self._parse_nullable_map(name, obj, object_path, typed_values)
         elif isinstance(obj.additionalProperties, JsonSchemaObject):
             map_type = self._parse_additional_properties_map(name, obj, object_path, obj.additionalProperties)
         else:
             map_type = self.data_type_manager.get_data_type(Types.object)
+        null_left_to_field = "legacy-map-null-left-to-field" in rows
+        if null_left_to_field and not typed:
+            return map_type
         if (union := self._object_map_type_union(name, obj, path, map_type)) is not None:
             return union
+        if null_left_to_field:
+            return self.data_type(data_types=[map_type], is_optional=obj.type_has_null)
         return _with_null(map_type) if self._object_map_admits_null(obj) else map_type
 
     def _object_map_type_union(
@@ -13950,90 +13678,52 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             return None, False
         return build_union(self.data_type, data_types), False
 
-    def _parse_property_names_key_type(
-        self,
-        name: str,
-        property_names: JsonSchemaObject | bool,  # noqa: FBT001
-        path: list[str],
+    def _parse_combined_property_names_key_type(
+        self, name: str, property_names: JsonSchemaObject, path: list[str]
     ) -> DataType:
-        """Build a propertyNames key type, parsing compound schemas only when needed."""
+        """Build the key type of an anyOf, oneOf or allOf propertyNames schema, parsing it only when needed."""
+        if property_names.anyOf:
+            key_type, _ = self._parse_string_property_name_union(property_names)
+            if key_type is not None:
+                return key_type
+        key_type = self.parse_item(name, property_names, get_special_path("propertyNames/key", path))
+        if property_names.anyOf and not any(item.reference for item in key_type.all_data_types):
+            string_key_type, _ = self._parse_string_property_name_union(property_names, discard_nonstring=True)
+            if string_key_type is not None:
+                key_type = string_key_type
         if (
-            isinstance(property_names, JsonSchemaObject)
-            and property_names.has_ref_with_schema_keywords
-            and not property_names.is_ref_with_nullable_only
+            not property_names.allOf
+            or self.field_constraints
+            or self.collapse_root_models
+            or (reference := key_type.reference) is None
+            or not isinstance(root_model := reference.source, self.data_model_root_type)
         ):
-            property_names = self._merge_ref_with_schema(property_names)
-
-        match property_names:
-            case JsonSchemaObject() if property_names.anyOf or property_names.oneOf or property_names.allOf:
-                if property_names.anyOf:
-                    key_type, _ = self._parse_string_property_name_union(property_names)
-                    if key_type is not None:
-                        return key_type
-                key_type = self.parse_item(name, property_names, get_special_path("propertyNames/key", path))
-                if property_names.anyOf and not any(item.reference for item in key_type.all_data_types):
-                    string_key_type, _ = self._parse_string_property_name_union(property_names, discard_nonstring=True)
-                    if string_key_type is not None:
-                        key_type = string_key_type
-                if (
-                    not property_names.allOf
-                    or self.field_constraints
-                    or self.collapse_root_models
-                    or (reference := key_type.reference) is None
-                    or not isinstance(root_model := reference.source, self.data_model_root_type)
-                ):
-                    return key_type
-                if (
-                    self.custom_template_dir
-                    or self.enable_faux_immutability
-                    or self.validators
-                    or (self.dataclass_arguments and self.dataclass_arguments.get("frozen"))
-                ):
-                    return key_type
-                if (
-                    not root_model.IS_ROOT_MODEL
-                    or root_model.decorators
-                    or root_model.has_model_config
-                    or property_names.model_fields_set - {"allOf", "title", "description"}
-                    or any(
-                        not isinstance(item, JsonSchemaObject)
-                        or item.type != "string"
-                        or item.model_fields_set - {"type", "pattern", "minLength", "maxLength"}
-                        for item in property_names.allOf
-                    )
-                ):
-                    return key_type
-                schemas = cast("list[JsonSchemaObject]", property_names.allOf)
-                merged = JsonSchemaParser._first_typed_schema_dict(schemas)
-                self._merge_schema_constraints(
-                    merged, schemas, intersect=self.allof_merge_mode != AllOfMergeMode.NoMerge
-                )
-                key_type.unregister_reference()
-                return self._parse_property_name_key_schema(self._schema_object(merged))
-        return self._parse_property_name_key_schema(property_names)
-
-    def _parse_simple_property_name_key_type(
-        self,
-        property_names: JsonSchemaObject | bool | None,  # noqa: FBT001
-    ) -> DataType | None:
-        """Parse a direct propertyNames schema without resolving references or combinators."""
-        match property_names:
-            case JsonSchemaObject(ref=None, anyOf=[], oneOf=[], allOf=[]) as property_names if (
-                not type(self)._property_names_forbids_all_keys(property_names)  # noqa: SLF001
-                and (
-                    (
-                        bool(x_python_type := property_names.extras.get("x-python-type"))
-                        and (isinstance(x_python_type, str) or self._get_x_python_type(property_names) is not None)
-                    )
-                    or property_names.pattern is not None
-                    or property_names.minLength is not None
-                    or property_names.maxLength is not None
-                    or any(isinstance(value, str) for value in property_names.enum)
-                    or isinstance(property_names.extras.get("const"), str)
-                )
-            ):
-                return self._parse_property_name_key_schema(property_names)
-        return None
+            return key_type
+        if (
+            self.custom_template_dir
+            or self.enable_faux_immutability
+            or self.validators
+            or (self.dataclass_arguments and self.dataclass_arguments.get("frozen"))
+        ):
+            return key_type
+        if (
+            not root_model.IS_ROOT_MODEL
+            or root_model.decorators
+            or root_model.has_model_config
+            or property_names.model_fields_set - {"allOf", "title", "description"}
+            or any(
+                not isinstance(item, JsonSchemaObject)
+                or item.type != "string"
+                or item.model_fields_set - {"type", "pattern", "minLength", "maxLength"}
+                for item in property_names.allOf
+            )
+        ):
+            return key_type
+        schemas = cast("list[JsonSchemaObject]", property_names.allOf)
+        merged = JsonSchemaParser._first_typed_schema_dict(schemas)
+        self._merge_schema_constraints(merged, schemas, intersect=self.allof_merge_mode != AllOfMergeMode.NoMerge)
+        key_type.unregister_reference()
+        return self._parse_property_name_key_schema(self._schema_object(merged))
 
     def parse_property_names(
         self,
@@ -14066,7 +13756,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         else:
             value_type = self.data_type_manager.get_data_type(Types.any)
 
-        key_type = self._parse_property_names_key_type(name, property_names, path)
+        key_type = self._object_map_key_type(property_names, "property-names-map", name=name, path=path)
 
         dict_flags: dict[str, bool] = {"is_dict": True}
         if parent_obj:  # pragma: no branch
@@ -14179,11 +13869,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             if self._should_create_type_alias_for_title(item, name):
                 return self.parse_root_type(name, item, path)
             merged_scope = None
-            if (
-                item.has_ref_with_schema_keywords
-                and not item.is_ref_with_nullable_only
-                and (merged_item := self._merge_ref_with_schema(item)) is not item
-            ):
+            if _merges_ref_siblings(item) and (merged_item := self._merge_ref_with_schema(item)) is not item:
                 item, merged_scope = self._read_false_all_of_values(merged_item), self._subschema_scope(merged_item)
             with nullcontext() if merged_scope is None else merged_scope:
                 choice = self._FIELD_TABLE.choose(
@@ -14398,13 +14084,21 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _build_field_data_type(self, site: _Site) -> DataType:
         return self.get_data_type(site.obj)
 
+    def _types_site_model(self, site: _Site) -> Iterator[TypedChild[JsonSchemaObject]]:  # noqa: PLR6301
+        """Type the model built from the schema of a field site, unless its row declares otherwise."""
+        yield TypedChild("model", site.obj)
+
+    def _types_nothing(self, site: _Site) -> Iterator[TypedChild[JsonSchemaObject]]:  # noqa: ARG002, PLR6301
+        """Type no child and name no model: the site is typed by its customTypePath."""
+        yield from ()
+
     _FIELD_TABLE: ClassVar[DispatchTable[JsonSchemaParser, JsonSchemaObject, DataType]] = DispatchTable(
         (
             Row("constrained-item", _types_item_by_root_model, _parse_constrained_item),
             Row("dynamic-ref", _field_dynamic_ref_applies, _build_field_dynamic_ref),
             Row("ref-nullable-only", _field_ref_nullable_only_applies, _parse_ref_nullable_only_item),
             Row("ref", _field_ref_applies, _build_field_ref),
-            Row("custom-type", _field_custom_type_applies, _parse_custom_type_item),
+            Row("custom-type", _field_custom_type_applies, _parse_custom_type_item, typed=_types_nothing),
             Row(
                 "constrained-type-union",
                 _field_constrained_type_union_applies,
@@ -14434,6 +14128,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             Row("typed-nullable-map", _field_typed_nullable_map_applies, _parse_typed_nullable_map_item),
         ),
         Default("data-type", _build_field_data_type),
+        typed=_types_site_model,
     )
 
     def _join_object_type_array(self, site: _Site, model_type: DataType) -> DataType:
@@ -14805,11 +14500,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             not self._should_localize_array_union_constraints(obj, non_array_types)
             and direct_data_types
             and any(
-                _keyed_answer(
-                    "array self reference",
-                    data_type.reference is reference,
-                    lambda data_type=data_type: data_type.reference == reference,
-                )
+                data_type.reference is reference
                 for data_type in direct_data_types[0].all_data_types
                 if data_type.reference
             )
@@ -14937,8 +14628,13 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
                     data_type = data_types[0]
         elif obj.allOf:
             value_obj = obj
-            if (inline_value := self._all_of_value_schema(obj)) is not None:
-                value_obj = inline_value
+            parts: list[JsonSchemaObject] = []
+            if "legacy-all-of-site-form" not in self._legacy_intersection and self._collect_all_of_value_parts(
+                obj, parts
+            ):
+                value_obj = inline_value = self._intersect_all_of_value_parts(
+                    parts, self._all_of_value_row(obj), str(obj.schema_location or "allOf")
+                )
                 if not (inline_value.enum or "const" in inline_value.extras):
                     constraint_obj = inline_value
             elif (self.field_constraints or preserve_constraints) and (
@@ -15125,10 +14821,12 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     def _joins_other_types(self, obj: JsonSchemaObject) -> bool:
         """Return whether the model of an object joins the other types of its type array in a union.
 
-        An object without properties, built as a model for its schema validators, joins them only under
-        ``--check-pattern-maps-strictly``, as an object map does.
+        An object without properties, built as a model for its schema validators, joins them as an object map does,
+        unless row ``legacy-validated-pattern-maps`` is kept.
         """
-        return obj.has_multiple_types and (bool(obj.properties) or self.check_pattern_maps_strictly)
+        return obj.has_multiple_types and (
+            bool(obj.properties) or "legacy-validated-pattern-maps" not in self._legacy_object_maps
+        )
 
     def _parse_root_type_site(self, site: _Site) -> DataType:
         """Parse the schema of a site into a root model."""
@@ -15296,7 +14994,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         nothing. The schema must hold a const.
         """
         const = obj.extras["const"]
-        equal = [value for value in obj.enum if _json_literal_values_equal(const, value)]
+        equal = intersect_enum_values(obj.enum, [const])
         return next(((value,) for value in (const, *equal) if equal and self._const_type_is_exact(value)), ())
 
     def _definition_enum(self, obj: JsonSchemaObject) -> JsonSchemaObject:
@@ -15899,106 +15597,39 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         with scope:
             self._walk_schema_objects(obj, path, callback)
 
-    def _walk_schema_objects(  # noqa: PLR0912
+    def _walk_schema_objects(
         self,
         obj: JsonSchemaObject,
         path: list[str],
         callback: Callable[[JsonSchemaObject, list[str]], None],
     ) -> None:
-        """Apply callback to a schema object and traverse its child schemas."""
+        """Apply callback to a schema object and traverse its child schemas at ``REF_PRE_PASS_POSITIONS``."""
         callback(obj, path)
         if (
             type(self) is JsonSchemaParser
             and type(obj) is JsonSchemaObject
-            and obj.model_fields_set.isdisjoint(_SCHEMA_OBJECT_CHILD_FIELDS)
+            and obj.model_fields_set.isdisjoint(REF_PRE_PASS_FIELDS)
             and (not self.generate_schema_validators or obj.extras.keys().isdisjoint(_CONDITIONAL_SCHEMA_KEYWORDS))
         ):
             return
-        match obj.items:
-            case JsonSchemaObject() as item:
-                self._traverse_schema_objects(item, [*path, "items"], callback)
-            case list() as items:
-                for index, item in enumerate(items):
-                    if isinstance(item, JsonSchemaObject):
-                        self._traverse_schema_objects(
-                            item,
-                            [*path, "items", str(index)],
-                            callback,
-                        )
-        if obj.prefixItems:
-            for index, item in enumerate(obj.prefixItems):
-                if isinstance(item, JsonSchemaObject):
-                    self._traverse_schema_objects(
-                        item,
-                        [*path, "prefixItems", str(index)],
-                        callback,
-                    )
-        if isinstance(obj.additionalProperties, JsonSchemaObject):
-            self._traverse_schema_objects(
-                obj.additionalProperties,
-                [*path, "additionalProperties"],
-                callback,
-            )
-        if isinstance(obj.unevaluatedProperties, JsonSchemaObject):
-            self._traverse_schema_objects(
-                obj.unevaluatedProperties,
-                [*path, "unevaluatedProperties"],
-                callback,
-            )
-        if isinstance(obj.unevaluatedItems, JsonSchemaObject):
-            self._traverse_schema_objects(
-                obj.unevaluatedItems,
-                [*path, "unevaluatedItems"],
-                callback,
-            )
-        if obj.patternProperties:
-            for key, value in obj.patternProperties.items():
-                if isinstance(value, JsonSchemaObject):
-                    self._traverse_schema_objects(
-                        value,
-                        [*path, "patternProperties", key],
-                        callback,
-                    )
-        if isinstance(obj.propertyNames, JsonSchemaObject):
-            self._traverse_schema_objects(
-                obj.propertyNames,
-                [*path, "propertyNames"],
-                callback,
-            )
-        for index, item in enumerate(obj.anyOf):
-            if isinstance(item, JsonSchemaObject):
-                self._traverse_schema_objects(
-                    item,
-                    [*path, "anyOf", str(index)],
-                    callback,
-                )
-        for index, item in enumerate(obj.allOf):
-            if isinstance(item, JsonSchemaObject):
-                self._traverse_schema_objects(
-                    item,
-                    [*path, "allOf", str(index)],
-                    callback,
-                )
-        for index, item in enumerate(obj.oneOf):
-            if isinstance(item, JsonSchemaObject):
-                self._traverse_schema_objects(item, [*path, "oneOf", str(index)], callback)
-        if self.generate_schema_validators:
-            for keyword in ("if", "then", "else"):
-                item = self._get_conditional_schema(obj, keyword)
-                if isinstance(item, JsonSchemaObject):
-                    self._traverse_schema_objects(
-                        item,
-                        [*path, keyword],
-                        callback,
-                    )
-        if obj.properties:
-            for key, value in obj.properties.items():
-                if isinstance(value, JsonSchemaObject):
-                    self._traverse_schema_objects(
-                        value,
-                        [*path, "properties", key],
-                        callback,
-                    )
+        for keyword in REF_PRE_PASS_POSITIONS:
+            if keyword in _CONDITIONAL_SCHEMA_KEYWORDS:
+                if not self.generate_schema_validators:
+                    continue
+                value = self._get_conditional_schema(obj, keyword)
+            else:
+                value = getattr(obj, keyword)
+            match value:
+                case JsonSchemaObject():
+                    self._traverse_schema_objects(value, [*path, keyword], callback)
+                case list():
+                    for index, item in enumerate(value):
+                        if isinstance(item, JsonSchemaObject):
+                            self._traverse_schema_objects(item, [*path, keyword, str(index)], callback)
+                case dict():
+                    for key, item in value.items():
+                        if isinstance(item, JsonSchemaObject):
+                            self._traverse_schema_objects(item, [*path, keyword, key], callback)
 
     def _resolve_ref_callback(self, obj: JsonSchemaObject, path: list[str]) -> None:
         """Resolve $ref in schema object, and the targets of $dynamicRef and $recursiveRef as their data types do."""
@@ -16066,24 +15697,22 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
     ) -> Iterator[tuple[tuple[str | int, ...], dict[str, Any]]]:
         """Visit schema-valued keywords without inspecting examples, defaults or extensions."""
         for keyword, value in schema.items():
-            if keyword in {"$defs", "definitions"} and isinstance(value, dict):
+            if keyword in DEFINITION_KEYS and isinstance(value, dict):
                 for _name, child, path in self._iter_schema_definition_entries(value, [keyword]):
                     if isinstance(child, dict):
                         yield tuple(path), child
-            elif keyword in _JSON_SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
-                for name, child in value.items():
-                    if isinstance(child, dict):
-                        yield (keyword, str(name)), child
-            elif (
-                keyword in _JSON_SCHEMA_SEQUENCE_KEYWORDS or keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
-            ) and isinstance(value, list):
-                for index, sequence_child in enumerate(value):
-                    if isinstance(sequence_child, dict):
-                        yield (keyword, index), cast("dict[str, Any]", sequence_child)
-            elif (
-                keyword in _JSON_SCHEMA_SINGLE_KEYWORDS or keyword in _JSON_SCHEMA_SINGLE_OR_SEQUENCE_KEYWORDS
-            ) and isinstance(value, dict):
-                yield (keyword,), value
+                continue
+            match SCHEMA_SHAPES.get(keyword), value:
+                case "map", dict():
+                    for name, child in value.items():
+                        if isinstance(child, dict):
+                            yield (keyword, str(name)), child
+                case "sequence" | "single-or-sequence", list():
+                    for index, sequence_child in enumerate(value):
+                        if isinstance(sequence_child, dict):
+                            yield (keyword, index), cast("dict[str, Any]", sequence_child)
+                case "single" | "single-or-sequence", dict():
+                    yield (keyword,), value
 
     def _schema_resource_identifier(
         self, schema: dict[str, Any], id_field: str | None, *, is_root: bool
@@ -16962,6 +16591,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
             Row("enum", _definition_enum_applies, _then_parse_refs(_build_definition_enum)),
         ),
         Default("root-type", _then_parse_refs(_parse_root_type_site)),
+        typed=_typed_model_children,
     )
 
     def _get_context_source_path_parts(self) -> Iterator[tuple[Source, list[str]]]:

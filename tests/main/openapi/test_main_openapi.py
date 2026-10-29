@@ -3698,8 +3698,7 @@ def test_main_openapi_strip_default_none_nullable_reference(output_model_type: s
     """Keep the None default of a field naming a nullable model only where the field writes no ``Field()``.
 
     ``Field()`` decides from the type's None as written before render preparation, which leaves out the None the
-    nullable model gives (row ``legacy-strip-keeps-written-null-only``): ``n_1`` and ``n2`` write ``Field()`` without
-    it, while ``n`` keeps ``= None``.
+    nullable model gives: ``n_1`` and ``n2`` write ``Field()`` without it, while ``n`` keeps ``= None``.
     """
     run_main_and_assert(
         input_path=OPEN_API_DATA_PATH / "strip_default_none_nullable_reference.yaml",
@@ -10217,22 +10216,14 @@ def test_main_openapi_all_of_with_relative_ref(output_file: Path) -> None:
     )
 
 
-def test_main_openapi_keep_model_order_same_short_name_in_another_module(
-    monkeypatch: pytest.MonkeyPatch, output_dir: Path, tmp_path: Path
-) -> None:
-    """Keep the model order that a same-named model of another module imported as a module gives.
-
-    The model graph check reports that the dependencies by model key differ (`report:<path>` appends one JSON line).
-    """
-    report_path = tmp_path / "checks.jsonl"
-    monkeypatch.setenv("DATAMODEL_CODE_GENERATOR_CHECK_MODEL_GRAPH", f"report:{report_path}")
+def test_main_openapi_keep_model_order_same_short_name_in_another_module(output_dir: Path) -> None:
+    """Keep the model order that a same-named model of another module imported as a module gives."""
     run_main_and_assert(
         input_path=OPEN_API_DATA_PATH / "keep_model_order_same_short_name.yaml",
         output_path=output_dir,
         input_file_type="openapi",
         extra_args=["--keep-model-order", "--disable-future-imports", "--disable-timestamp"],
     )
-    assert_output("\n".join(dict.fromkeys(report_path.read_text(encoding="utf-8").splitlines())) + "\n", name="report")
 
 
 @LEGACY_BLACK_SKIP

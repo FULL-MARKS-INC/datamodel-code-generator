@@ -9,16 +9,15 @@ import keyword
 from ast import literal_eval
 from fractions import Fraction
 from functools import wraps
-from math import ceil, floor, isfinite
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple, Optional, TypeVar, cast
+from math import ceil, floor
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Optional, TypeVar, cast
 
 from typing_extensions import Sentinel, final, override
 
 from datamodel_code_generator import Error
 from datamodel_code_generator import _constraint_applicability as _applicability
 from datamodel_code_generator._records import record
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, walk_graph
 from datamodel_code_generator._target_unicode import is_identifier
 from datamodel_code_generator.imports import IMPORT_UNION, Import
 from datamodel_code_generator.model import DataModel, DataModelFieldBase, _rebuild_model_with_datamodel_namespace
@@ -88,7 +87,7 @@ from datamodel_code_generator.types import (
     build_union,
     chain_as_tuple,
     merge_normalized_constraint,
-    normalize_integer_constraint,
+    strict_number_constraint,
     union_members,
 )
 
@@ -145,17 +144,6 @@ def _admits_integers_of(constraints: tuple[tuple[str, Any], ...], other: tuple[t
     )
 
 
-def _is_non_finite(value: float) -> bool:
-    """Return whether a number has no finite float: an infinity, NaN, or an int beyond the float range.
-
-    msgspec.Meta takes finite numbers only: an int beyond the float range fails when the module is imported.
-    """
-    try:
-        return not isfinite(value)
-    except OverflowError:
-        return True
-
-
 def _is_exact_float_divisor(value: Any) -> bool:
     """Return whether a float represents a divisor exactly as a dyadic rational, so msgspec checks multiples exactly.
 
@@ -199,15 +187,7 @@ _LITERAL_DECIDED = RuleId("D2.msgspec.literal-decided")
 """The values of the field's ``Literal`` decide the constraint (``_applicability.literal_check``)."""
 _INEXACT = RuleId("D2.msgspec.inexact-float-divisor")
 _INT64_LIMIT = RuleId("D2.msgspec.int64-limit")
-"""msgspec takes the number constraints of an int only within the 64-bit range (``_INT_META_LIMITS``)."""
-_INT_META_LIMITS: Final = MappingProxyType({
-    "ge": (-(2**63), 2**63 - 1),
-    "le": (-(2**63), 2**63 - 1),
-    "gt": (-(2**63), 2**63 - 2),
-    "lt": (-(2**63) + 1, 2**63 - 1),
-    "multiple_of": (-(2**63), 2**63 - 1),
-})
-"""The values msgspec.Meta takes on an int: 64-bit ones, a ``gt`` or ``lt`` whose ``ge`` or ``le`` is one too."""
+"""msgspec takes the number constraints of an int only within the 64-bit range (``MSGSPEC_OUTPUT.int_values``)."""
 _NONE_VALUE = Why(RuleId("D11.msgspec.none-unset"))
 _NEEDS_ANNOTATED = Why(RuleId("D11.msgspec.meta-needs-annotated"), option="--use-annotated")
 
@@ -238,15 +218,6 @@ class _StructConversion:
         else:
             type_text = name
         return f"lambda: {self.method}({represent_python_value(self.default)},  type={type_text})"
-
-
-def _beyond_int_limits(keyword: str, value: object) -> bool:
-    """Return whether msgspec.Meta refuses a number constraint of an int: one beyond the 64-bit range."""
-    return (
-        isinstance(value, int)
-        and (limits := _INT_META_LIMITS.get(keyword)) is not None
-        and not limits[0] <= value <= limits[1]
-    )
 
 
 def _meta_call_text(call: CallPlan) -> str:
@@ -500,7 +471,7 @@ class Struct(DataModel):
         model key.
         """
         pending = [(view.layout_model(base), False) for base in bases]
-        keys = _ModelKeys("struct layout")
+        keys = _ModelKeys()
         visited: dict[ModelKey, int] = {}
         owner_depths: dict[ModelKey, int] = {}
         field_depths: dict[str | None, int] = {}
@@ -698,17 +669,7 @@ class Struct(DataModel):
                 options[key] = walk.node_of[key]._own_tag_options([  # noqa: SLF001
                     options[base] for base in graph.ordered_targets(key, EdgeKind.BASE) if base not in component
                 ])
-        return graph_answer(
-            GraphSnapshot.STRUCT_TAGS,
-            options[walk.starts[0]],
-            lambda: (
-                options[walk.starts[0]] if graph.acyclic_order((EdgeKind.BASE,)) is None else self._walked_tag_options()
-            ),
-        )
-
-    def _walked_tag_options(self) -> tuple[Any, Any]:
-        """Return the tag and tag_field options of the struct by walking its generated bases."""
-        return self._own_tag_options([base._walked_tag_options() for base in _struct_bases(self)])  # noqa: SLF001
+        return options[walk.starts[0]]
 
     @property
     @override
@@ -813,7 +774,7 @@ class DataModelField(DataModelFieldBase):
         # 'unique_items', # not supported by msgspec
     }
     _PARSE_METHOD = "convert"
-    _COMPARE_EXPRESSIONS: ClassVar[set[str]] = {"gt", "ge", "lt", "le", "multiple_of"}
+    _COMPARE_EXPRESSIONS: ClassVar[set[str]] = set(_applicability.NUMBER_FIELD_KEYWORDS)
     constraints: Optional[Constraints] = None  # noqa: UP045
 
     @override
@@ -1035,25 +996,6 @@ class DataModelField(DataModelFieldBase):
     def _has_numeric_data_type(self, type_name: str) -> bool:
         """Return whether any field data type is the given numeric type."""
         return any(data_type.type == type_name for data_type in self.data_type.all_data_types)
-
-    def _get_strict_field_constraint(
-        self, constraint: str, value: Any, *, is_float_type: bool, is_int_type: bool
-    ) -> tuple[str, Any] | None:
-        """Return a constraint normalized for the field's numeric type.
-
-        Non-finite bounds are dropped because msgspec Meta only accepts finite values (``_is_non_finite``).
-        """
-        if value is None or constraint not in self._COMPARE_EXPRESSIONS:
-            return constraint, value
-        if _is_non_finite(value):
-            return None
-        if is_float_type:
-            return constraint, float(value)
-        if is_int_type:
-            return normalize_integer_constraint(constraint, value)
-        if isinstance(value, float) and value.is_integer():
-            return constraint, int(value)
-        return constraint, value
 
     @property
     @override
@@ -1410,14 +1352,18 @@ class DataModelField(DataModelFieldBase):
             if k not in self._META_FIELD_KEYS:
                 omitted.append(Omitted(item, v, "backend-cannot-express", Why(_CONSTRAINT, k)))
                 continue
-            normalized = self._get_strict_field_constraint(k, v, is_float_type=is_float_type, is_int_type=is_int_type)
-            if annotates_int and _beyond_int_limits(*(constraint := normalized or (k, v))):
+            normalized = strict_number_constraint(
+                _applicability.MSGSPEC_OUTPUT, k, v, is_float_type=is_float_type, is_int_type=is_int_type
+            )
+            if annotates_int and _applicability.int_constraint_beyond_values(
+                _applicability.MSGSPEC_OUTPUT, *(constraint := normalized or (k, v))
+            ):
                 omitted.append(
                     Omitted(item, constraint[1], "backend-cannot-express", Why(_INT64_LIMIT, constraint[0]), warns=True)
                 )
                 continue
             if normalized is None:
-                if _is_non_finite(v):
+                if _applicability.is_non_finite(v):
                     omitted.append(Omitted(item, v, "backend-cannot-express", Why(_NON_FINITE, k)))
                 else:
                     omitted.append(Omitted(item, v, "consumed-by-type", Why(_MULTIPLE_OF_ONE, k)))
