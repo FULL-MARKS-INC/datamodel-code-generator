@@ -36,6 +36,9 @@ ALLOWED = """
 [allow."other.py"."other_helper"]
 "sample.keyword-table" = { home = "sample", count = 1, audit = "X-8" }
 
+[allow."other.py"."read_keys"]
+"sample.read-key" = { home = "sample", count = 4, audit = "X-9" }
+
 [allow."adapter.py"."Adapter.read_again"]
 "sample.read-flag" = { home = "sample", count = 1, audit = "X-1" }
 """
@@ -84,6 +87,57 @@ def test_decision_home_function_scoped_paths_check_that_function() -> None:
     assert_output(_scan_report(scoped))
 
 
+def test_decision_home_planned_places_cover_hits_until_they_exist() -> None:
+    """A planned core covers its hits and need not exist; once it exists it must move to the core."""
+    later = """
+[homes.later]
+decision = "a decision whose core a later change creates"
+planned = ["future.py", "core.py:decide"]
+
+[homes.later.signatures.merge-function]
+kind = "function"
+pattern = "^_merge"
+paths = ["future.py", "other.py", "missing.py"]
+what = "defines a merge function"
+audit = "X-5"
+"""
+    assert_output(_scan_report(FIXTURE_CONFIG + later))
+
+
+def test_decision_home_key_signature_skips_assigned_and_deleted_keys() -> None:
+    """A key signature counts the keys a function reads, not the subscripts it assigns or deletes."""
+    keys_only = """
+[homes.keys]
+decision = "the keys of a raw document"
+core = ["core.py"]
+
+[homes.keys.signatures.read-key]
+kind = "key"
+keys = ["type", "items"]
+paths = ["other.py:read_keys"]
+what = "reads a key of a raw document"
+audit = "X-9"
+"""
+    assert_output(_scan_report(keys_only))
+
+
+def test_decision_home_signature_paths_outside_planned_places_must_exist() -> None:
+    """A signature path is exempt from the existence check only where it names a planned place or its file."""
+    misspelled = """
+[homes.later]
+decision = "a decision whose core a later change creates"
+planned = ["future.py", "other.py:later_core"]
+
+[homes.later.signatures.merge-function]
+kind = "function"
+pattern = "^_merge_nothing"
+paths = ["future.py:anything", "future.py", "other.py:later_core.inner", "other.py:later_cor", "core.py:decid"]
+what = "defines a merge function"
+audit = "X-5"
+"""
+    assert_output(_scan_report(misspelled))
+
+
 def test_decision_home_allowlist_reports_stale_entries() -> None:
     """Require an entry to go when its site was routed to the home, lowered or renamed."""
     stale = (
@@ -125,6 +179,7 @@ HOME = '[homes.a]\ndecision = "x"\ncore = ["a.py"]\n[homes.a.signatures.s]\n'
         HOME + 'kind = "name"\nnames = ["x"]\naudit = "X"\nctx = "no"\n',
         HOME + 'kind = "call"\naudit = "X"\npaths = "a"\n',
         HOME + 'kind = "number"\naudit = "X"\npowers = ["63"]\n',
+        HOME + 'kind = "key"\naudit = "X"\n',
         '[allow."a.py"."f"]\n"a.s" = 3\n',
     ],
     ids=[
@@ -134,6 +189,7 @@ HOME = '[homes.a]\ndecision = "x"\ncore = ["a.py"]\n[homes.a.signatures.s]\n'
         "unknown-context",
         "paths-not-a-list",
         "powers-not-integers",
+        "key-without-keys",
         "entry-not-a-table",
     ],
 )

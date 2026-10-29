@@ -40,3 +40,14 @@ def _merge_values(value):
 def other_helper(types):
     """Is not a merge function."""
     return {"a", "b", "c"} & set(types)
+
+
+def read_keys(schema, config):
+    """Read, write and delete keys of a raw object."""
+    first = schema["type"]
+    second = schema.get("items")
+    schema.pop("type", None)
+    schema.setdefault("items", [])
+    config["type"] = schema["other"]
+    del config["items"]
+    return first, second, schema.get(first), schema.get("other")
