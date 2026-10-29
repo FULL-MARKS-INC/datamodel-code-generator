@@ -156,7 +156,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.enums import DataclassArguments, TargetPydanticVersion
     from datamodel_code_generator.imports import Imports
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
-    from datamodel_code_generator.parser._model_shapes import ModelShapes, ShapeRow
+    from datamodel_code_generator.parser._model_shapes import ModelShapes, ReuseGroups, ShapeRow
     from datamodel_code_generator.parser._passes._shared import _ReuseOptimizationContext
     from datamodel_code_generator.parser._passes._state import (
         ModuleContextView,
@@ -372,8 +372,8 @@ class ReuseHost(RecursionFactsHost, Protocol):
         """The constraints that type overrides put on reuse."""
 
     @property
-    def _typed_map_value_reference_ids(self) -> set[int]:
-        """The ids of the references of typed map values."""
+    def _reuse_groups(self) -> ReuseGroups:
+        """The plan of which model of a group of duplicates stays canonical."""
 
     @property
     def collapse_reuse_models(self) -> bool:
@@ -1227,18 +1227,16 @@ def reuse_model(parser: ReuseHost, models: list[DataModel], require_update_actio
             and parser._is_root_model(model)  # noqa: SLF001
         )
     )
-    typed_map_values = parser._typed_map_value_reference_ids  # noqa: SLF001
+    groups = parser._reuse_groups  # noqa: SLF001
     canonical_models: dict[int, DataModel] = {}
     shapes = parser._model_shapes(REUSE_MODEL)  # noqa: SLF001
     for first_model, duplicate_model in shapes.iter_matching_duplicates(reuse_candidates, keyed=True):
-        cached_model = canonical_models.get(id(first_model), first_model)
-        model = duplicate_model
-        if id(cached_model.reference) in typed_map_values and id(model.reference) not in typed_map_values:
-            cached_model, model = model, cached_model
+        cached_model, model = groups.canonical_pair(canonical_models.get(id(first_model), first_model), duplicate_model)
+        if model is not duplicate_model:
             canonical_models[id(first_model)] = cached_model
         cached_model_reference = cached_model.reference
         if (
-            id(model.reference) in typed_map_values
+            groups.is_typed_map_value(model)
             and not parser.collapse_reuse_models
             and parser.generation_store.has_users_in_other_modules(model)
         ):
@@ -1247,7 +1245,7 @@ def reuse_model(parser: ReuseHost, models: list[DataModel], require_update_actio
         if isinstance(model, Enum) or parser.collapse_reuse_models:
             redirect_removed_reuse_users(parser, model, cached_model)
             duplicates.append(model)
-        elif id(model.reference) in typed_map_values:
+        elif groups.is_typed_map_value(model):
             parser._graph_builder.redirect_model_reference_users(model, models, cached_model_reference)  # noqa: SLF001
             duplicates.append(model)
         else:

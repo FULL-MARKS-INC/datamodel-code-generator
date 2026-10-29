@@ -242,8 +242,7 @@ def union_site(model: DataModel, field: DataModelFieldBase) -> UnionSite | None:
     match field.extras.get("discriminator"):
         case {"propertyName": str() as property_name} as discriminator if property_name:
             return UnionSite(model, field, property_name, discriminator)
-        case _:
-            return None
+    return None
 
 
 def iter_union_sites(models: Iterable[DataModel]) -> Iterator[UnionSite]:

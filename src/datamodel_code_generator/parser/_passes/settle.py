@@ -19,6 +19,7 @@ from datamodel_code_generator._model_keys import ModelKey, model_key_of
 from datamodel_code_generator._url_redaction import redact_reference
 from datamodel_code_generator.model.base import DataModel, sort_data_models_for_mro
 from datamodel_code_generator.parser._graph_ids import keyed_models
+from datamodel_code_generator.parser._model_shapes import ReuseGroups
 from datamodel_code_generator.parser._passes._shared import (
     _is_pydantic_v2_root_model,
     _runtime_validation_reference_keys,
@@ -69,12 +70,16 @@ class SettleHost(Protocol[_ConfigT_co]):
     """The options, run state and hooks of the parser that the settle passes read and write."""
 
     _recursion_facts: RecursionFacts
-    _typed_map_value_reference_ids: set[int]
+    _reuse_groups: ReuseGroups
     yielding_names_to_assign: tuple[tuple[str, tuple[str, str | None]], ...]
 
     @property
     def _graph_builder(self) -> GraphBuilder:
         """The builder that changes the model graph through the generation store."""
+
+    @property
+    def _site_model_reference_ids(self) -> set[int]:
+        """The ids of the references of the site models a reference with more assertions gets."""
 
     @property
     def dedupe_request_response_variants(self) -> bool:
@@ -423,8 +428,15 @@ def warn_about_unmatched_model_name_keys(parser: SettleHost[Any]) -> None:
 
 
 def settle_yielding_names(parser: SettleHost[Any], _run: SettleRun[Any]) -> None:
-    """Give the names that yield to ``--model-name-map`` their final form."""
-    parser._typed_map_value_reference_ids = parser.model_resolver.settle_yielding_names()  # noqa: SLF001
+    """Give the names that yield to ``--model-name-map`` their final form, and record the reuse groups plan.
+
+    The models whose names yield, and the site models of the parse, yield the canonical place of a group of
+    duplicates to the others too.
+    """
+    parser._reuse_groups = ReuseGroups(  # noqa: SLF001
+        site_models=frozenset(parser._site_model_reference_ids),  # noqa: SLF001
+        typed_map_values=frozenset(parser.model_resolver.settle_yielding_names()),
+    )
     if (changes := parser.model_resolver.yielding_name_changes) and parser._construction_keys.name_any(changes):  # noqa: SLF001
         parser.yielding_names_to_assign = tuple(parser.model_resolver.final_yielding_names.items())
 

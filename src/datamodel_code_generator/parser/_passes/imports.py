@@ -70,6 +70,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.model.base import DataModelFieldBase
     from datamodel_code_generator.model_metadata import ModelMetadata
     from datamodel_code_generator.parser._imports_plan import ModuleImportLedger
+    from datamodel_code_generator.parser._model_shapes import ReuseGroups
     from datamodel_code_generator.parser._passes._state import (
         FinishRun,
         ForwarderMap,
@@ -195,8 +196,8 @@ class FinishHost(Protocol):
         """The root models naming themselves that the deduplication of root models dropped, whose users name them."""
 
     @property
-    def _typed_map_value_reference_ids(self) -> set[int]:
-        """The ids of the references of typed map values."""
+    def _reuse_groups(self) -> ReuseGroups:
+        """The plan of which model of a group of duplicates stays canonical."""
 
     @property
     def _tag_plan(self) -> TagPlan:
@@ -1502,18 +1503,16 @@ def record_model_placement(
     cycle, or a module shared by reused models, and keep a model only as a nullable map they make recursive,
     which ``--collapse-root-models`` would otherwise collapse.
     """
-    typed_map_values = parser._typed_map_value_reference_ids  # noqa: SLF001
+    groups = parser._reuse_groups  # noqa: SLF001
     placement = {ctx.module: ctx.models for ctx in contexts}
     parser.model_placement = {
-        module: frozenset(model.class_name for model in models if id(model.reference) not in typed_map_values)
+        module: frozenset(model.class_name for model in models if not groups.is_typed_map_value(model))
         for module, models in placement.items()
     }
     parser.typed_map_values_may_move_models = (
         has_internal_modules
         or (parser.reuse_model and parser.reuse_scope == ReuseScope.Tree)
-        or any(
-            models and all(id(model.reference) in typed_map_values for model in models) for models in placement.values()
-        )
+        or any(models and all(map(groups.is_typed_map_value, models)) for models in placement.values())
         or (
             parser.collapse_root_models
             and any(
