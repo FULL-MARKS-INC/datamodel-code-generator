@@ -9,7 +9,18 @@ from typing import Final, Literal, TypeAlias, cast
 from urllib.parse import quote
 
 from .errors import ParameterEncodingError
-from .media import FieldPlan, JSONValue, LexicalKind, encode_form, finite, json_bytes, json_text, lexical, media_kind
+from .media import (
+    TOKEN,
+    FieldPlan,
+    JSONValue,
+    LexicalKind,
+    encode_form,
+    finite,
+    json_bytes,
+    json_text,
+    lexical,
+    media_kind,
+)
 
 ParameterLocation: TypeAlias = Literal["path", "query", "querystring", "header", "cookie"]
 ValueShape: TypeAlias = Literal["scalar", "array", "object"]
@@ -25,7 +36,6 @@ _STYLES: Final = {
     "header": frozenset({"simple"}),
     "cookie": frozenset({"form", "cookie"}),
 }
-TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _NOT_HEADER_TEXT: Final = re.compile(r"[^\t\x20-\x7E]")
 _COOKIE_OCTETS: Final = re.compile(r"[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*")
 _OWS: Final = " \t"

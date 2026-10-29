@@ -1135,3 +1135,85 @@ def test_gate_projects_and_option_sets(tmp_path: Path) -> None:
         if path.is_file() and ".git" not in path.parts
     )
     assert_output(f"exit={code}\n" + "\n".join([*cells, *checkout]).replace(sha[:12], "<sha>") + "\n")
+
+
+def _tree(directory: Path) -> dict[str, str]:
+    return {
+        path.relative_to(directory).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="behaviour_diff.py forks its workers")
+def test_record_shards_merge_into_the_unsharded_record(tmp_path: Path) -> None:
+    """The records of `record --shard I/N` merge into the unsharded record; a missing shard fails the merge."""
+    common = [
+        "0.0.0",
+        str(ROOT),
+        "--python",
+        sys.executable,
+        "--types",
+        "pydantic_v2.BaseModel,msgspec.Struct",
+        "--select",
+        "tests/data/jsonschema/person*",
+        "--select",
+        "tests/data/openapi/api.yaml",
+        "-j",
+        "2",
+    ]
+    stdout = StringIO()
+    with redirect_stdout(stdout), redirect_stderr(StringIO()):
+        behaviour_diff.main([
+            "record",
+            *common,
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--out",
+            str(tmp_path / "full"),
+        ])
+        for index in (1, 2, 3):
+            behaviour_diff.main([
+                "record",
+                *common,
+                "--cache-dir",
+                str(tmp_path / f"cache-{index}"),
+                "--out",
+                str(tmp_path / f"part-{index}"),
+                "--shard",
+                f"{index}/3",
+            ])
+        parts = [str(tmp_path / f"part-{index}") for index in (1, 2, 3)]
+        behaviour_diff.main(["merge-record", "0.0.0", *parts, "--out", str(tmp_path / "merged")])
+        with pytest.raises(SystemExit) as missing:
+            behaviour_diff.main(["merge-record", "0.0.0", *parts[:2], "--out", str(tmp_path / "incomplete")])
+    shard_cells = [
+        len(json.loads((tmp_path / f"part-{index}" / "0.0.0.json").read_text(encoding="utf-8"))["cells"])
+        for index in (1, 2, 3)
+    ]
+    full = _tree(tmp_path / "full")
+    assert_output(
+        f"merged == unsharded: {_tree(tmp_path / 'merged') == full}\n"
+        f"files: {len(full)}\n"
+        f"cells per shard: {shard_cells}\n"
+        f"missing shard: {missing.value.code}\n"
+    )
+
+
+def test_shard_argument_and_shard_part_records(tmp_path: Path) -> None:
+    """A malformed `--shard` is a usage error and `query` refuses a record that is only one shard part."""
+    usage = []
+    for command in (["record", "0.0.0", str(ROOT)], ["gate", "0.0.0"]):
+        with pytest.raises(SystemExit) as error, redirect_stderr(StringIO()) as stderr:
+            behaviour_diff.main([*command, "--shard", "2/nope"])
+        usage.append(
+            f"{command[0]}: {error.value.code}: {stderr.getvalue().strip().splitlines()[-1].partition('error: ')[2]}"
+        )
+    for version, shard in (("0.0.1", None), ("0.0.2", [2, 3])):
+        record: dict[str, Any] = {"version": version, "types": [], "cells": {}}
+        if shard:
+            record["shard"] = shard
+        (tmp_path / f"{version}.json").write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(SystemExit) as part:
+        behaviour_diff.main(["query", "0.0.1", "0.0.2", "--records", str(tmp_path)])
+    assert_output("\n".join(usage) + f"\nshard part: {str(part.value.code).replace(str(tmp_path), '<records>')}\n")
