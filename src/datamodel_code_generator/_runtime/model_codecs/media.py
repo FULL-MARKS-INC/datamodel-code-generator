@@ -1,10 +1,11 @@
-"""Media-type identity plus ordinary JSON, text, and URL-encoded form representations."""
+"""HTTP tokens, status keys and media-type identity, plus ordinary JSON, text, and URL-encoded form representations."""
 
 from __future__ import annotations
 
+import codecs
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Container, Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from math import isfinite
@@ -15,17 +16,57 @@ from typing_extensions import Self, TypeAliasType
 
 from .errors import MalformedError, ParameterEncodingError
 
+__all__ = (
+    "ERROR_STATUSES",
+    "SUCCESS_STATUSES",
+    "TCHARS",
+    "TOKEN",
+    "FieldPlan",
+    "JSONScalar",
+    "JSONValue",
+    "LexicalKind",
+    "MediaKind",
+    "Unparsed",
+    "charset",
+    "decode_form",
+    "decode_text",
+    "encode_form",
+    "essence",
+    "finite",
+    "form_encode",
+    "json_bytes",
+    "json_text",
+    "json_value",
+    "lexical",
+    "media_kind",
+    "media_parts",
+    "normalize_media_type",
+    "normalized",
+    "percent_decode",
+    "plain",
+    "split_form",
+    "status_key",
+    "typed",
+)
+
 JSONValue = TypeAliasType("JSONValue", "bool | int | float | str | list[JSONValue] | dict[str, JSONValue] | None")
 JSONScalar = TypeAliasType("JSONScalar", "bool | int | float | str | None")
 
 LexicalKind = Literal["string", "integer", "number", "boolean"]
 MediaKind = Literal["json", "text", "form", "multipart", "binary"]
 
-_HTTP_WORD: Final = r"[!#$%&'*+.^_`|~0-9a-zA-Z-]+"
-_MEDIA: Final = re.compile(rf"[ \t]*(?P<type>{_HTTP_WORD})/(?P<subtype>{_HTTP_WORD})[ \t]*")
+TCHARS: Final = r"[!#$%&'*+.^_`|~0-9A-Za-z-]+"
+TOKEN: Final = re.compile(TCHARS)
+SUCCESS_STATUSES: Final = range(200, 300)
+ERROR_STATUSES: Final = range(400, 600)
+_MEDIA: Final = re.compile(rf"[ \t]*(?P<type>{TCHARS})/(?P<subtype>{TCHARS})[ \t]*")
 _PARAMETER: Final = re.compile(
-    rf";[ \t]*(?P<name>{_HTTP_WORD})=(?P<value>{_HTTP_WORD}|"
+    rf";[ \t]*(?P<name>{TCHARS})=(?P<value>{TCHARS}|"
     r'"(?:[\t !#-\[\]-~\x80-\xff]|\\[\t -~\x80-\xff])*")[ \t]*'
+)
+_MEDIA_ERRORS: Final = (
+    "A media type must be a token/token essence",
+    "A media type parameter must be a token=value pair",
 )
 _INTEGER: Final = re.compile(r"-?(?:0|[1-9][0-9]*)")
 _NUMBER: Final = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
@@ -126,26 +167,50 @@ def plain(value: object, *, strict: bool = False) -> JSONValue:
     return str(value)
 
 
-def normalize_media_type(value: str) -> str:
-    """Return lowercase type/subtype and parameter names, keeping parameter order and values."""
+def status_key(status: int, keys: Container[str]) -> str | None:
+    """Return the declared response key a status selects: exact, then its hundreds range, then default."""
+    return next((key for key in (str(status), f"{status // 100}XX", "default") if key in keys), None)
+
+
+def media_parts(value: str, errors: tuple[str, str] = _MEDIA_ERRORS) -> tuple[str, str, list[tuple[str, str]]]:
+    """Split a media type into lowercase type and subtype and its lowercase parameter names with their raw values.
+
+    `errors` holds the ValueError messages for a malformed essence and for a malformed parameter.
+    """
     if (essence := _MEDIA.match(value)) is None:
-        msg = "A media type must be a token/token essence"
-        raise ValueError(msg)
-    parts = [f"{essence['type'].lower()}/{essence['subtype'].lower()}"]
+        raise ValueError(errors[0])
+    parameters: list[tuple[str, str]] = []
     position = essence.end()
     while position < len(value):
         if (parameter := _PARAMETER.match(value, position)) is None:
-            msg = "A media type parameter must be a token=value pair"
-            raise ValueError(msg)
-        parts.append(f"{parameter['name'].lower()}={parameter['value']}")
+            raise ValueError(errors[1])
+        parameters.append((parameter["name"].lower(), parameter["value"]))
         position = parameter.end()
-    return "; ".join(parts)
+    return essence["type"].lower(), essence["subtype"].lower(), parameters
+
+
+def normalize_media_type(value: str) -> str:
+    """Return lowercase type/subtype and parameter names, keeping parameter order and values."""
+    kind, subtype, parameters = media_parts(value)
+    return "; ".join([f"{kind}/{subtype}", *(f"{name}={text}" for name, text in parameters)])
+
+
+def normalized(media_type: str) -> str | None:
+    """Return a media type in its normalized form, or None when it is not a media type."""
+    try:
+        return normalize_media_type(media_type)
+    except ValueError:
+        return None
+
+
+def essence(media_type: str) -> str:
+    """Return a media type without its parameters."""
+    return media_type.partition(";")[0]
 
 
 def media_kind(media_type: str) -> MediaKind:
     """Classify a normalized media type by its builtin representation."""
-    essence = media_type.partition(";")[0]
-    kind, _, subtype = essence.partition("/")
+    kind, _, subtype = essence(media_type).partition("/")
     match kind, subtype:
         case "application", "json":
             return "json"
@@ -161,13 +226,28 @@ def media_kind(media_type: str) -> MediaKind:
             return "binary"
 
 
-def charset(media_type: str) -> str:
-    """Return a normalized media type's charset, defaulting to UTF-8."""
-    if ";" not in media_type:
-        return "utf-8"
-    for parameter in _PARAMETER.finditer(media_type):
-        if parameter["name"] == "charset":
-            return parameter["value"].strip('"')
+def charset(media_type: str, *, as_written: bool = False) -> str:
+    """Return the codec name a raw media type's charset selects, UTF-8 when it names none or an unknown one.
+
+    With `as_written`, the media type is a normalized one and the charset's value is returned as it is written, which
+    a server then refuses in `decode_text` when it names no codec.
+    """
+    if as_written:
+        return next(
+            (
+                parameter["value"].strip('"')
+                for parameter in _PARAMETER.finditer(media_type)
+                if parameter["name"] == "charset"
+            ),
+            "utf-8",
+        )
+    for parameter in media_type.split(";")[1:]:
+        name, _, value = parameter.strip().partition("=")
+        if name.lower() == "charset":
+            try:
+                return codecs.lookup(value.strip('"')).name
+            except LookupError:
+                break
     return "utf-8"
 
 

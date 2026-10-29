@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, get_args
 
 import httpx2
 
+from ..model_codecs.media import TCHARS
 from ..model_codecs.parameters import header_text
 from .errors import ConfigurationError, SDKError
 from .security import Credentials
@@ -58,7 +59,7 @@ UserPassword: TypeAlias = tuple[str, str] | Callable[[], tuple[str, str]]
 
 _UNAUTHORIZED: Final = 401
 _CHALLENGE_ITEMS: Final = re.compile(r'(?:[^,"]|"(?:[^"\\]|\\.)*(?:"|$))+')
-_CHALLENGE: Final = re.compile(r"([!#$%&'*+.^_`|~0-9A-Za-z-]+)(?![ \t]*=)(?:[ \t]+(.*))?", re.DOTALL)
+_CHALLENGE: Final = re.compile(rf"({TCHARS})(?![ \t]*=)(?:[ \t]+(.*))?", re.DOTALL)
 _INVALID_TOKEN: Final = re.compile(r'error[ \t]*=[ \t]*(?:invalid_token|"invalid_token")', re.IGNORECASE)
 _COOKIE_UNSAFE: Final = re.compile(r'[\x00-\x20\x7f";,\\]')
 

@@ -6,10 +6,11 @@ A cache helper fetches a GET operation without a body whose cacheable statuses a
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 from datamodel_code_generator._api_types import Diagnostic, OperationRef
 from datamodel_code_generator._client.pagination import _Pages
+from datamodel_code_generator._runtime.model_codecs.media import SUCCESS_STATUSES
 
 if TYPE_CHECKING:
     from collections.abc import Container
@@ -21,9 +22,6 @@ if TYPE_CHECKING:
     from datamodel_code_generator._client.protocol_plan import Protocols
     from datamodel_code_generator._client.protocols import Helper
     from datamodel_code_generator._target_contract import TypeUseBinding, TypeUseId
-
-_MIN_SUCCESS: Final = 200
-_MAX_SUCCESS: Final = 299
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -92,7 +90,7 @@ class _Caches:
         for index, status in enumerate(helper.tree["statuses"]):
             response = next((item for item in spec.responses if item.status == str(status)), None)
             where = f"{at}[{index}]"
-            if response is None or not response.success or not _MIN_SUCCESS <= status <= _MAX_SUCCESS:
+            if response is None or not response.success or status not in SUCCESS_STATUSES:
                 message = f"The cacheable status {status} of {name!r} is no declared 2xx success of {label}"
                 problems.append(_problem("E_CONFIG_VALUE", "config", where, message, spec))
                 continue
