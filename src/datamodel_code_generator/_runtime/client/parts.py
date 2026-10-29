@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias
 
 from ..model_codecs.errors import ParameterEncodingError
-from .media import most_specific, normalized, with_charset
+from ..model_codecs.media import normalized
+from .media import most_specific, with_charset
 
 if TYPE_CHECKING:
     from typing import Any, Protocol

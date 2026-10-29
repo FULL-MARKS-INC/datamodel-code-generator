@@ -361,7 +361,6 @@ target_python_version = 1
 '__dict__[...]' = 1
 
 ["src/datamodel_code_generator/types.py"."DataType._materialize_render_state"]
-'__dict__[_REFERENCE_NULL_DATA_TYPE_KEY]' = 1
 import_ = 1
 is_optional = 2
 
@@ -378,8 +377,11 @@ is_optional = 2
 '__dict__.pop(_RUNTIME_EXPRESSION_IMPORTS_DATA_TYPE_KEY)' = 1
 '__dict__[_RUNTIME_EXPRESSION_IMPORTS_DATA_TYPE_KEY]' = 1
 
+["src/datamodel_code_generator/types.py"."DataType._set_type_null"]
+'__dict__.pop(_TYPE_NULL_DATA_TYPE_KEY)' = 1
+'__dict__[_TYPE_NULL_DATA_TYPE_KEY]' = 1
+
 ["src/datamodel_code_generator/types.py"."DataType._strip_null"]
-'__dict__[_NULL_STRIPPED_DATA_TYPE_KEY]' = 1
 is_optional = 1
 
 ["src/datamodel_code_generator/types.py"."DataType.replace_reference"]

@@ -10,12 +10,12 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from dataclasses import replace
 from decimal import Decimal
 from enum import Enum, auto
 from fractions import Fraction
 from functools import cache, lru_cache
 from itertools import chain, repeat
-from math import inf, isfinite
 from re import Pattern
 from types import MappingProxyType
 from typing import (
@@ -53,7 +53,6 @@ from pydantic_core import core_schema
 from typing_extensions import TypeIs, assert_never, override
 
 from datamodel_code_generator import _constraint_applicability as _applicability
-from datamodel_code_generator import _null_markers
 from datamodel_code_generator import imports as generator_imports
 from datamodel_code_generator._format_types import (
     DateClassType,
@@ -96,12 +95,7 @@ OPTIONAL_PREFIX = f"{OPTIONAL}["
 _RUNTIME_EXPRESSION_IMPORTS_DATA_TYPE_KEY = "_runtime_expression_imports"
 _ENUM_MEMBER_LITERAL_REFERENCE_DATA_TYPE_KEY = "_enum_member_literal_reference"
 _FORWARD_REFERENCE_DATA_TYPE_KEY = "_is_forward_reference"
-_REFERENCE_NULL_DATA_TYPE_KEY = _null_markers.REFERENCE_NULL_KEY
-_NULL_STRIPPED_DATA_TYPE_KEY = "_is_null_stripped"
-_TARGET_NULL_DATA_TYPE_KEY = _null_markers.TARGET_NULL_KEY
-_HELD_NULL_DROPPED_DATA_TYPE_KEY = _null_markers.HELD_NULL_DROPPED_KEY
-_NAMED_NULL_REJECTED_DATA_TYPE_KEY = _null_markers.NAMED_NULL_REJECTED_KEY
-_RENDER_PREPARATION_NULL_DATA_TYPE_KEY = _null_markers.RENDER_PREPARATION_NULL_KEY
+_TYPE_NULL_DATA_TYPE_KEY = "_type_null"
 _LITERAL_IMPORT_DATA_TYPE_KEY = "_literal_import"
 _VALUES_AS_WRITTEN_KEY = _applicability.VALUES_AS_WRITTEN_KEY
 _DROPPED_MULTIPLE_OF_KEY = _applicability.DROPPED_MULTIPLE_OF_KEY
@@ -190,7 +184,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._python_type_binding import BoundPythonType
     from datamodel_code_generator._requirements import PydanticConstruct
     from datamodel_code_generator.enums import StrictTypes
-    from datamodel_code_generator.model._decisions.nullability import NullSource
+    from datamodel_code_generator.model._decisions.nullability import NullSource, TypeNull
     from datamodel_code_generator.model._decisions.union_assembly import MemberRole, MergedMembers, UnionRow
 
     class DataModelFieldBase(Protocol):
@@ -209,13 +203,9 @@ else:
 
 
 def _preserve_float_constraint_precision(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-    """Retain legacy floats except when conversion would lose integer precision."""
+    """Retain legacy floats except when conversion would lose integer precision (``exact_float``)."""
     if isinstance(value, int) and not isinstance(value, bool):
-        try:
-            float_value = float(value)
-        except OverflowError:
-            return value
-        return float_value if float_value == value else value
+        return value if (float_value := _applicability.exact_float(value)) is None else float_value
     return handler(value)
 
 
@@ -314,24 +304,13 @@ def _get_constraint_number(value: Any) -> Any:
 
 
 def _float_constraint(value: Any) -> float:
-    """Return a number constraint as a float: an int beyond the float range is the infinity of its sign, as 1e400 is."""
-    number = _get_constraint_number(value)
-    try:
-        return float(number)
-    except OverflowError:
-        return inf if number > 0 else -inf
+    """Return a number constraint as a float (``saturating_float``)."""
+    return _applicability.saturating_float(_get_constraint_number(value))
 
 
 def _non_finite_as_written(value: Any, *, as_float: bool) -> float | None:
-    """Return a number constraint as the infinity or NaN that a type writes it as, or None when it writes it finite.
-
-    A float type writes an int beyond the float range as an infinity too (``_float_constraint``); an int or a
-    ``Decimal`` type writes an int as it is.
-    """
-    number = _get_constraint_number(value)
-    if not as_float and not isinstance(number, float):
-        return None
-    return None if isfinite(written := _float_constraint(number)) else written
+    """Return a number constraint as the infinity or NaN that a type writes it as (``non_finite_written``)."""
+    return _applicability.non_finite_written(_get_constraint_number(value), as_float=as_float)
 
 
 def normalize_integer_constraint(constraint: str, value: Any) -> tuple[str, Any] | None:  # noqa: PLR0911
@@ -357,6 +336,27 @@ def normalize_integer_constraint(constraint: str, value: Any) -> tuple[str, Any]
             return "le", _get_fraction_floor(fraction)
         case "lt":
             return "le", _get_fraction_ceil(fraction) - 1
+    return constraint, value
+
+
+def strict_number_constraint(
+    output: _applicability.OutputKeywords, constraint: str, value: Any, *, is_float_type: bool, is_int_type: bool
+) -> tuple[str, Any] | None:
+    """Return a number constraint of a field normalized for the field's numeric type, or None when it is left out.
+
+    A bound with no finite float is left out where the output drops it (``OutputKeywords.drops_non_finite_bounds``),
+    else it stays as the float or the infinity it is written as.
+    """
+    if value is None or constraint not in _applicability.NUMBER_FIELD_KEYWORDS:
+        return constraint, value
+    if output.drops_non_finite_bounds and _applicability.is_non_finite(_get_constraint_number(value)):
+        return None
+    if is_float_type:
+        return constraint, _float_constraint(value)
+    if is_int_type:
+        return normalize_integer_constraint(constraint, value)
+    if isinstance(value, float) and value.is_integer():
+        return constraint, int(value)
     return constraint, value
 
 
@@ -725,17 +725,11 @@ class DataType(_BaseModel):  # noqa: PLR0904
                 object.__setattr__(new_obj, field_name, copied_value)
         new_obj._set_runtime_expression_imports(self.runtime_expression_imports)
         new_obj._set_forward_reference(self._is_forward_reference)
-        for key in (
-            _REFERENCE_NULL_DATA_TYPE_KEY,
-            _NULL_STRIPPED_DATA_TYPE_KEY,
-            _VALUES_AS_WRITTEN_KEY,
-            _TARGET_NULL_DATA_TYPE_KEY,
-            _HELD_NULL_DROPPED_DATA_TYPE_KEY,
-            _NAMED_NULL_REJECTED_DATA_TYPE_KEY,
-            _DROPPED_MULTIPLE_OF_KEY,
-        ):
+        for key in (_VALUES_AS_WRITTEN_KEY, _DROPPED_MULTIPLE_OF_KEY):
             if key in self.__dict__:
                 new_obj.__dict__[key] = self.__dict__[key]
+        if (null := self.__dict__.get(_TYPE_NULL_DATA_TYPE_KEY)) is not None:
+            new_obj._set_type_null(replace(null, rendered=False))
         if (enum_member_literal_reference := self._enum_member_literal_reference) is not None:
             new_obj._set_enum_member_literal_reference(enum_member_literal_reference)
 
@@ -1064,18 +1058,39 @@ class DataType(_BaseModel):  # noqa: PLR0904
     _BASE_TYPE_HINT_CONTAINER_ORDER: ClassVar[tuple[str, ...]] = ("list", "set", "dict")
 
     @property
-    def names_nullable_model(self) -> bool:
-        """Return whether the type names a model that admits null and is not a type alias.
+    def _type_null(self) -> TypeNull:
+        """Return where the None of the type comes from, as the generation store recorded it."""
+        return self.__dict__.get(_TYPE_NULL_DATA_TYPE_KEY) or _nullability_core().NO_TYPE_NULL
 
-        A reference admits None from the schema it names: a type that named a model rejecting null keeps rejecting it
-        after merging that model into an equal one that admits null (``GenerationStore.redirect_reference_users``).
-        """
-        if _NAMED_NULL_REJECTED_DATA_TYPE_KEY in self.__dict__:
-            return False
+    def _set_type_null(self, null: TypeNull) -> None:
+        """Keep ``null`` as the record of where the None of the type comes from; a type without one holds none."""
+        if null == _nullability_core().NO_TYPE_NULL:
+            self.__dict__.pop(_TYPE_NULL_DATA_TYPE_KEY, None)
+        else:
+            self.__dict__[_TYPE_NULL_DATA_TYPE_KEY] = null
+
+    def _update_type_null(self, **changes: bool | None) -> None:
+        """Change the record of where the None of the type comes from: the one writer the generation store calls."""
+        self._set_type_null(replace(self._type_null, **changes))
+
+    def _names_nullable_target(self) -> bool:
+        """Return whether the model the type names now admits null and is not a type alias."""
         return (
             (reference := self.reference) is not None
             and not getattr(source := reference.source, "is_alias", False)
             and bool(getattr(source, "nullable", False))
+        )
+
+    @property
+    def names_nullable_model(self) -> bool:
+        """Return whether the type admits the None of the schema it names (``nullability.reference_null``).
+
+        That is the null of the model it names, which must not be a type alias; a type that named a model rejecting
+        null keeps rejecting it after merging that model into an equal one that admits null
+        (``GenerationStore.redirect_reference_users``).
+        """
+        return _nullability_core().reference_null(
+            named=self._type_null.named, names_nullable=self._names_nullable_target()
         )
 
     @property
@@ -1118,26 +1133,25 @@ class DataType(_BaseModel):  # noqa: PLR0904
             return type_
         return get_optional_type(type_, use_union_operator)
 
-    def _reference_adds_null(self) -> bool:
-        """Return whether the type hint adds the None of the nullable model the type names.
+    @property
+    def adds_reference_null(self) -> bool:
+        """Return whether the type hint adds the None of the schema it names (``nullability.reference_adds_null``).
 
         It does not when the model holds null itself and ``--omit-redundant-reference-null`` dropped it at the use.
         """
-        return (
-            _NULL_STRIPPED_DATA_TYPE_KEY not in self.__dict__
-            and _HELD_NULL_DROPPED_DATA_TYPE_KEY not in self.__dict__
-            and self.names_nullable_model
+        return _nullability_core().reference_adds_null(
+            null=self._type_null, names_nullable=self._names_nullable_target()
         )
 
     @property
     def has_target_null(self) -> bool:
         """Whether the type's own None is the one its referenced schema admits (``--omit-redundant-reference-null``)."""
-        return _TARGET_NULL_DATA_TYPE_KEY in self.__dict__
+        return self._type_null.target
 
     @property
     def held_null_dropped(self) -> bool:
         """Whether ``--omit-redundant-reference-null`` dropped the None of the model the type names."""
-        return _HELD_NULL_DROPPED_DATA_TYPE_KEY in self.__dict__
+        return self._type_null.held_dropped
 
     @property
     def admits_none(self) -> bool:
@@ -1154,7 +1168,7 @@ class DataType(_BaseModel):  # noqa: PLR0904
         members = self.data_types
         return core.rendered_nullability(
             own=self.is_optional,
-            reference=self._reference_adds_null(),
+            reference=self.adds_reference_null,
             member_nulls=(member._gives_member_null(core) for member in members)  # noqa: SLF001
             if core.takes_member_null(
                 is_tuple=self.is_tuple,
@@ -1171,7 +1185,7 @@ class DataType(_BaseModel):  # noqa: PLR0904
         ``legacy-member-null-from-hint-text``), so the members are rendered only when neither of the others decides.
         """
         return _nullability_core().rendered_nullability(
-            own=self.is_optional, reference=self._reference_adds_null(), member_nulls=self._iter_hint_member_nulls()
+            own=self.is_optional, reference=self.adds_reference_null, member_nulls=self._iter_hint_member_nulls()
         )
 
     def _iter_hint_member_nulls(self) -> Iterator[bool]:
@@ -1205,7 +1219,7 @@ class DataType(_BaseModel):  # noqa: PLR0904
         match write:
             case "reference-null":
                 if (
-                    not (reference := self._reference_adds_null())
+                    not (reference := self.adds_reference_null)
                     or (null := _nullability_core().rendered_nullability(own=self.is_optional, reference=reference))
                     != "reference"
                 ):
@@ -1222,20 +1236,20 @@ class DataType(_BaseModel):  # noqa: PLR0904
                 assert_never(write)
         self.is_optional = True
         if null == "reference":
-            self.__dict__[_REFERENCE_NULL_DATA_TYPE_KEY] = True
+            self._update_type_null(reference_written=True)
 
     def _strip_null(self, *, own: bool) -> None:
         """Drop the None of the type, for good when it is the type's own rather than its nullable model's.
 
         A None that only the referenced model admits comes back with the next type hint.
         """
-        if own or (self.is_optional and _REFERENCE_NULL_DATA_TYPE_KEY not in self.__dict__):
-            self.__dict__[_NULL_STRIPPED_DATA_TYPE_KEY] = True
+        if own or (self.is_optional and not self._type_null.reference_written):
+            self._update_type_null(stripped=True)
         self.is_optional = False
 
     def _optional_before_render_preparation(self) -> bool:
         """Return ``is_optional`` without the None that render preparation wrote (rows MS and SK read it)."""
-        return self.is_optional and _RENDER_PREPARATION_NULL_DATA_TYPE_KEY not in self.__dict__
+        return self.is_optional and not self._type_null.rendered
 
     @property
     def type_hint(self) -> str:
@@ -1432,9 +1446,7 @@ def _render_apply(expr: TypeApply) -> str:
             text = f"{container}[{text}]" if text else container
     if not expr.base and node._is_forward_reference:  # noqa: SLF001
         text = repr(text) if '"' in text or "\\" in text else f'"{text}"'
-    if (
-        node.is_optional or member_null or (expr.form != "base" and node._reference_adds_null())  # noqa: SLF001
-    ) and text != ANY:
+    if (node.is_optional or member_null or (expr.form != "base" and node.adds_reference_null)) and text != ANY:
         return node._optional_hint(text, node.use_union_operator)  # noqa: SLF001
     if not expr.base and node.is_func and node.kwargs:
         return f"{text}({', '.join(f'{k}={represent_python_value(v)}' for k, v in node.kwargs.items())})"
