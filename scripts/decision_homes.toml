@@ -879,6 +879,11 @@ audit = "D-PP-11"
 # whose 0.86.0 output the default keeps for good (a fix is opt-in). The list only shrinks unless the owner agrees to a
 # new row; docs/architecture.md, "Legacy rows", has the same rows with what each keeps.
 
+[homes.Hx-user-keys]
+decision = "which model or field an option keyed by a class name, Class.field or a field name names"
+core = ["_user_keys.py"]
+adapters = ["parser/_passes/_name_allocation.py:scheme_resolver"]
+
 [legacy_rows."legacy-exact-ints-as-floats"]
 home = "H07"
 fix = "keep"
@@ -1154,6 +1159,14 @@ fix = "RP15b"
 [legacy_rows."legacy-run-alias-generator-import"]
 home = "H26"
 fix = "RP15b"
+
+[legacy_rows."legacy-reparse-for-final-names"]
+home = "Hx-user-keys"
+fix = "keep"
+
+[legacy_rows."legacy-module-suffix-model"]
+home = "H16"
+fix = "keep"
 
 # ==== allowlist (shrink-only; `--write-allowlist` rewrites everything below this line) ====
 

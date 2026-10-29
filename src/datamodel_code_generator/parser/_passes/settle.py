@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         ModuleSplitMode,
         ReadOnlyWriteOnlyModelType,
     )
+    from datamodel_code_generator._user_keys import ConstructionKeys
     from datamodel_code_generator.parser._graph_ids import KeyedModels
     from datamodel_code_generator.parser._passes._state import ConfigT, SettleRun, SortedDataModels, _ConstNarrowing
     from datamodel_code_generator.parser.generation import GenerationIndex, GenerationStore, GraphBuilder
@@ -103,8 +104,9 @@ class SettleHost(Protocol[_ConfigT_co]):
     def results(self) -> list[DataModel]:
         """The parsed models."""
 
-    def _names_have_class_keyed_options(self, names: set[str]) -> bool:
-        """Return whether an option keyed by class name, or by a class-scoped field, names one of ``names``."""
+    @property
+    def _construction_keys(self) -> ConstructionKeys:
+        """The class names that the options read while models are built key (``_user_keys.py``)."""
 
     def _prepare_parse_config(
         self,
@@ -423,7 +425,7 @@ def warn_about_unmatched_model_name_keys(parser: SettleHost[Any]) -> None:
 def settle_yielding_names(parser: SettleHost[Any], _run: SettleRun[Any]) -> None:
     """Give the names that yield to ``--model-name-map`` their final form."""
     parser._typed_map_value_reference_ids = parser.model_resolver.settle_yielding_names()  # noqa: SLF001
-    if (changes := parser.model_resolver.yielding_name_changes) and parser._names_have_class_keyed_options(changes):  # noqa: SLF001
+    if (changes := parser.model_resolver.yielding_name_changes) and parser._construction_keys.name_any(changes):  # noqa: SLF001
         parser.yielding_names_to_assign = tuple(parser.model_resolver.final_yielding_names.items())
 
 

@@ -24,6 +24,7 @@ from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, reference_graph
 from datamodel_code_generator._target_unicode import target_pattern
+from datamodel_code_generator._user_keys import type_override_classes
 from datamodel_code_generator.imports import Import
 from datamodel_code_generator.model._decisions.tag_value import (
     enum_tag_literal,
@@ -992,7 +993,7 @@ class _ReuseOptimizationContext:
         if not type_overrides:
             return cls()
 
-        return cls(frozenset(override_key.partition(".")[0] for override_key in type_overrides))
+        return cls(type_override_classes(type_overrides))
 
     @property
     def constrains(self) -> bool:

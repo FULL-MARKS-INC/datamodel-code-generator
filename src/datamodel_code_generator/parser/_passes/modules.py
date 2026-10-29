@@ -33,6 +33,7 @@ from datamodel_code_generator._reference_graph import (
 )
 from datamodel_code_generator._requirements import python_target_meets
 from datamodel_code_generator._shared_types import _CollapseRootModelsRecursionError
+from datamodel_code_generator._user_keys import class_field_key
 from datamodel_code_generator.enums import DefaultValueType
 from datamodel_code_generator.imports import IMPORT_OPTIONAL, IMPORT_UNION, Import
 from datamodel_code_generator.model._decisions.enum_kind import decide_enum_kind, holds_inherited_member_value
@@ -64,6 +65,7 @@ from datamodel_code_generator.parser._graph_ids import UNRESOLVED_MODEL_KEY, key
 from datamodel_code_generator.parser._imports_plan import ImportProducer
 from datamodel_code_generator.parser._model_shapes import REUSE_MODEL, skips_root_model
 from datamodel_code_generator.parser._passes._keys import _DERIVED_FROM_KEY
+from datamodel_code_generator.parser._passes._name_allocation import scheme_resolver
 from datamodel_code_generator.parser._passes._shared import (
     _TYPE_DEPENDENT_CONSTRAINTS_KEY,
     BaseStandInHost,
@@ -2394,9 +2396,9 @@ def change_field_name(  # noqa: PLR0912
                 not rename_type
                 and (parser.data_model_type.NORMALIZES_FIELD_NAMES or field_name in reference_type_names)
             ):
-                resolver = resolver or ModelResolver(
+                resolver = resolver or scheme_resolver(
+                    "field-type",
                     snake_case_field=parser.snake_case_field,
-                    remove_suffix_number=True,
                     target_python_version=parser.target_python_version,
                 )
                 if colliding_reference is not None:
@@ -3022,9 +3024,9 @@ def rename_named_type(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Rename the type that the field hides to a name that no field of a family using the type has."""
     source = cast("DataModel", reference.source)
-    resolver = ModelResolver(
+    resolver = scheme_resolver(
+        "field-type",
         snake_case_field=parser.snake_case_field,
-        remove_suffix_number=True,
         target_python_version=parser.target_python_version,
     )
     resolver._reset_for_reuse(class_names.copy())  # noqa: SLF001
@@ -3112,10 +3114,10 @@ def rename_fields_hiding_types(parser: ModulesHost, models: list[DataModel], *, 
                 continue
             if (new_name := parser._hiding_field_names.get((model_key_of(model.reference), field_name))) is None:  # noqa: SLF001
                 family = _model_family(model, derived_models)
-                resolver = ModelResolver(
+                resolver = scheme_resolver(
+                    "field-type",
                     exclude_names=_family_field_names(family),
                     snake_case_field=parser.snake_case_field,
-                    remove_suffix_number=True,
                     target_python_version=parser.target_python_version,
                 )
                 new_name = resolver._get_unique_field_name(cast("str", field_name))  # noqa: SLF001
@@ -3180,9 +3182,7 @@ def apply_field_type_overrides(parser: ModulesHost, models: list[DataModel]) -> 
     for model in models:
         derived_import = derived_override_import(parser, model)
         for field in model.fields:
-            # Check scoped override first: "ClassName.field_name"
-            scoped_key = f"{model.class_name}.{field.name}"
-            match parser._type_override_imports.get(scoped_key) or derived_import:  # noqa: SLF001
+            match parser._type_override_imports.get(class_field_key(model.class_name, field.name)) or derived_import:  # noqa: SLF001
                 case Import() as override_import:
                     parser._apply_override_to_field(field, override_import)  # noqa: SLF001
                 case None if parser._model_type_override_imports:  # noqa: SLF001
