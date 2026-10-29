@@ -864,8 +864,11 @@ audit = "D-PP-11"
 
 [homes.F-collapse-shared-parent-wrappers]
 decision = "where --collapse-shared-parent-wrappers is read"
-core = ["parser/_passes/modules.py:keeps_root_for_later_holders"]
-adapters = ["parser/base.py:Parser.__init__"]
+core = ["model/_decisions/collapse_eligibility.py:later_holders_follow"]
+adapters = [
+    "parser/_passes/modules.py:first_holder_facts",
+    "parser/base.py:Parser.__init__",
+]
 
 [homes.F-collapse-shared-parent-wrappers.signatures.option-read]
 kind = "name"
@@ -883,6 +886,15 @@ audit = "D-PP-11"
 decision = "which model or field an option keyed by a class name, Class.field or a field name names"
 core = ["_user_keys.py"]
 adapters = ["parser/_passes/_name_allocation.py:scheme_resolver"]
+
+[homes.H13]
+decision = "whether --collapse-root-models keeps a root model named at a site, and whether the later holders of a parent-collapsed root follow its first holder"
+core = ["model/_decisions/collapse_eligibility.py"]
+adapters = [
+    "parser/_passes/modules.py:collapse_site_facts",
+    "parser/_passes/modules.py:first_holder_facts",
+    "parser/_passes/modules.py:settle_kept_parent_roots",
+]
 
 [legacy_rows."legacy-exact-ints-as-floats"]
 home = "H07"
@@ -1166,6 +1178,10 @@ fix = "keep"
 
 [legacy_rows."legacy-module-suffix-model"]
 home = "H16"
+fix = "keep"
+
+[legacy_rows."legacy-predicted-rename"]
+home = "H13"
 fix = "keep"
 
 # ==== allowlist (shrink-only; `--write-allowlist` rewrites everything below this line) ====

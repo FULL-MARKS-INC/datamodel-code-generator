@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._requirements import PydanticFloor
     from datamodel_code_generator.format import CodeFormatter
     from datamodel_code_generator.imports import Import, Imports
+    from datamodel_code_generator.model._decisions.collapse_eligibility import LaterHolderFacts
     from datamodel_code_generator.reference import ModelResolver, Reference
     from datamodel_code_generator.types import DataType
 
@@ -203,6 +204,8 @@ class _KeptParentRoot:
     root: DataModel
     inner: DataModel
     holders: list[_KeptHolder]
+    facts: LaterHolderFacts
+    """The facts its first holder decided on, which ``settle_kept_parent_roots`` completes with the final names."""
 
 
 @record
