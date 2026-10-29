@@ -68742,7 +68742,7 @@ where they become final. Fields and models of classes outside the package, and e
 class outside it, compute both at each read (`DataModel.clear_imports_cache` is a deprecated no-op).
 `DATAMODEL_CODE_GENERATOR_CHECK_RENDER_MEMOS` (`tests/checks/memos.py`) computes every returned value anew and fails on
 a difference, except for the dedup keys and self references whose stale values today's output keeps
-(`legacy-stale-dedup-keys`, `legacy-stale-self-reference`), which it records with a report file.
+(`legacy-stale-dedup-keys`, and the self-reference exemption of `tests/checks/memos.py`), which it records with a report file.
 
 The mutation APIs are the `GenerationStore` methods listed in `GENERATION_STORE_MUTATION_METHODS`, for example
 `replace_field_type`, `replace_nested_data_type`, `set_fields`, `set_base_classes`, `update_model_reference` and
@@ -68950,6 +68950,7 @@ exception to a home is a new named row, never an anonymous `if`.
 
 | Row | Home | Keeps | Fix |
 | --- | --- | --- | --- |
+| `legacy-exact-ints-as-floats` | H07 | the schema models read an int constraint as a float where one equals it | keep |
 | `legacy-rw-parsed-facts` | F-dedupe-request-response-variants | without `--dedupe-request-response-variants`, the read/write facts and graph node of a key come from a temporary parse of its fields, the walk reads every reference of a key, and every model collects its inherited fields to decide its split | keep |
 | `legacy-rw-unowned-parent-fields` | F-dedupe-request-response-variants | without `--dedupe-request-response-variants`, the inline models of an allOf parent's own fields are parsed at no owner path | keep |
 | `legacy-rw-extra-items-as-written` | Hx-typed-positions | the request/response walk reads the TypedDict extra_items type of additionalProperties as written, not with its false allOf values read as `set_additional_properties` reads them | B5 |
@@ -69004,7 +69005,6 @@ exception to a home is a new named row, never an anonymous `if`.
 | `legacy-stale-dedup-keys` | H12 | users compare a dedup key memoized by an earlier pass | FIX-9 |
 | `legacy-graphql-affix-only` | H16 | GraphQL names get affixes only: no uniqueness, map, strategy or singularization | G09 |
 | `legacy-recursion-follows-path` | H20 | recursion facts follow paths through `_internal` relocation | GR9a |
-| `legacy-stale-self-reference` | H21 | a root field keeps the answer "named the wrapper" from before the rename | FIX-9 |
 | `legacy-shared-node-in-place` | H21 | collapse writes a shared node in place under a shared child list | FIX-3 |
 | `legacy-keyless-reference-by-path` | H21 | a reference that no model was built with names the model at its path | GR11 |
 | `legacy-module-follows-path` | H21 | module entries follow paths | GR11 |
