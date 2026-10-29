@@ -17,16 +17,14 @@ from typing_extensions import Protocol
 
 from datamodel_code_generator import AllExportsScope, Error, ModuleSplitMode, ReuseScope
 from datamodel_code_generator._model_keys import model_key_of
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, GroupGraph, graph_answer
-from datamodel_code_generator._scc import find_circular_sccs
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, GroupGraph
 from datamodel_code_generator.model.base import (
     DataModel,
-    _keyed_answer,
     get_resolve_reference_action_capabilities,
     remember_nested_factory_order_before_nullability,
 )
 from datamodel_code_generator.model.enum import Enum
-from datamodel_code_generator.parser._graph_ids import keyed_models, unchecked
+from datamodel_code_generator.parser._graph_ids import keyed_models
 from datamodel_code_generator.parser._model_shapes import COLLAPSE_REUSE, SAME_NAME, TREE_SCOPE, skips_root_model
 from datamodel_code_generator.parser._passes._name_allocation import scheme_resolver
 from datamodel_code_generator.parser._passes._shared import (
@@ -345,15 +343,7 @@ def _drop_root_model_bases(parser: StructureHost, model: DataModel) -> None:
     for child in model.reference.iter_data_model_children():
         parser._graph_builder.set_base_classes(  # noqa: SLF001
             child,
-            [
-                bc
-                for bc in child.base_classes
-                if not _keyed_answer(
-                    "removed base class",
-                    bc.reference is model.reference,
-                    lambda bc=bc, model=model: bc.reference == model.reference,
-                )
-            ],
+            [bc for bc in child.base_classes if bc.reference is not model.reference],
         )
         if not child.base_classes:
             parser._graph_builder.reset_base_classes(child)  # noqa: SLF001
@@ -1012,22 +1002,8 @@ def _module_merges(
         for key, model in keyed.models.items()
     }
     graph = index.reference_graph(snapshot, keyed, edges={EdgeKind.RULE_TYPE: rule_references})
-
-    def old() -> list[set[tuple[str, ...]]]:
-        silent = unchecked(keyed)
-        module_graph: dict[tuple[str, ...], set[tuple[str, ...]]] = {}
-        for module, models in module_models_list:
-            module_graph[module] = set()
-            for model in models:
-                for reference_key in (
-                    index.referenced_keys_for_model(model, silent) | rule_references[model_key_of(model.reference)]
-                ):
-                    if (target_module := module_of.get(reference_key)) is not None and target_module != module:
-                        module_graph[module].add(target_module)
-        return find_circular_sccs(module_graph)
-
     module_graph = graph.quotient(module_of, (EdgeKind.REFERENCE, EdgeKind.RULE_TYPE))
-    merges = graph_answer(snapshot, module_graph.circular_components(), old)
+    merges = module_graph.circular_components()
     exporting = {
         module
         for module, models in module_models_list

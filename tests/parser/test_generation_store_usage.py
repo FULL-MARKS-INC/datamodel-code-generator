@@ -306,6 +306,7 @@ def test_checker_uses_generation_store_api_surface() -> None:
             "append_field",
             "apply_const",
             "apply_literal_default",
+            "bind_builtin_names",
             "clear_target_null",
             "collapse_root_data_type",
             "defer_refresh",
@@ -419,7 +420,7 @@ def test_fact_vocabulary_and_table_shape() -> None:
         "Access": ("ATTRIBUTE", "CONTAINER", "ITEM", "DICT_KEY", "CACHED_PROPERTY"),
     })
     assert Counter(row.kind for row in checker.ATTRIBUTE_FACTS) == snapshot(
-        Counter({"FACT": 66, "PRESENTATION": 57, "BOOKKEEPING": 18, "CACHE": 11})
+        Counter({"FACT": 66, "PRESENTATION": 58, "BOOKKEEPING": 19, "CACHE": 11})
     )
     assert sorted({row.owner for row in checker.ATTRIBUTE_FACTS}) == snapshot([
         "AnnotatedConstraintDataType",
@@ -1119,43 +1120,43 @@ class Other(typing.NamedTuple):
             30,
             "Child",
             "extra",
-            "Child.extra has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "Child.extra has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             17,
             "DataModel",
             "fresh",
-            "DataModel.fresh has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.fresh has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             18,
             "DataModel",
             "annotated",
-            "DataModel.annotated has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.annotated has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             22,
             "DataModel",
             "later",
-            "DataModel.later has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.later has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             24,
             "DataModel",
             "first",
-            "DataModel.first has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.first has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             24,
             "DataModel",
             "second",
-            "DataModel.second has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.second has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             23,
             "DataModel",
             "dynamic",
-            "DataModel.dynamic has no ATTRIBUTE_FACTS row in src/datamodel_code_generator/parser/_facts.py",
+            "DataModel.dynamic has no ATTRIBUTE_FACTS row in scripts/fact_tables.py",
         ),
         (
             0,
