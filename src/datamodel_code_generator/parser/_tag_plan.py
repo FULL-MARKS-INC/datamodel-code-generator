@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast, final
 from datamodel_code_generator import Error
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._records import record
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, walk_graph
 from datamodel_code_generator.model._decisions.tag_value import (
     field_tag,
     is_tag_value,
@@ -750,7 +750,7 @@ def _has_related_instance_field(
                 )
                 for field_ in base_model.iter_all_fields()
             ),
-            _iter_derived_fields(model, derived_models, _ModelKeys("derived fields")),
+            _iter_derived_fields(model, derived_models, _ModelKeys()),
         )
     )
 
@@ -1001,27 +1001,7 @@ def _structs_sharing_a_union(models: Iterable[DataModel]) -> set[int]:
 def _has_cyclic_ancestry(model: DataModel) -> bool:
     """Return whether the base classes of a model, however distant, inherit from one another in a cycle."""
     walk = walk_graph(GraphSnapshot.CYCLIC_ANCESTRY, EdgeKind.BASE, (model,), _model_key_of_model, _find_base_classes)
-    return graph_answer(
-        GraphSnapshot.CYCLIC_ANCESTRY,
-        walk.graph.acyclic_order((EdgeKind.BASE,)) is None,
-        lambda: _walks_to_cyclic_ancestry(model),
-    )
-
-
-def _walks_to_cyclic_ancestry(model: DataModel) -> bool:
-    """Return whether the base classes of a model inherit from one another in a cycle, by walking them."""
-    visiting: dict[int, bool] = {id(model): True}
-    stack = [(id(model), iter(_find_base_classes(model)))]
-    while stack:
-        if (base := next(stack[-1][1], None)) is None:
-            visiting[stack.pop()[0]] = False
-            continue
-        if visiting.get(id(base)):
-            return True
-        if id(base) not in visiting:
-            visiting[id(base)] = True
-            stack.append((id(base), iter(_find_base_classes(base))))
-    return False
+    return walk.graph.acyclic_order((EdgeKind.BASE,)) is None
 
 
 def _bases_first(models: Sequence[DataModel]) -> list[DataModel]:
@@ -1041,29 +1021,7 @@ def _bases_first(models: Sequence[DataModel]) -> list[DataModel]:
         order.extend(
             reached for reached in walk.graph.postorder(key, EdgeKind.BASE, met) if walk.node_of[reached].base_classes
         )
-    return [
-        walk.node_of[key]
-        for key in graph_answer(
-            GraphSnapshot.TAGGED_BASES, order, lambda: list(map(_model_key_of_model, _walked_bases_first(models)))
-        )
-    ]
-
-
-def _walked_bases_first(models: Sequence[DataModel]) -> list[DataModel]:
-    """Return the models :func:`_bases_first` orders, by walking their bases."""
-    pending = {id(model): model for model in models}
-    order: list[DataModel] = []
-
-    def visit(model: DataModel) -> None:
-        if pending.pop(id(model), None) is None or not model.base_classes or _has_cyclic_ancestry(model):
-            return
-        for base in _find_base_classes(model):
-            visit(base)
-        order.append(model)
-
-    while pending:
-        visit(next(iter(pending.values())))
-    return order
+    return [walk.node_of[key] for key in order]
 
 
 def iter_struct_tag_decisions(models: Sequence[DataModel]) -> Iterator[StructTagDecision]:

@@ -15,17 +15,14 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 from typing_extensions import Protocol
 
-from datamodel_code_generator._checks import CheckArea, check_mode
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._records import record
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, graph_answer, walk_graph
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, walk_graph
 from datamodel_code_generator._requirements import pydantic_target_meets, python_target_meets
-from datamodel_code_generator._scc import find_circular_sccs
 from datamodel_code_generator.model._render_plan import RENDER_READY
 from datamodel_code_generator.model.base import (
     UNDEFINED,
     DataModel,
-    _check_render_plan_accounting,
     _find_base_classes,
     _model_key_of_model,
     linearize_data_models,
@@ -63,7 +60,7 @@ from datamodel_code_generator.parser._passes._shared import (
 )
 from datamodel_code_generator.parser._passes._warnings import warn_as_parser_base
 from datamodel_code_generator.python_literal import PythonCode, PythonRuntimeExpression
-from datamodel_code_generator.types import DataType, DefaultValueRecipe, type_expr_of
+from datamodel_code_generator.types import DataType, DefaultValueRecipe
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
@@ -389,25 +386,8 @@ def _alias_reference_cycles(models: Sequence[DataModel]) -> dict[int, int]:
     walk = walk_graph(
         GraphSnapshot.ALIAS_CYCLES, EdgeKind.CONTAINER_ITEM, starts, _model_key_of_model, _container_item_aliases
     )
-
-    def old() -> dict[int, int]:
-        aliases: dict[ModelKey, DataModel] = {}
-        graph: dict[ModelKey, set[ModelKey]] = {}
-        pending = list(starts)
-        while pending:
-            if (key := model_key_of((model := pending.pop()).reference)) in graph:
-                continue
-            aliases[key] = model
-            graph[key] = set(map(_model_key_of_model, targets := list(_container_item_aliases(model))))
-            pending.extend(targets)
-        return {id(aliases[key]): index for index, scc in enumerate(find_circular_sccs(graph)) for key in scc}
-
     cycles = walk.graph.circular_components((EdgeKind.CONTAINER_ITEM,))
-    return graph_answer(
-        GraphSnapshot.ALIAS_CYCLES,
-        {id(walk.node_of[key]): index for index, scc in enumerate(cycles) for key in scc},
-        old,
-    )
+    return {id(walk.node_of[key]): index for index, scc in enumerate(cycles) for key in scc}
 
 
 def _iter_cycle_containers(
@@ -1266,11 +1246,9 @@ def freeze_field_render_plans(state: _FinalizeState[Any]) -> None:
     """Freeze one render plan for every field of the models that render fields from plans (B2 follows).
 
     Under row ``legacy.L-NF`` the plan reads the nested-factory decision, and a field whose factory it changes
-    keeps the plan without it for the import snapshot. With ``DATAMODEL_CODE_GENERATOR_CHECK_RENDER_PLANS`` each
-    plan must account for every item its field declares.
+    keeps the plan without it for the import snapshot.
     """
     ready = cast("RenderReady", RENDER_READY.get())
-    mode = check_mode(CheckArea.RENDER_PLANS)
     for model in state.all_models:
         if not model._FREEZES_FIELD_RENDER_PLANS:  # noqa: SLF001
             continue
@@ -1286,6 +1264,4 @@ def freeze_field_render_plans(state: _FinalizeState[Any]) -> None:
                     if field._render_plan_text(decided) != import_text:  # noqa: SLF001
                         import_plan = plan
                 plan = decided
-            ready.freeze(field, plan, import_plan, None if mode is None else type_expr_of(model_field.data_type))
-            if mode is not None:
-                _check_render_plan_accounting(mode, model, field, plan)
+            ready.freeze(field, plan, import_plan)
