@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator._types import ProtobufParserConfigDict
     from datamodel_code_generator.config import ProtobufParserConfig
 
-PROTO_TOKEN_PATTERN = re.compile(
+PROTO_TCHARS = re.compile(
     r"(?P<comment>//[^\n]*|/\*[\s\S]*?(?:\*/|\Z))"
     r"|\"(?:\\[\s\S]|[^\"\\])*\"|'(?:\\[\s\S]|[^'\\])*'|[a-zA-Z_][a-zA-Z_0-9]*|[^\s]"
 )
@@ -197,7 +197,7 @@ def _sanitize_proto_source(text: str) -> str:
     """Drop custom options while preserving comments and both string delimiters."""
     if "(" not in text:
         return text
-    tokens = (token for token in PROTO_TOKEN_PATTERN.finditer(text) if token.lastgroup != "comment")
+    tokens = (token for token in PROTO_TCHARS.finditer(text) if token.lastgroup != "comment")
     result: list[str] = []
     copied = 0
     previous = None

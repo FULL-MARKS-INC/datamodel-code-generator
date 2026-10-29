@@ -25,6 +25,7 @@ from datamodel_code_generator._client.pagination import (
     _target_key,
     credential_place,
 )
+from datamodel_code_generator._runtime.model_codecs.media import SUCCESS_STATUSES, status_key
 from datamodel_code_generator._target_contract import NoneType, UnionType
 from datamodel_code_generator._target_module import TargetModule, TypeNames
 
@@ -42,8 +43,6 @@ if TYPE_CHECKING:
 
 STATES: Final = ("pending", "succeeded", "failed", "cancelled")
 _KINDS: Final = {"polling": "polling", "sse": "SSE", "ndjson": "NDJSON"}
-_MIN_SUCCESS: Final = 200
-_MAX_SUCCESS: Final = 299
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -98,10 +97,10 @@ class _Result:
 
 def _response(spec: OperationSpec, status: int) -> ResponseSpec | None:
     """Return the success response a status selects, by its exact key, its hundreds range, or default, or None."""
-    if not (_MIN_SUCCESS <= status <= _MAX_SUCCESS or status in spec.success_statuses):
+    if not (status in SUCCESS_STATUSES or status in spec.success_statuses):
         return None
     keys = {response.status: response for response in spec.responses if response.success}
-    return keys.get(str(status)) or keys.get(f"{status // 100}XX") or keys.get("default")
+    return None if (key := status_key(status, keys)) is None else keys[key]
 
 
 def _nonnull(value: TypeView) -> TypeView:

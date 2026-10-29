@@ -20,8 +20,9 @@ from ..model_codecs.media import (
     charset,
     decode_form,
     decode_text,
+    essence,
     media_kind,
-    normalize_media_type,
+    normalized,
     plain,
     typed,
 )
@@ -270,7 +271,7 @@ class BodyAdapter:
 
         Within each, a declaration without parameters comes before one with parameters the request did not name.
         """
-        essences = [(item.media_type.partition(";")[0], item) for item in self.media]
+        essences = [(essence(item.media_type), item) for item in self.media]
         object.__setattr__(
             self, "_essences", tuple(sorted(essences, key=lambda pair: (pair[0].count("*"), ";" in pair[1].media_type)))
         )
@@ -308,17 +309,15 @@ class BodyAdapter:
             return None, None
 
     def _select(self, header: str | None) -> tuple[BodyMedia, str, str] | None:
-        try:
-            normalized = normalize_media_type(header or "")
-        except ValueError:
+        if (wanted := normalized(header or "")) is None:
             return None
-        if (exact := next((media for media in self.media if media.media_type == normalized), None)) is not None:
-            return exact, exact.media_type, normalized
-        received = normalized.partition(";")[0]
+        if (exact := next((media for media in self.media if media.media_type == wanted), None)) is not None:
+            return exact, exact.media_type, wanted
+        received = essence(wanted)
         kind = received.partition("/")[0]
-        for essence, media in self._essences:
-            if essence in {received, f"{kind}/*", "*/*"}:
-                return media, media.media_type if "*" not in essence else received, normalized
+        for declared, media in self._essences:
+            if declared in {received, f"{kind}/*", "*/*"}:
+                return media, media.media_type if "*" not in declared else received, wanted
         return None
 
 
@@ -330,7 +329,7 @@ async def _read(media: BodyMedia, media_type: str, body: bytes, request: Request
             return (adapter or _ANY).validate_json(body)
         case "text":
             try:
-                text = decode_text(body, charset(media_type))
+                text = decode_text(body, charset(media_type, as_written=True))
             except MalformedError as error:
                 raise RequestValidationError([media_invalid(("body",))]) from error
             return _validated(adapter, text)

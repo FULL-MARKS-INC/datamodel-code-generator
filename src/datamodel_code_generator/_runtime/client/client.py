@@ -6,7 +6,6 @@ borrowed HTTP clients and providers retain their caller's lifetime.
 
 from __future__ import annotations
 
-import re
 from contextlib import (
     AbstractAsyncContextManager,
     AbstractContextManager,
@@ -24,6 +23,7 @@ import httpx2
 from typing_extensions import Self
 
 from ..model_codecs.errors import ParameterEncodingError
+from ..model_codecs.media import TOKEN, normalized
 from ..model_codecs.parameters import pairs, path_text, query_pairs, querystring
 from ..model_codecs.unset import UNSET
 from .content import EncodedAttempt
@@ -37,7 +37,6 @@ from .errors import (
     kept_primary,
 )
 from .logical import LogicalCallContext, run_sync
-from .media import normalized
 from .native import (
     async_decoded_bytes,
     async_response_bytes,
@@ -140,7 +139,6 @@ AdapterT = TypeVar("AdapterT", bound="httpx2.Client | httpx2.AsyncClient")
 HandleT = TypeVar("HandleT", bound="AnyRaw")
 
 CLEANUP_TIMEOUT: Final = 5.0
-_TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _DOT_CAUSE: Final = "A path value cannot make its segment '.' or '..', which URL normalization removes"
 _OWNERSHIPS: Final = frozenset({"borrowed", "owned"})
 _MIN_STATUS: Final = 200
@@ -442,7 +440,7 @@ def request_body(request: httpx2.Request) -> EncodedAttempt | None:
 
 def _checked_raw(method: object, url: object) -> tuple[str, str]:
     """Normalize the raw method and validate its native URL before sending."""
-    if not isinstance(method, str) or not _TOKEN.fullmatch(method):
+    if not isinstance(method, str) or not TOKEN.fullmatch(method):
         raise ConfigurationError(field_path=("method",), reason="invalid_value")
     if not isinstance(url, str):
         raise ConfigurationError(field_path=("url",), reason="invalid_url")
