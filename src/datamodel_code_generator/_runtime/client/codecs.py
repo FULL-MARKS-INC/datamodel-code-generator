@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Generic, NoReturn, cast
 
 from typing_extensions import TypeVar
 
-from ..model_codecs.media import media_kind
+from ..model_codecs.media import media_kind, status_key
 from ..model_codecs.parameter_reads import ParameterFragment, RawParameter, decode_parameter
 from ..model_codecs.unset import UNSET
 from .errors import response_failure
-from .operations import PARSE_ERRORS, status_key
+from .operations import PARSE_ERRORS
 
 if TYPE_CHECKING:
     from collections.abc import Callable

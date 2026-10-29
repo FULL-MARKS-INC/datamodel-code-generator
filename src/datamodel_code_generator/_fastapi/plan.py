@@ -36,7 +36,14 @@ from datamodel_code_generator._openapi_wire_plan import (
     parameter_plans,
     plan_wire,
 )
-from datamodel_code_generator._runtime.model_codecs.media import FieldPlan, charset, media_kind, normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import (
+    FieldPlan,
+    charset,
+    essence,
+    media_kind,
+    normalized,
+    status_key,
+)
 from datamodel_code_generator._target_contract import (
     BuiltinType,
     ConstructorType,
@@ -486,7 +493,7 @@ def _json_type(encoding: WireDeclaration) -> bool:
     """Return whether an encoding's contentType names one JSON media type, rather than several or a range."""
     if (found := content_types(encoding)) is None or len(found) != 1:
         return False
-    return "*" not in found[0].partition(";")[0] and media_kind(found[0]) == "json"
+    return "*" not in essence(found[0]) and media_kind(found[0]) == "json"
 
 
 def _part_text(encoding: WireDeclaration) -> bool:
@@ -498,9 +505,9 @@ def _part_text(encoding: WireDeclaration) -> bool:
         return False
     single = found[0]
     return (
-        "*" not in single.partition(";")[0]
+        "*" not in essence(single)
         and media_kind(single) == "text"
-        and charset(single).lower() in _PART_CHARSETS
+        and charset(single, as_written=True).lower() in _PART_CHARSETS
     )
 
 
@@ -1476,7 +1483,7 @@ class Planner:  # noqa: PLR0904
         response = _declaring(responses, choice.status_code)
         media = None if response is None else default_media(response)
         if response is not None and choice.media_type is not None:
-            wanted = _normalized(choice.media_type)
+            wanted = normalized(choice.media_type) or choice.media_type
             media = next((item for item in response.media if item.media_type == wanted), None)
         if response is None or (choice.media_type is not None and media is None):
             self.problems.append(
@@ -1783,7 +1790,7 @@ def _slotted(argument: Argument, slots: Mapping[str, str]) -> Argument:
 def _declaring(responses: tuple[ResponseSpec, ...], status: int) -> ResponseSpec | None:
     """Return the response that declares a status: exact, then the same status class, then default."""
     declared = {response.status: response for response in responses}
-    return declared.get(str(status)) or declared.get(f"{status // 100}XX") or declared.get("default")
+    return None if (key := status_key(status, declared)) is None else declared[key]
 
 
 def _registration(responses: tuple[ResponseSpec, ...], primary: PrimarySpec | None) -> int:
@@ -1793,17 +1800,10 @@ def _registration(responses: tuple[ResponseSpec, ...], primary: PrimarySpec | No
     return min(ranges, default=_DEFAULT_STATUS)
 
 
-def _normalized(media_type: str) -> str:
-    try:
-        return normalize_media_type(media_type)
-    except ValueError:
-        return media_type
-
-
 def default_media(response: ResponseSpec) -> MediaSpec | None:
     """Return the media a response takes without a choice: JSON, then +json, then the first declared."""
     return (
         next((item for item in response.media if item.media_type == _JSON), None)
-        or next((item for item in response.media if item.media_type.partition(";")[0].endswith("+json")), None)
+        or next((item for item in response.media if essence(item.media_type).endswith("+json")), None)
         or next(iter(response.media), None)
     )

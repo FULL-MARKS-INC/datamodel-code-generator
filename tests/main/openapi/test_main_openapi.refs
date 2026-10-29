@@ -1424,6 +1424,8 @@ union-operator	main/openapi/msgspec_ref_nullable_strict_nullable.py
 [test_main_openapi_msgspec_tagged_unions_declaration_order]
 base_earlier	main/openapi/discriminator/msgspec_tagged_unions_base_earlier.py
 base_later	main/openapi/discriminator/msgspec_tagged_unions_base_later.py
+[test_main_openapi_msgspec_tagged_unions_diamond]
+	main/openapi/discriminator/msgspec_tagged_unions_diamond.py
 [test_main_openapi_msgspec_tagged_unions_inherited]
 api	main/openapi/discriminator/msgspec_tagged_unions_inherited.py
 cli	main/openapi/discriminator/msgspec_tagged_unions_inherited.py

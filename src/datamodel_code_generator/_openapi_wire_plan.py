@@ -13,6 +13,7 @@ from datamodel_code_generator._runtime.model_codecs.media import (
     LexicalKind,
     media_kind,
     normalize_media_type,
+    normalized,
 )
 from datamodel_code_generator._runtime.model_codecs.parameters import (
     ParameterLocation,
@@ -179,9 +180,7 @@ def declared_media(name: str) -> tuple[str, str | None]:
     A key that is no media type is kept as it is written. A media type whose text is not ASCII header text, such as one
     with a non-ASCII parameter, labels no body: its Content-Type would fail every call.
     """
-    try:
-        media_type = normalize_media_type(name)
-    except ValueError:
+    if (media_type := normalized(name)) is None:
         return name, "is not a media type"
     return media_type, None if header_text(media_type) else "is not ASCII header text, which a Content-Type needs"
 

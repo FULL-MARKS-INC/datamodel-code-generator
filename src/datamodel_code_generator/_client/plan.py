@@ -29,7 +29,15 @@ from datamodel_code_generator._openapi_wire_plan import (
 )
 from datamodel_code_generator._runtime.client.media import most_specific
 from datamodel_code_generator._runtime.client.parts import PartPlan
-from datamodel_code_generator._runtime.model_codecs.media import media_kind, normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import (
+    ERROR_STATUSES,
+    SUCCESS_STATUSES,
+    essence,
+    media_kind,
+    normalize_media_type,
+    normalized,
+    status_key,
+)
 from datamodel_code_generator._target_contract import (
     BuiltinType,
     ConstructorType,
@@ -95,10 +103,6 @@ _SCHEMES: Final = frozenset({"http", "https"})
 _FORM_DATA: Final = "multipart/form-data"
 _NULL: Final = frozenset({"null"})
 _UNDECLARED: Final = PartFacts(object=True, members=(), extra=None)
-_MIN_SUCCESS: Final = 200
-_MAX_SUCCESS: Final = 299
-_MIN_ERROR: Final = 400
-_MAX_ERROR: Final = 599
 _CONFIG_CODES: Final = frozenset({"E_CONFIG_VALUE", "E_CONFIG_CONFLICT", "E_OPERATION_REF"})
 _DEFAULTS: Final = {"bool": ("bool",), "int": ("int",), "float": ("int", "float"), "str": ("str",)}
 
@@ -1116,7 +1120,7 @@ class Planner:
                 "operations",
             )
             for status in success_statuses
-            if not keys & {str(status), f"{status // 100}XX", "default"}
+            if status_key(status, keys) is None
         )
 
     def response_media(
@@ -1231,13 +1235,13 @@ def _default(use: TypeUseBinding | None, argument: TypeView | None) -> LiteralSc
 
 
 def _success(status: str, success_statuses: tuple[int, ...]) -> bool:
-    if status in {"default", "2XX"} or (status.isdigit() and _MIN_SUCCESS <= int(status) <= _MAX_SUCCESS):
+    if status in {"default", "2XX"} or (status.isdigit() and int(status) in SUCCESS_STATUSES):
         return True
     return any(status in {str(item), f"{item // 100}XX"} for item in success_statuses)
 
 
 def _error(status: str) -> bool:
-    return status in {"default", "4XX", "5XX"} or (status.isdigit() and _MIN_ERROR <= int(status) <= _MAX_ERROR)
+    return status in {"default", "4XX", "5XX"} or (status.isdigit() and int(status) in ERROR_STATUSES)
 
 
 def success_media(responses: tuple[ResponseSpec, ...]) -> tuple[str, ...]:
@@ -1263,7 +1267,7 @@ def reachable(concrete: str, media: tuple[str, ...]) -> tuple[str, ...]:
 
 def media_range(media_type: str) -> bool:
     """Return whether a media type is a range such as image/* or */*."""
-    return "*" in media_type.partition(";")[0]
+    return "*" in essence(media_type)
 
 
 def _unsupported(kind: MediaKind, essence: str, use: TypeUseBinding | None, *, request: bool) -> str | None:
@@ -1487,7 +1491,4 @@ def _form(media_type: str) -> bool:
 
 
 def _essence(media_type: str) -> str:
-    try:
-        return normalize_media_type(media_type).partition(";")[0]
-    except ValueError:
-        return ""
+    return essence(normalized(media_type) or "")

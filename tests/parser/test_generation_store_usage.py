@@ -420,7 +420,7 @@ def test_fact_vocabulary_and_table_shape() -> None:
         "Access": ("ATTRIBUTE", "CONTAINER", "ITEM", "DICT_KEY", "CACHED_PROPERTY"),
     })
     assert Counter(row.kind for row in checker.ATTRIBUTE_FACTS) == snapshot(
-        Counter({"FACT": 66, "PRESENTATION": 58, "BOOKKEEPING": 18, "CACHE": 11})
+        Counter({"FACT": 67, "PRESENTATION": 57, "BOOKKEEPING": 18, "CACHE": 11})
     )
     assert sorted({row.owner for row in checker.ATTRIBUTE_FACTS}) == snapshot([
         "AnnotatedConstraintDataType",
@@ -501,7 +501,7 @@ def write(field, data_type, model, name, broken: "not valid("):
     model.class_name = name
     data_type.use_generic_container = True
     field.__dict__["_forced_field_assignment"] = True
-    field.__dict__[SCHEMA_LOCATION_CONFLICT_KEY] = "bookkeeping"
+    field.__dict__[SCHEMA_OWNER_FRAMES_KEY] = "bookkeeping"
     field.__dict__["_unknown"] = 1
     field.__dict__[name] = 1
     field.__dict__.update({})

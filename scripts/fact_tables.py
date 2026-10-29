@@ -29,9 +29,9 @@ Columns of a row:
 The checker enforces the kind rules: a fact row names a ``Fact``, a presentation row names only ``RenderFact``
 members, a cache row names no ``Fact``. Three exceptions are allowed: plan rows (``Parser`` snapshots that later
 passes read) are fact rows that name only ``RenderFact.PLANS``; rows holding rendered nullability (``is_optional``
-and its ``__dict__`` markers) name ``Fact.NULLABLE`` and freeze at B2: render preparation writes rendered nullability
-once, and only the null a msgspec field strips from its copied types is written at L7; the schema-validator plan
-cache names ``RenderFact.MODULE_CODE``, the code it holds.
+and the record of where a type's None comes from) name ``Fact.NULLABLE`` and freeze at B2: render preparation writes
+rendered nullability once, and only the null a msgspec field strips from its copied types is written at L7; the
+schema-validator plan cache names ``RenderFact.MODULE_CODE``, the code it holds.
 """
 
 from __future__ import annotations
@@ -380,20 +380,19 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
     ),
     AttributeFact(
         "DataType",
-        "_REFERENCE_NULL_DATA_TYPE_KEY",
-        FactKind.PRESENTATION,
-        (Fact.NULLABLE,),
-        Phase.RENDER_PREPARATION,
-        FreezePoint.B2,
-        access=Access.DICT_KEY,
-    ),
-    AttributeFact(
-        "DataType",
-        "_NULL_STRIPPED_DATA_TYPE_KEY",
+        "_TYPE_NULL_DATA_TYPE_KEY",
         FactKind.PRESENTATION,
         (Fact.NULLABLE,),
         Phase.RENDER,
         FreezePoint.B2,
+        store_ops=(
+            "clear_target_null",
+            "drop_held_null",
+            "mark_target_null",
+            "redirect_model_reference_users",
+            "redirect_reference_users",
+            "write_rendered_null",
+        ),
         access=Access.DICT_KEY,
     ),
     AttributeFact(
@@ -1049,8 +1048,9 @@ ATTRIBUTE_FACTS: tuple[AttributeFact, ...] = (
         store_ops=("register_model",),
         access=Access.CONTAINER,
     ),
-    AttributeFact("Parser", "_reuse_union_tags", FactKind.FACT, (RenderFact.PLANS,), Phase.STRUCTURE, FreezePoint.B1),
+    AttributeFact("Parser", "_tag_plan", FactKind.FACT, (RenderFact.PLANS,), Phase.CROSS_MODULE, FreezePoint.B1),
     AttributeFact("Parser", "_recursion_facts", FactKind.FACT, (RenderFact.PLANS,), Phase.MODULES, FreezePoint.B1),
+    AttributeFact("Parser", "_reuse_groups", FactKind.FACT, (RenderFact.PLANS,), Phase.SETTLE, FreezePoint.B1),
     AttributeFact(
         "ModuleContext",
         "models",

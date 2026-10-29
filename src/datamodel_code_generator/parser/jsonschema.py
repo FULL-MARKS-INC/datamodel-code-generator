@@ -100,6 +100,7 @@ from datamodel_code_generator._source import (
     load_data_from_path,
 )
 from datamodel_code_generator._url_redaction import redact_path, redact_reference, redact_url
+from datamodel_code_generator._user_keys import template_data_keys
 from datamodel_code_generator.deprecations import warn_deprecated
 from datamodel_code_generator.enums import AliasGenerator
 from datamodel_code_generator.imports import IMPORT_ANY, Import, Imports
@@ -14781,7 +14782,7 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         """Return shared template data only when the enum reference has relevant entries."""
         if not (extra_template_data := self.extra_template_data):
             return None
-        if extra_template_data.get(reference.path) or extra_template_data.get(reference.name):
+        if any(extra_template_data.get(key) for key in template_data_keys(reference.path, reference.name)):
             return extra_template_data
         return None
 
