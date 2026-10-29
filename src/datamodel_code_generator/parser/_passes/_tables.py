@@ -697,9 +697,7 @@ PIPELINE: tuple[StepLike[PipelineHost, _PipelineRun[Any, Any, Any]], ...] = (
                     self, run.contexts, evaluates_annotations=not run.config.use_deferred_annotations
                 ),
                 when=lambda self, _: (
-                    self.data_model_type._READ_BY_PYDANTIC  # noqa: SLF001
-                    or self.data_model_type._READ_BY_MSGSPEC  # noqa: SLF001
-                    or bool(self._self_named_root_models)
+                    imports.alias_loop_failure(self.data_model_type) is not None or bool(self._self_named_root_models)
                 ),
             ),
             PassSpec(

@@ -20,6 +20,7 @@ from datamodel_code_generator import DefaultValueTypeWarning, Error, ReuseScope
 from datamodel_code_generator._constraint_applicability import MSGSPEC_OUTPUT, int_beyond_values
 from datamodel_code_generator._model_keys import model_key_of
 from datamodel_code_generator._python_target_names import PYTHON_BUILTIN_TYPE_NAMES
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, reference_graph
 from datamodel_code_generator._requirements import pydantic_floor
 from datamodel_code_generator._url_redaction import redact_reference
 from datamodel_code_generator.enums import DefaultValueType
@@ -31,6 +32,7 @@ from datamodel_code_generator.model.base import BaseClassDataType, DataModel, _b
 from datamodel_code_generator.model.enum import Enum, IntEnum, StrEnum, get_raw_enum_member_value
 from datamodel_code_generator.model.output import _bare_name_loads, _model_field_name_collisions
 from datamodel_code_generator.model.type_alias import TypeAliasBase, TypeStatement
+from datamodel_code_generator.parser._graph_ids import keyed_models
 from datamodel_code_generator.parser._imports_plan import Added, ImportProducer
 from datamodel_code_generator.parser._passes._shared import (
     BaseStandInHost,
@@ -917,24 +919,34 @@ def _named_alias(model: DataModel) -> TypeAliasBase | None:
     return target
 
 
-def _alias_cycles(models: Sequence[DataModel]) -> dict[int, tuple[DataModel, ...]]:
-    """Map each type alias that only names the next alias of a cycle to that cycle, starting at the alias."""
-    named = {id(model): target for model in models if (target := _named_alias(model)) is not None}
-    by_id = {id(model): model for model in models}
-    cycles: dict[int, tuple[DataModel, ...]] = {}
-    visited: set[int] = set()
-    for start in named:
-        path: dict[int, None] = {}
-        current = start
-        while current in named and current not in visited and current not in path:
-            path[current] = None
-            current = id(named[current])
-        visited.update(path)
-        if current in path:
-            members = [*path][[*path].index(current) :]
-            for index, member in enumerate(members):
-                cycles[member] = tuple(by_id[item] for item in (*members[index:], *members[:index]))
-    return cycles
+def alias_loop_failure(data_model_type: type[DataModel]) -> str | None:
+    """Return what fails on a model that reaches a type alias of a looping ``$ref`` chain in ``data_model_type`` output.
+
+    Pydantic builds the model and msgspec decodes it; None when nothing reads its annotations.
+    """
+    if data_model_type._READ_BY_PYDANTIC:  # noqa: SLF001
+        return "Pydantic cannot build"
+    if data_model_type._READ_BY_MSGSPEC:  # noqa: SLF001
+        return "msgspec cannot decode"
+    return None
+
+
+def _alias_loops(models: Sequence[DataModel], self_named: Sequence[DataModel]) -> dict[int, tuple[DataModel, ...]]:
+    """Map each model of a ``$ref`` chain that loops back without reaching a schema to the loop, starting at it.
+
+    The loops are those of the alias graph (`EdgeKind.ALIAS`): type aliases that only name the next alias of a cycle,
+    and the root models of ``self_named``, whose root names the model itself.
+    """
+    snapshot = GraphSnapshot.ALIAS_LOOPS
+    keyed = keyed_models((*models, *self_named), snapshot.value)
+    edges = {
+        model_key_of(model.reference): (model_key_of(target.reference),)
+        for model in models
+        if (target := _named_alias(model)) is not None
+    }
+    edges.update((key, (key,)) for key in map(model_key_of, (model.reference for model in self_named)))
+    loops = reference_graph(snapshot, keyed.models, {EdgeKind.ALIAS: edges}).loops(EdgeKind.ALIAS)
+    return {id(keyed.models[key]): tuple(map(keyed.models.__getitem__, loop)) for key, loop in loops.items()}
 
 
 def _loop_error(model: DataModel, cycle: Sequence[DataModel], failure: str) -> Error:
@@ -973,11 +985,12 @@ def reject_alias_cycles_without_schema(
     class reaches keep their output, unless the module evaluates the name of a dropped root model as it runs, in an
     alias or, with ``evaluates_annotations``, in a class: it then fails to import, whatever reads the output.
     """
-    self_named = {id(model): (model,) for model in parser._self_named_root_models}  # noqa: SLF001
-    reads_annotations = parser.data_model_type._READ_BY_PYDANTIC or parser.data_model_type._READ_BY_MSGSPEC  # noqa: SLF001
+    self_named_models = parser._self_named_root_models  # noqa: SLF001
+    self_named = {id(model): (model,) for model in self_named_models}
     models = [model for context in contexts for model in context.models]
-    if reads_annotations and (cycles := _alias_cycles(models) | self_named):
-        failure = "Pydantic cannot build" if parser.data_model_type._READ_BY_PYDANTIC else "msgspec cannot decode"  # noqa: SLF001
+    if (failure := alias_loop_failure(parser.data_model_type)) is not None and (
+        cycles := _alias_loops(models, self_named_models)
+    ):
         for model in models:
             if isinstance(model, TypeAliasBase):
                 continue

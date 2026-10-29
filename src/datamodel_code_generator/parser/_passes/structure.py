@@ -17,8 +17,7 @@ from typing_extensions import Protocol
 
 from datamodel_code_generator import AllExportsScope, Error, ModuleSplitMode, ReuseScope
 from datamodel_code_generator._model_keys import model_key_of
-from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, reference_graph
-from datamodel_code_generator._scc import find_circular_sccs, strongly_connected_components
+from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, GroupGraph
 from datamodel_code_generator.model.base import (
     DataModel,
     get_resolve_reference_action_capabilities,
@@ -827,8 +826,8 @@ def _failing_cycles(
     imports unless a module of it imports from the package: the cycles left without running the packages of
     ``entered`` are checked again. Any other cycle finds one of its modules half built.
     """
-    graph = {node: (imports[node] | (packages[node] - entered)) & nodes for node in nodes}
-    for component in strongly_connected_components(graph):
+    graph = GroupGraph({node: (imports[node] | (packages[node] - entered)) & nodes for node in nodes})
+    for component in graph.components():
         if len(component) == 1:
             continue
         top = min(component, key=lambda node: len(node[0]))
@@ -866,7 +865,7 @@ def _same_path(module: tuple[str, ...]) -> tuple[str, ...]:
 
 def _failing_import_cycles(
     merges: list[set[tuple[str, ...]]],
-    module_graph: dict[tuple[str, ...], set[tuple[str, ...]]],
+    module_graph: GroupGraph[tuple[str, ...]],
     exporting: set[tuple[str, ...]],
     all_exports_scope: AllExportsScope | None,
     *,
@@ -890,10 +889,10 @@ def _failing_import_cycles(
 
     imports = {
         (place(module), -1): {forwarded[module]} if module in forwarded else set(map(node_of, targets))
-        for module, targets in module_graph.items()
+        for module, targets in module_graph.edges.items()
     }
     for node, merge in zip(internal_nodes, merges, strict=True):
-        imports[node] = set(map(node_of, {target for module in merge for target in module_graph[module]} - merge))
+        imports[node] = set(map(node_of, {target for module in merge for target in module_graph.edges[module]} - merge))
     exports: dict[tuple[tuple[str, ...], int], set[tuple[tuple[str, ...], int]]] = {}
     if all_exports_scope is not None:
         exporters = [(place(module), -1) for module in exporting if module not in forwarded]
@@ -908,7 +907,7 @@ def _failing_import_cycles(
         (path, index): {(path[:size], -1) for size in range(len(path)) if (path[:size], -1) in edges} - targets
         for (path, index), targets in edges.items()
     }
-    module_at = {place(module): module for module in module_graph}
+    module_at = {place(module): module for module in module_graph.edges}
     exported = set().union(*exports.values())
 
     def moves(node: tuple[tuple[str, ...], int], cycle: set[tuple[tuple[str, ...], int]]) -> bool:
@@ -1002,18 +1001,9 @@ def _module_merges(
         )
         for key, model in keyed.models.items()
     }
-    graph = reference_graph(
-        snapshot,
-        keyed.models,
-        {
-            EdgeKind.REFERENCE: {
-                key: index.referenced_keys_for_model(model, keyed) for key, model in keyed.models.items()
-            },
-            EdgeKind.RULE_TYPE: rule_references,
-        },
-    )
+    graph = index.reference_graph(snapshot, keyed, edges={EdgeKind.RULE_TYPE: rule_references})
     module_graph = graph.quotient(module_of, (EdgeKind.REFERENCE, EdgeKind.RULE_TYPE))
-    merges = find_circular_sccs(module_graph)
+    merges = module_graph.circular_components()
     exporting = {
         module
         for module, models in module_models_list

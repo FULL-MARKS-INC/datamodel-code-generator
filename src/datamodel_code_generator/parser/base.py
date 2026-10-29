@@ -64,7 +64,6 @@ from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import (
     EdgeKind,
     GraphSnapshot,
-    reference_graph,
 )
 from datamodel_code_generator._requirements import (
     REQUIREMENTS,
@@ -3245,15 +3244,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             snapshot = GraphSnapshot.NESTED_MODEL_DEFAULT_FACTORIES
             keyed = keyed_models((model for models in modules for model in models), snapshot.value)
             index = self.generation_store.index
-            graph = reference_graph(
-                snapshot,
-                keyed.models,
-                {
-                    EdgeKind.REFERENCE: {
-                        key: index.referenced_keys_for_model(model, keyed) for key, model in keyed.models.items()
-                    }
-                },
-            )
+            graph = index.reference_graph(snapshot, keyed)
             for component in graph.circular_components((EdgeKind.REFERENCE,)):
                 recursive_keys = frozenset(component)
                 recursive_keys_by_model.update(dict.fromkeys(recursive_keys, recursive_keys))

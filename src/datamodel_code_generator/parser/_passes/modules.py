@@ -22,7 +22,6 @@ from typing_extensions import Protocol
 
 from datamodel_code_generator import CollapseRootModelsNameStrategy, FieldTypeCollisionStrategy, ReuseScope
 from datamodel_code_generator._constraint_applicability import TAG_LITERAL_UNTAKEN_KEYWORD
-from datamodel_code_generator._graph import stable_toposort
 from datamodel_code_generator._internal_utils import get_most_of_parent
 from datamodel_code_generator._model_keys import FIELDLESS_SITE_KEY, ModelKey, model_key_of
 from datamodel_code_generator._reference_graph import (
@@ -722,7 +721,6 @@ def _is_builtin_type_collision(current_name: str, data_type: DataType) -> bool:
 ComponentId: TypeAlias = int
 Components: TypeAlias = list[list[ModelName]]
 ComponentOf: TypeAlias = dict[ModelName, ComponentId]
-ComponentEdges: TypeAlias = dict[ComponentId, set[ComponentId]]
 
 _KEEP_MODEL_ORDER_EDGES: Final = (EdgeKind.DEFINITION, EdgeKind.FIELD)
 """The edges keep model order keeps the models of one cycle together over."""
@@ -851,31 +849,17 @@ def _build_keep_model_order_components(
     return _KeepModelOrderComponents(components=components, comp_of=comp_of)
 
 
-def _build_keep_model_order_component_edges(
-    all_deps: ModelDeps,
-    comp_of: ComponentOf,
-    num_components: int,
-) -> ComponentEdges:
-    comp_edges: ComponentEdges = {i: set() for i in range(num_components)}
-    for name, deps in all_deps.items():
-        name_comp = comp_of[name]
-        for dep in deps:
-            if (dep_comp := comp_of[dep]) != name_comp:
-                comp_edges[dep_comp].add(name_comp)
-    return comp_edges
-
-
 def _build_keep_model_order_component_order(
-    components: Components,
-    comp_edges: ComponentEdges,
+    comps: _KeepModelOrderComponents,
     order_index: OrderIndex,
+    keyed: _KeepModelOrderGraph,
 ) -> list[ComponentId]:
-    comp_key = [min(order_index[n] for n in members) for members in components]
-    return stable_toposort(
-        list(range(len(components))),
-        comp_edges,
-        key=lambda component_id: comp_key[component_id],
+    """Order the components with the components each depends on first, over the quotient of the snapshot."""
+    comp_key = [min(order_index[n] for n in members) for members in comps.components]
+    component_graph = keyed.graph.quotient(
+        {key: comps.comp_of[name] for key, name in keyed.name_of_key.items()}, _KEEP_MODEL_ORDER_EDGES
     )
+    return component_graph.dependency_order(comp_key.__getitem__)
 
 
 def _build_keep_model_ordered_names(
@@ -928,8 +912,7 @@ def _reorder_models_keep_model_order(
     )
     keyed = _keep_model_order_graph(deps, model_by_name)
     comps = _build_keep_model_order_components(order_index, keyed)
-    comp_edges = _build_keep_model_order_component_edges(deps.all, comps.comp_of, len(comps.components))
-    ordered_comp_ids = _build_keep_model_order_component_order(comps.components, comp_edges, order_index)
+    ordered_comp_ids = _build_keep_model_order_component_order(comps, order_index, keyed)
     ordered_names = _build_keep_model_ordered_names(ordered_comp_ids, comps.components, order_index, keyed)
     models[:] = [model_by_name[name] for name in ordered_names]
 

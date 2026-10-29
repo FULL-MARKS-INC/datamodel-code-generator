@@ -139,7 +139,7 @@ audit = "D-PP-01"
 [homes.H20]
 decision = "recursion facts: strongly connected components, cycles and dependency order of the reference graph"
 core = ["_reference_graph.py", "_scc.py", "_graph.py"]
-adapters = ["dynamic.py"]
+adapters = ["dynamic.py", "parser/generation.py:GenerationIndex.reference_graph"]
 
 [homes.H20.signatures.graph-algorithm]
 kind = "call"
@@ -1831,9 +1831,6 @@ fix = "G05"
 [allow."src/datamodel_code_generator/parser/_passes/imports.py"."tuple_unique_items_warning"]
 "F-use-tuple-for-closed-arrays.option-read" = { home = "F-use-tuple-for-closed-arrays", count = 1, audit = "Hx-array-shape" }
 
-[allow."src/datamodel_code_generator/parser/_passes/modules.py"."_build_keep_model_order_component_order"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
 [allow."src/datamodel_code_generator/parser/_passes/modules.py"."replace_unique_list_to_set"]
 "F-use-tuple-for-closed-arrays.option-read" = { home = "F-use-tuple-for-closed-arrays", count = 1, audit = "Hx-array-shape" }
 
@@ -1842,12 +1839,6 @@ fix = "G05"
 
 [allow."src/datamodel_code_generator/parser/_passes/settle.py"."sort_parsed_models"]
 "F-dedupe-request-response-variants.option-read" = { home = "F-dedupe-request-response-variants", count = 1, audit = "D-PP-06" }
-
-[allow."src/datamodel_code_generator/parser/_passes/structure.py"."_failing_cycles"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
-
-[allow."src/datamodel_code_generator/parser/_passes/structure.py"."_module_merges"]
-"H20.graph-algorithm" = { home = "H20", count = 1, audit = "D-PP-07" }
 
 [allow."src/datamodel_code_generator/parser/base.py"."Parser._get_duplicate_root_reference"]
 "F-use-site-models-for-constrained-refs.option-read" = { home = "F-use-site-models-for-constrained-refs", count = 1, audit = "D-L1-14" }
