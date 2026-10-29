@@ -372,7 +372,6 @@ class _PipelineRun(Generic[ConfigT, ContextT, ResultT]):
     unused_models: list[DataModel] = dataclasses.field(default_factory=list)
     module_to_import: dict[ModulePath, Imports] = dataclasses.field(default_factory=dict)
     contexts: list[ContextT] = dataclasses.field(default_factory=list)
-    opted_out: list[DataModel] = dataclasses.field(default_factory=list)
     decisions: DecisionOutcome = _NO_DECISIONS
     output: str | dict[tuple[str, ...], ResultT] = dataclasses.field(init=False)
 
@@ -389,7 +388,6 @@ class ProcessingRun(StructuredRun[ConfigT], Protocol[ConfigT, ContextT, ResultT]
 class FinishRun(ProcessingRun[ConfigT, ContextT, ResultT], Protocol[ConfigT, ContextT, ResultT]):
     """What the passes after the output modules are processed read and write."""
 
-    opted_out: list[DataModel]
     decisions: DecisionOutcome
     """What the decision phase changed."""
     output: str | dict[tuple[str, ...], ResultT]

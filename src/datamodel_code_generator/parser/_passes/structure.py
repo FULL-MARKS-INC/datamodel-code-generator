@@ -30,7 +30,6 @@ from datamodel_code_generator.parser._model_shapes import COLLAPSE_REUSE, SAME_N
 from datamodel_code_generator.parser._passes._name_allocation import scheme_resolver
 from datamodel_code_generator.parser._passes._shared import (
     BaseStandInHost,
-    _get_mapping_discriminator_values,
     _parsed_rule_data_types,
     _runtime_validation_reference_keys,
     _sort_models_by_class_body_references,
@@ -39,13 +38,13 @@ from datamodel_code_generator.parser._passes._shared import (
     require_update_action,
 )
 from datamodel_code_generator.parser._passes._state import Forwarder, RecursionFacts, _ModuleNames
+from datamodel_code_generator.parser._tag_plan import declared_union_tags
 from datamodel_code_generator.util import camel_to_snake
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from datamodel_code_generator._format_types import PythonVersion
-    from datamodel_code_generator._internal_utils import HashableComparable
     from datamodel_code_generator._model_keys import ModelKey
     from datamodel_code_generator.config import ParserConfig
     from datamodel_code_generator.format import CodeFormatter, Formatter
@@ -61,6 +60,7 @@ if TYPE_CHECKING:
         StructuredRun,
         _StructureState,
     )
+    from datamodel_code_generator.parser._tag_plan import TagPlan
     from datamodel_code_generator.parser.generation import GenerationStore, GraphBuilder
     from datamodel_code_generator.reference import Reference
     from datamodel_code_generator.types import DataType
@@ -86,8 +86,11 @@ class StructureHost(BaseStandInHost, Protocol):
     """The options, run state and hooks of the parser that the structure passes read and write."""
 
     _recursion_facts: RecursionFacts
-    _reuse_union_tags: dict[DataModel, tuple[HashableComparable, ...]]
     _uses_standard_generation_templates: bool
+
+    @property
+    def _tag_plan(self) -> TagPlan:
+        """What the tag passes of the parse recorded."""
 
     @property
     def _collapsed_reuse_models(self) -> dict[int, list[DataModel]]:
@@ -313,40 +316,6 @@ def get_module_directory(module: tuple[str, ...]) -> tuple[str, ...]:
     if len(module) == 1:
         return module
     return module[:-1]
-
-
-def _union_tags(model: DataModel) -> tuple[HashableComparable, ...]:
-    """Return the field index, property and the tags of each variant of each discriminated union of a model.
-
-    Unions that render alike decode other tags when their discriminators name another property or map their
-    variants to other tags. The tags a mapping gives the variants are listed by variant position, so unions that
-    map the same tags to variants that reuse merges match whatever schemas their mappings name.
-    """
-    if not (
-        discriminators := [
-            (index, discriminator, field.data_type.data_types)
-            for index, field in enumerate(model.fields)
-            if isinstance(discriminator := field.extras.get("discriminator"), dict)
-        ]
-    ):
-        return ()
-    from datamodel_code_generator._internal_utils import to_hashable  # noqa: PLC0415
-
-    return tuple(
-        (
-            index,
-            str(discriminator.get("propertyName")),
-            tuple(
-                to_hashable(_get_mapping_discriminator_values(source, mapping))
-                if (mapping := discriminator.get("mapping"))
-                and (reference := data_type.reference)
-                and isinstance(source := reference.source, DataModel)
-                else ()
-                for data_type in data_types
-            ),
-        )
-        for index, discriminator, data_types in discriminators
-    )
 
 
 def _distinct_bases(row: ShapeRow, bases: Iterable[BaseClassDataType]) -> Iterable[BaseClassDataType]:
@@ -1225,8 +1194,8 @@ def reset_collapsed_reuse_state(parser: StructureHost, _state: _StructureState) 
 
 def snapshot_union_tags(parser: StructureHost, state: _StructureState) -> None:
     """Record the tags of each discriminated union before reuse merges any model."""
-    parser._reuse_union_tags = (  # noqa: SLF001
-        {model: tags for _, models in state.module_models for model in models if (tags := _union_tags(model))}
+    parser._tag_plan.reuse_snapshot = (  # noqa: SLF001
+        {model: tags for _, models in state.module_models for model in models if (tags := declared_union_tags(model))}
         if parser.reuse_model
         else {}
     )

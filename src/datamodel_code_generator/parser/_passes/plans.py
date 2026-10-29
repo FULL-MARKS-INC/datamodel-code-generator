@@ -6,7 +6,6 @@ the parser comes in through ``PlansHost``, which ``Parser`` satisfies structural
 
 from __future__ import annotations
 
-from collections import defaultdict
 from functools import partial
 from itertools import chain
 from typing import TYPE_CHECKING, Any
@@ -15,18 +14,16 @@ from typing_extensions import Protocol
 
 from datamodel_code_generator import ReuseScope
 from datamodel_code_generator._reference_graph import EdgeKind, GraphSnapshot, reference_graph
-from datamodel_code_generator.model._decisions.tag_value import mapping_path_keys, schema_path_keys
 from datamodel_code_generator.model.base import BaseLayoutView, _find_base_classes, linearize_data_models
 from datamodel_code_generator.parser._graph_ids import keyed_models
 from datamodel_code_generator.parser._model_shapes import reuse_candidate_key
 from datamodel_code_generator.parser._passes._shared import (
     InheritedFieldHost,
-    _get_schema_path,
-    _iter_discriminator_data_types,
     _module_name_from_module_path,
     override_required_field,
 )
 from datamodel_code_generator.parser._passes._state import RecursionFacts
+from datamodel_code_generator.parser._tag_plan import iter_union_sites, possible_tag_names
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,7 +33,7 @@ if TYPE_CHECKING:
     from datamodel_code_generator.imports import Import
     from datamodel_code_generator.model.base import DataModel, DataModelFieldBase
     from datamodel_code_generator.parser._passes._state import ModuleModels, StructuredRun
-    from datamodel_code_generator.parser._passes.modules import _InlineVariantTags
+    from datamodel_code_generator.parser._tag_plan import TagPlan
     from datamodel_code_generator.parser.generation import GraphBuilder
     from datamodel_code_generator.reference import ModelType, Reference
 
@@ -72,7 +69,6 @@ class PlansHost(FlattenHost, Protocol):
     _emitting_module_lists: list[tuple[str, list[DataModel]]]
     _emitting_module_names: dict[int, str]
     _generic_base_model: DataModel | None
-    _inline_variant_models: _InlineVariantTags | None
     _recursion_facts: RecursionFacts
 
     @property
@@ -82,10 +78,6 @@ class PlansHost(FlattenHost, Protocol):
     @property
     def _collapsed_reuse_models(self) -> dict[int, list[DataModel]]:
         """The models collapsed reuse removed, by the id of their canonical model."""
-
-    @property
-    def _deferred_tagged_unions(self) -> _Clearable:
-        """The tagged unions whose tags wait until every module is processed."""
 
     @property
     def _hidden_named_types(self) -> _Clearable:
@@ -124,8 +116,8 @@ class PlansHost(FlattenHost, Protocol):
         """The roots that collapse replaced by their inner models."""
 
     @property
-    def _variant_discriminator_tags(self) -> _Clearable:
-        """The tags of discriminated union variants, by variant and tag field."""
+    def _tag_plan(self) -> TagPlan:
+        """What the tag passes of the parse recorded."""
 
     @property
     def collapse_root_models(self) -> bool:
@@ -156,9 +148,7 @@ def reset_per_run_state(parser: PlansHost, _run: StructuredRun[Any]) -> None:
     """Forget what the passes of an earlier parse recorded on the parser."""
     parser._hidden_named_types.clear()  # noqa: SLF001
     parser._hiding_field_names.clear()  # noqa: SLF001
-    parser._variant_discriminator_tags.clear()  # noqa: SLF001
-    parser._inline_variant_models = None  # noqa: SLF001
-    parser._deferred_tagged_unions.clear()  # noqa: SLF001
+    parser._tag_plan.reset()  # noqa: SLF001
     parser._prepared_modules.clear()  # noqa: SLF001
     parser._base_stand_ins.clear()  # noqa: SLF001
     parser._generic_base_model = None  # noqa: SLF001
@@ -194,7 +184,13 @@ def flatten_conflicting_base_layouts(parser: PlansHost, module_models: ModuleMod
         pending.extend(_find_base_classes(model))
         if (duplicated := duplicates.get(id(model))) is not None:
             pending.append(duplicated)
-    tag_names = find_possible_tag_names(parser, models, list(layout_models.values()))
+    tag_names = possible_tag_names(
+        iter_union_sites(chain(models, chain.from_iterable(parser._collapsed_reuse_models.values()))),  # noqa: SLF001
+        list(layout_models.values()),
+        lambda property_name, class_name: parser.model_resolver.get_valid_field_name_and_alias(
+            field_name=property_name, model_type=parser.field_name_model_type, class_name=class_name
+        )[0],
+    )
     overrides = parser._model_type_override_imports  # noqa: SLF001
 
     def is_slot(field: DataModelFieldBase) -> bool:
@@ -243,61 +239,6 @@ def flatten_base_layouts(parser: FlattenHost, model: DataModel) -> None:
             parser._graph_builder.detach_data_type_ref(base_class)  # noqa: SLF001
         parser._graph_builder.set_fields(model, fields)  # noqa: SLF001
         parser._graph_builder.reset_base_classes(model)  # noqa: SLF001
-
-
-def find_possible_tag_names(
-    parser: PlansHost, models: list[DataModel], layout_models: list[DataModel]
-) -> dict[int, frozenset[str]]:
-    """Return, by model whose layout counts, the names of the fields that the discriminator step may make tags.
-
-    It tags the variants that discriminated unions list, however nested or aliased, or that their mappings name,
-    including those of the unions collapsed reuse removed, by the property name or the field name it resolves to.
-    A struct inheriting from a tagged struct takes its tag field as a tag too. The mapped paths are indexed once
-    by every key a model path can match them by.
-    """
-    listed: defaultdict[int, set[str]] = defaultdict(set)
-    mapped: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
-    for model in chain(models, chain.from_iterable(parser._collapsed_reuse_models.values())):  # noqa: SLF001
-        for field in model.fields:
-            if not (
-                isinstance(discriminator := field.extras.get("discriminator"), dict)
-                and isinstance(property_name := discriminator.get("propertyName"), str)
-                and property_name
-            ):
-                continue
-            for reference in (
-                data_type.reference
-                for data_type, _, _ in _iter_discriminator_data_types(field.data_type.all_data_types)
-                if data_type.reference
-            ):
-                listed[id(reference.source)].add(property_name)
-            if isinstance(mapping := discriminator.get("mapping"), dict):
-                for path in mapping.values():
-                    for key in mapping_path_keys(str(path), rule="legacy-any-key"):
-                        mapped[key].add(property_name)
-    variant_names: dict[int, set[str]] = {}
-    for model in layout_models:
-        property_names = set(listed.get(id(model), ()))
-        for reference in (model.reference, *(base.reference for base in model.base_classes if base.reference)):
-            for key in schema_path_keys(_get_schema_path(reference)):
-                property_names.update(mapped.get(key, ()))
-        variant_names[id(model)] = {
-            name
-            for property_name in property_names
-            for class_name in (None, model.class_name)
-            for name in (
-                property_name,
-                parser.model_resolver.get_valid_field_name_and_alias(
-                    field_name=property_name, model_type=parser.field_name_model_type, class_name=class_name
-                )[0],
-            )
-        }
-    return {
-        id(model): frozenset(
-            chain.from_iterable(variant_names.get(id(ancestor), ()) for ancestor in linearize_data_models([model]))
-        )
-        for model in layout_models
-    }
 
 
 def find_possible_reuse_duplicates(parser: PlansHost, module_models: ModuleModels) -> dict[int, DataModel]:

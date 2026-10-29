@@ -64,6 +64,7 @@ if TYPE_CHECKING:
         _ConstNarrowing,
         _RenamedType,
     )
+    from datamodel_code_generator.parser._tag_plan import TagPlan
     from datamodel_code_generator.parser.generation import GraphBuilder
     from datamodel_code_generator.types import DataType
 
@@ -132,11 +133,13 @@ class CrossModuleHost(ReferenceExpressionHost, ReplacedRootsHost, Protocol):
 class TaggedBasesHost(CrossModuleHost, FlattenHost, Protocol):
     """What tagging the structs below tagged bases reads and writes of the parser."""
 
+    @property
+    def _tag_plan(self) -> TagPlan:
+        """What the tag passes of the parse recorded."""
+
 
 class CrossModuleRun(Protocol):
     """What the cross-module passes read and write of the run."""
-
-    opted_out: list[DataModel]
 
     @property
     def contexts(self) -> Sequence[ModuleContextView]:
@@ -298,7 +301,7 @@ def tag_fields_of_tagged_bases(parser: TaggedBasesHost, run: CrossModuleRun) -> 
                 producer=ImportProducer("tag-fields-of-tagged-bases", model),
             )
 
-    run.opted_out = _tag_fields_of_tagged_bases(
+    parser._tag_plan.opted_out = _tag_fields_of_tagged_bases(  # noqa: SLF001
         _context_models(run.contexts),
         parser._graph_builder,  # noqa: SLF001
         flatten,

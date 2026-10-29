@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
 from functools import cache
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, TypeAlias, cast
@@ -1752,27 +1751,6 @@ def _bases_keep_instance_field(model: DataModel, source_name: str) -> bool:
         for base_model in _find_base_classes(model)
         for field in base_model.iter_all_fields()
     )
-
-
-@dataclass(slots=True)
-class _VariantDiscriminatorTags:
-    """The tags a variant keeps from the first union that tagged it, and the other tags unions map it to."""
-
-    variant: DataModel
-    property_name: str
-    kept: list[DiscriminatorValue]
-    owner: str
-    others: dict[str, list[DiscriminatorValue]]
-
-    def warning_messages(self) -> Iterator[str]:
-        """Describe the tags that the generated variant cannot carry."""
-        if self.others:
-            name = self.variant.class_name
-            unions = ", ".join(f"{union} ({_format_tags(tags)})" for union, tags in self.others.items())
-            yield (
-                f"{name} is a variant of discriminated unions that map {self.property_name!r} to different tags: "
-                f"it keeps {_format_tags(self.kept)} from {self.owner}, so these unions cannot decode it: {unions}."
-            )
 
 
 def _format_tags(tags: list[DiscriminatorValue]) -> str:

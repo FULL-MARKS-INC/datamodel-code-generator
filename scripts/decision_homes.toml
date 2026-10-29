@@ -234,7 +234,10 @@ adapters = [
 
 [homes.H11]
 decision = "discriminator tag values and the tag and tag_field of a msgspec Struct"
-core = ["model/_decisions/tag_value.py"]
+core = [
+    "model/_decisions/tag_value.py",
+    "parser/_tag_plan.py",
+]
 adapters = [
     "parser/_passes/modules.py:apply_discriminator_type",
     "parser/_passes/cross_module.py:_tag_fields_of_tagged_bases",
@@ -1183,6 +1186,22 @@ fix = "keep"
 [legacy_rows."legacy-predicted-rename"]
 home = "H13"
 fix = "keep"
+
+[legacy_rows."legacy-decide-in-union-module"]
+home = "H11"
+fix = "G05"
+
+[legacy_rows."legacy-tag-from-earlier-union"]
+home = "H11"
+fix = "G05"
+
+[legacy_rows."legacy-inline-variants-at-first-ask"]
+home = "H11"
+fix = "G05"
+
+[legacy_rows."legacy-predicted-tag-names"]
+home = "H11"
+fix = "G05"
 
 # ==== allowlist (shrink-only; `--write-allowlist` rewrites everything below this line) ====
 

@@ -170,7 +170,6 @@ from datamodel_code_generator.parser._passes._shared import (
     _ReuseOptimizationContext,
     _string_or_identifier_pattern,
     _tag_field_matches,
-    _VariantDiscriminatorTags,
     add_model_path_to_list,  # noqa: F401  # Preserve the established parser.base export.
     alias_shadowed_imports,
     apply_inherited_field_default,
@@ -214,6 +213,7 @@ from datamodel_code_generator.parser._pipeline import (
     release_parse_caller,
 )
 from datamodel_code_generator.parser._schema_graph import SCHEMA_GRAPH
+from datamodel_code_generator.parser._tag_plan import TagPlan
 from datamodel_code_generator.parser.generation import GenerationStore
 from datamodel_code_generator.parser.schema_version import SchemaFeaturesT
 from datamodel_code_generator.reference import (
@@ -246,7 +246,6 @@ if TYPE_CHECKING:
     from datamodel_code_generator.model_metadata import GeneratedModelMetadata, ModelFieldMetadata, ModelMetadata
     from datamodel_code_generator.parser._facts import Phase
     from datamodel_code_generator.parser._null_facts import NullRule
-    from datamodel_code_generator.parser._passes.modules import _DiscriminatorUnion, _InlineVariantTags
     from datamodel_code_generator.parser._phases import DecisionPass
     from datamodel_code_generator.parser._schema_graph import SchemaGraphBuilder
     from datamodel_code_generator.parser.generation import GraphBuilder
@@ -1106,11 +1105,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._constrained_decimal_alias_model_ids: set[int] = set()
         self._hidden_named_types: dict[tuple[ModelKey, str | None], bool] = {}
         self._hiding_field_names: dict[tuple[ModelKey, str | None], str] = {}
-        self._variant_discriminator_tags: dict[tuple[int, str], _VariantDiscriminatorTags] = {}
-        self._inline_variant_models: _InlineVariantTags | None = None
-        """The tag fields of the inline variants that may take the tag they inherit, once the first union asks."""
-        self._deferred_tagged_unions: list[_DiscriminatorUnion] = []
-        self._defers_tagged_unions = False
+        self._tag_plan = TagPlan()
+        """What the tag passes of the parse recorded: the union tags reuse compares, then the run's tag ledger."""
         self._prepared_modules: list[_PreparedModule] = []
         """The output modules ``_process_single_module`` processed, in module order, for their render preparation."""
         self._base_stand_ins: dict[int, Reference | None] = {}
@@ -1136,9 +1132,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         self._self_named_root_models: list[DataModel] = []
         """The root models whose root names the model itself, which the deduplication of root models dropped while
         their users still name them, for ``reject_alias_cycles_without_schema``."""
-        self._reuse_union_tags: dict[DataModel, tuple[HashableComparable, ...]] = {}
         self._recursion_facts: RecursionFacts = _NO_RECURSION
-        self._reused_variant_tag_fields: dict[int, DataModelFieldBase] = {}
         self._quotes_hidden_types = False
 
         self.keyword_only = config.keyword_only
@@ -1803,7 +1797,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
     def _model_shapes(self, row: ShapeRow) -> ModelShapes[DataModel, Reference]:
         """Return the keys of one comparison pass of the dedup or reuse user of a row."""
-        return ModelShapes(row, _ModelShapeSource(self.target_python_version), self._reuse_union_tags)
+        return ModelShapes(row, _ModelShapeSource(self.target_python_version), self._tag_plan.reuse_snapshot)
 
     def _site_models_last(self, models: list[DataModel]) -> list[DataModel]:
         """Order the site models a reference with more assertions gets after the others, which then stay canonical.
