@@ -31,6 +31,7 @@ KeepRule: TypeAlias = Literal[
     "no-root-field",
     "circular",
     "runtime-object-validation",
+    "fieldless-site-regex-engine",
     "constraints-in-type",
     "constrained-map",
     "constraints-beside-container",
@@ -42,6 +43,9 @@ KeepRule: TypeAlias = Literal[
 * ``no-root-field``: the root model has no root field to inline.
 * ``circular``: the root model is circular (L4 ``set_circular_root_model_paths``) and cannot be fully inlined.
 * ``runtime-object-validation``: the root model owns runtime object rules, which would be lost with it.
+* ``fieldless-site-regex-engine``: the root model is the model of a site that earlier releases wrote as a model
+  without fields (``FIELDLESS_SITE_KEY``) and its pattern needs a regex engine in the config of the model that holds
+  it: inlined, that engine would apply to the other patterns of its holder.
 * ``constraints-in-type``: without ``--field-constraints``, the root model or a root model its root type reaches
   constrains its root field, which the type of the holder would not carry.
 * ``constrained-map``: the root field constrains a dict or mapping.
@@ -67,6 +71,8 @@ class CollapseSiteFacts:
     """The root model has a root field; every other fact is False when it has none."""
     circular: bool = False
     runtime_object_validation: bool = False
+    needs_model_regex_engine: bool = False
+    """The root model is a fieldless site whose pattern needs a regex engine in its holder's config."""
     field_constraints: bool = False
     constrains_through_root_types: bool = False
     """The root model, or a root model its root type reaches, constrains its root field."""
@@ -94,6 +100,8 @@ def keeps_root_model_named(facts: CollapseSiteFacts, /) -> KeepRule | None:  # n
         return "circular"
     if facts.runtime_object_validation:
         return "runtime-object-validation"
+    if facts.needs_model_regex_engine:
+        return "fieldless-site-regex-engine"
     if not facts.field_constraints and facts.constrains_through_root_types:
         return "constraints-in-type"
     if facts.constrained_root_field and facts.root_type_is_map:
