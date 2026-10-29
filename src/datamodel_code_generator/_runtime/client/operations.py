@@ -10,22 +10,28 @@ from typing_extensions import TypeIs, TypeVar
 
 from ..model_codecs.errors import CodecError, ParameterEncodingError
 from ..model_codecs.media import (
+    ERROR_STATUSES,
+    SUCCESS_STATUSES,
+    charset,
     decode_form,
     encode_form,
+    essence,
     finite,
     form_encode,
     json_value,
+    normalized,
     percent_decode,
     split_form,
+    status_key,
 )
 from ..model_codecs.media import json_bytes as _json_bytes
 from ..model_codecs.parameters import path_text, query_pairs
 from ..model_codecs.unset import UNSET
 from .errors import APIStatusError, ConfigurationError, DecodeError, response_failure, status_error
-from .media import charset, encode_text, essence, most_specific, normalized, with_charset
+from .media import encode_text, most_specific, with_charset
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Container, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from typing import Any
 
     from ..model_codecs.media import FieldPlan, JSONValue
@@ -58,10 +64,6 @@ ReadKind: TypeAlias = Literal["json", "text", "form"]
 
 NO_CONTENT: Final = 204
 BODYLESS_STATUSES: Final = frozenset({NO_CONTENT, 205, 304})
-_MIN_SUCCESS: Final = 200
-_MAX_SUCCESS: Final = 299
-_MIN_ERROR: Final = 400
-_MAX_ERROR: Final = 599
 _PAIR: Final = 2
 PARSE_ERRORS: Final = (CodecError,)
 
@@ -590,12 +592,6 @@ def empty_branch(status: str) -> Branch[None]:
     return Branch(status, None, _none)
 
 
-def status_key(status: int, keys: Container[str]) -> str | None:
-    """Return the declared response key a status selects: exact, then its hundreds range, then default."""
-    exact, family = str(status), f"{status // 100}XX"
-    return exact if exact in keys else family if family in keys else "default" if "default" in keys else None
-
-
 def _grouped(branches: tuple[Branch[T], ...]) -> dict[str, tuple[Branch[T], ...]]:
     """Group branches by status key in declaration order."""
     return {
@@ -686,7 +682,7 @@ class ResponseDecoder(Generic[T_co]):
 
     def success(self, status: int) -> bool:
         """Return whether a status is a typed success of this operation."""
-        return _MIN_SUCCESS <= status <= _MAX_SUCCESS or status in self._successes
+        return status in SUCCESS_STATUSES or status in self._successes
 
     def streamed(self, info: ResponseInfo) -> None:
         """Refuse a success whose body is not streamed in a declared media type: an undeclared status or media type.
@@ -741,7 +737,7 @@ class ResponseDecoder(Generic[T_co]):
         problem: BaseException | None = None,
     ) -> APIStatusError:
         """Return the status failure of a response that is not a success: its HTTP error, or an unexpected status."""
-        if _MIN_ERROR <= info.status_code <= _MAX_ERROR:
+        if info.status_code in ERROR_STATUSES:
             return self._failure(info, body, truncated=truncated, problem=problem)
         return _unexpected(info, body, truncated=truncated, problem=problem)
 

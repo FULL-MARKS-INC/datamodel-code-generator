@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING, Final, Generic, cast
 from typing_extensions import TypeIs, TypeVar
 
 from ..model_codecs.errors import CodecError, MalformedError
-from ..model_codecs.media import json_value, typed
-from .media import charset
+from ..model_codecs.media import charset, essence, json_value, media_kind, typed
 from .operations import BodyFramingError, BodyValueError, Branch, InvalidBodyError, read_branch
 from .responses import HeadersView
 
@@ -199,8 +198,7 @@ def parse_multipart(body: bytes, content_type: str | None) -> tuple[DecodedPart[
 
 
 def _json_part(part: DecodedPart[bytes]) -> bool:
-    media = (part.content_type or "").partition(";")[0].strip().lower()
-    return media == "application/json" or media.endswith("+json")
+    return media_kind(essence(part.content_type or "").strip().lower()) == "json"
 
 
 def _part_value(part: DecodedPart[bytes], kind: PartKind) -> JSONValue:
