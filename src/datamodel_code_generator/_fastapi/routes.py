@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 from urllib.parse import unquote
 
+from datamodel_code_generator._target_naming import PATH_PLACEHOLDER
 from datamodel_code_generator._target_operations import group_tag
 
 if TYPE_CHECKING:
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
 
     from datamodel_code_generator._target_contract import OperationContract
 
-_PLACEHOLDER: Final = re.compile(r"\{([^{}]*)\}")
 _UNMATCHABLE: Final = re.compile(r"%(?:2[Ff]|7[BbDd])")
 _SLOT_PREFIX: Final = "dcg_p"
 BUILDER_NAMES: Final = frozenset({
@@ -104,11 +104,11 @@ class RoutePath:
 
         Its literal text is decoded, as the route matches it, so `/a b` and `/a%20b` have one shape.
         """
-        return _PLACEHOLDER.sub("{}", self.route_path)
+        return PATH_PLACEHOLDER.sub("{}", self.route_path)
 
     def written(self) -> str:
         """Return the path as the document writes it, with every placeholder erased."""
-        return _PLACEHOLDER.sub("{}", self.path)
+        return PATH_PLACEHOLDER.sub("{}", self.path)
 
 
 def placeholders(path: str) -> tuple[str, ...]:
@@ -117,11 +117,11 @@ def placeholders(path: str) -> tuple[str, ...]:
     Starlette routes by the percent-decoded path, so literal text that encodes `/`, `{`, or `}` is refused too: no
     route of decoded text matches it as a client sends it.
     """
-    names = tuple(_PLACEHOLDER.findall(path))
-    if _PLACEHOLDER.sub("", path).count("{") or _PLACEHOLDER.sub("", path).count("}"):
+    names = tuple(PATH_PLACEHOLDER.findall(path))
+    if PATH_PLACEHOLDER.sub("", path).count("{") or PATH_PLACEHOLDER.sub("", path).count("}"):
         msg = "The path has an unmatched brace"
         raise RouteError(msg)
-    if any(_UNMATCHABLE.search(text) for text in _PLACEHOLDER.split(path)[::2]):
+    if any(_UNMATCHABLE.search(text) for text in PATH_PLACEHOLDER.split(path)[::2]):
         msg = "The path's literal text encodes '/', '{', or '}', which a route cannot match"
         raise RouteError(msg)
     for name in names:
@@ -147,7 +147,7 @@ def route_path(path: str, taken: Iterable[str], *, repeatable: bool) -> RoutePat
     index = 0
     parts: list[str] = []
     position = 0
-    for match in _PLACEHOLDER.finditer(path):
+    for match in PATH_PLACEHOLDER.finditer(path):
         name = match.group(1)
         occurrence = counts.get(name, 0)
         counts[name] = occurrence + 1

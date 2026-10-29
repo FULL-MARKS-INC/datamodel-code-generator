@@ -30,6 +30,9 @@ if TYPE_CHECKING:
 
 SettingT = TypeVar("SettingT")
 
+BODYLESS_STATUSES: Final = frozenset({204, 205, 304})
+"""The response statuses that never carry content."""
+
 LOCATIONS: Final[dict[object, ParameterLocation]] = {
     "path": "path",
     "query": "query",

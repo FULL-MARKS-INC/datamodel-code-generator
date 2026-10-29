@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -50,8 +49,9 @@ from datamodel_code_generator._target_contract import (
     TypeUseBinding,
     UnionType,
 )
-from datamodel_code_generator._target_naming import WINDOWS_DEVICES, NameScope, path_placeholders
+from datamodel_code_generator._target_naming import PATH_PLACEHOLDER, WINDOWS_DEVICES, NameScope, path_placeholders
 from datamodel_code_generator._target_operations import (
+    BODYLESS_STATUSES,
     CLIENT,
     LOCATIONS,
     PlanError,
@@ -104,8 +104,6 @@ if TYPE_CHECKING:
 _problem: Final = CLIENT.problem
 Role: TypeAlias = Literal["success", "error"]
 
-BODYLESS_STATUSES: Final = frozenset({204, 205, 304})
-_PLACEHOLDER: Final = re.compile(r"\{([^{}]*)\}")
 _SCHEMES: Final = frozenset({"http", "https"})
 _FORM_DATA: Final = "multipart/form-data"
 _NULL: Final = frozenset({"null"})
@@ -1299,11 +1297,11 @@ def _variables(value: object) -> tuple[tuple[str, str, tuple[str, ...]], ...] | 
 
 def _defaulted(url: str, variables: tuple[tuple[str, str, tuple[str, ...]], ...]) -> str:
     defaults = {name: default for name, default, _ in variables}
-    return _PLACEHOLDER.sub(lambda match: defaults.get(match[1], match[0]), url)
+    return PATH_PLACEHOLDER.sub(lambda match: defaults.get(match[1], match[0]), url)
 
 
 def _declared(url: str, variables: tuple[tuple[str, str, tuple[str, ...]], ...]) -> bool:
-    return set(_PLACEHOLDER.findall(url)) <= {name for name, _, _ in variables}
+    return set(PATH_PLACEHOLDER.findall(url)) <= {name for name, _, _ in variables}
 
 
 def member_parts(media: MediaSpec) -> tuple[PartSpec, ...]:

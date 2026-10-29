@@ -60,6 +60,7 @@ from datamodel_code_generator._target_contract import (
 )
 from datamodel_code_generator._target_naming import NameScope
 from datamodel_code_generator._target_operations import (
+    BODYLESS_STATUSES,
     LOCATIONS,
     SERVER,
     PlanError,
@@ -117,7 +118,6 @@ ValueKind: TypeAlias = Literal["scalar", "sequence"]
 SettingT = TypeVar("SettingT")
 
 RESERVED: Final = frozenset({"self", "request", "principal", "body", "media_type"})
-BODYLESS_STATUSES: Final = frozenset({204, 205, 304})
 _JSON: Final = "application/json"
 _PART_CHARSETS: Final = frozenset({"utf-8", "us-ascii"})
 _TEXT: Final = FieldPlan("")
