@@ -17,11 +17,11 @@ import httpx2
 from typing_extensions import TypeVar
 
 from ..client.errors import ConfigurationError, SDKError, add_secondary
-from ..client.media import normalized
 from ..client.native import request_fields, wire_fields
 from ..client.options import RequestOptions
 from ..client.responses import HeadersView, Response, ResponseInfo
 from ..client.retry import http_timestamp
+from ..model_codecs.media import normalized
 from ..model_codecs.parameters import header_text
 from .cache_stores import AsyncMemoryCacheStore, MemoryCacheStore
 from .caches import CacheEntry, CacheResult, CacheSource

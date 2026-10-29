@@ -11,7 +11,7 @@ from typing_extensions import TypeIs
 from datamodel_code_generator._api_types import APIGenerationError, Diagnostic
 from datamodel_code_generator._client.naming import namespace_problem, token
 from datamodel_code_generator._runtime.client.options import is_base_url
-from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type
+from datamodel_code_generator._runtime.model_codecs.media import normalize_media_type, normalized
 from datamodel_code_generator._target_config import (
     TargetConfig,
     _diagnostic,  # pyright: ignore[reportPrivateUsage]
@@ -153,13 +153,7 @@ def absolute(value: object) -> bool:
 
 
 def _media(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    try:
-        normalize_media_type(value)
-    except ValueError:
-        return False
-    return True
+    return isinstance(value, str) and normalized(value) is not None
 
 
 def _is_tuple(value: object) -> TypeIs[tuple[object, ...]]:
