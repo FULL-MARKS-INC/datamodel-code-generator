@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import re
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Final, Generic, Literal, cast
@@ -15,11 +14,12 @@ from pydantic import TypeAdapter, ValidationError
 from starlette.responses import Response
 from typing_extensions import TypeIs, TypeVar
 
+from ..model_codecs.media import TOKEN, status_key
+from ..model_codecs.parameters import header_text
+
 BodyT_co = TypeVar("BodyT_co", covariant=True)
 
 _EMPTY_STATUSES: Final = frozenset({204, 205, 304})
-_TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
-_HEADER_TEXT: Final = re.compile(r"(?:[\x21-\x7E](?:[\t\x20-\x7E]*[\x21-\x7E])?)?")
 _MIN_CONTENT_STATUS: Final = 200
 _MIN_REDIRECT_STATUS: Final = 300
 _JSON: Final = "application/json"
@@ -90,8 +90,7 @@ class OperationResponses:
 
     def find(self, status: int) -> Declared | None:
         """Return the response that declares a status: exact, then the same status class, then default."""
-        responses = self.responses
-        return responses.get(str(status)) or responses.get(f"{status // 100}XX") or responses.get("default")
+        return None if (key := status_key(status, self.responses)) is None else self.responses[key]
 
 
 def dispatch(value: object, plan: OperationResponses) -> object:
@@ -156,10 +155,10 @@ def _check_headers(headers: Iterable[tuple[object, object]]) -> None:
     A result's headers may hold other values than its annotation says, such as bytes.
     """
     for name, value in headers:
-        if not (isinstance(name, str) and _TOKEN.fullmatch(name)):
+        if not (isinstance(name, str) and TOKEN.fullmatch(name)):
             msg = f"The response header name {name!r} is not a token"
             raise _failure(msg)
-        if not (isinstance(value, str) and _HEADER_TEXT.fullmatch(value)):
+        if not (isinstance(value, str) and header_text(value)):
             msg = f"The {name} response header is not header text"
             raise _failure(msg)
 

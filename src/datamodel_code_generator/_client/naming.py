@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import keyword
-import re
 from typing import TYPE_CHECKING, Final
 
+from datamodel_code_generator._runtime.model_codecs.media import TOKEN
 from datamodel_code_generator._target_naming import WINDOWS_DEVICES, explicit_name
 from datamodel_code_generator._target_unicode import casefold, is_identifier, is_nfkc, nfc
 
@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
     from datamodel_code_generator._format_types import PythonVersion
 
-_TOKEN: Final = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 TYPE_EXPORTS: Final = frozenset({"JSONValue"})
 RESERVED_MEMBERS: Final = frozenset({
     "aclose",
@@ -84,7 +83,7 @@ def namespace_problem(value: object, target_python_version: PythonVersion) -> st
 
 def token(value: object) -> bool:
     """Return whether a value is an HTTP token, such as a header name."""
-    return isinstance(value, str) and _TOKEN.fullmatch(value) is not None
+    return isinstance(value, str) and TOKEN.fullmatch(value) is not None
 
 
 def folded(name: str, target_python_version: PythonVersion) -> str:
