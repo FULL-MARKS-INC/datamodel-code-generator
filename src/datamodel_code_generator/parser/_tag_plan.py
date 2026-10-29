@@ -727,7 +727,7 @@ def _has_related_instance_field(
                 )
                 for field_ in base_model.iter_all_fields()
             ),
-            _iter_derived_fields(model, derived_models, _ModelKeys("derived fields")),
+            _iter_derived_fields(model, derived_models, _ModelKeys()),
         )
     )
 
