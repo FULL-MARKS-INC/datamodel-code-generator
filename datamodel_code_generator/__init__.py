@@ -188,6 +188,10 @@ class InvalidClassNameError(Error):
         super().__init__(message=message)
 
 
+class SchemaFetchError(Error):
+    """Raised when fetching a remote schema fails (HTTP error, unexpected content type)."""
+
+
 def get_first_file(path: Path) -> Path:  # pragma: no cover
     if path.is_file():
         return path
@@ -251,6 +255,8 @@ def generate(
     special_field_name_prefix: Optional[str] = None,
     remove_special_field_name_prefix: bool = False,
     capitalise_enum_members: bool = False,
+    allow_remote_refs: Optional[bool] = None,
+    allow_private_network: bool = False,
 ) -> None:
     remote_text_cache: DefaultPutDict[str, str] = DefaultPutDict()
     if isinstance(input_, str):
@@ -260,7 +266,12 @@ def generate(
 
         input_text = remote_text_cache.get_or_put(
             input_.geturl(),
-            default_factory=lambda url: get_body(url, http_headers, http_ignore_tls),
+            default_factory=lambda url: get_body(
+                url,
+                http_headers,
+                http_ignore_tls,
+                allow_private_network=allow_private_network,
+            ),
         )
     else:
         input_text = None
@@ -381,6 +392,8 @@ def generate(
         special_field_name_prefix=special_field_name_prefix,
         remove_special_field_name_prefix=remove_special_field_name_prefix,
         capitalise_enum_members=capitalise_enum_members,
+        allow_remote_refs=allow_remote_refs,
+        allow_private_network=allow_private_network,
         **kwargs,
     )
 

@@ -20,6 +20,8 @@ try:
 except ImportError:
     from _pytest.tmpdir import TempdirFactory
 
+pytestmark = pytest.mark.usefixtures('legacy_httpx_get_body')
+
 DATA_PATH: Path = Path(__file__).parent / 'data'
 OPEN_API_DATA_PATH: Path = DATA_PATH / 'openapi'
 JSON_SCHEMA_DATA_PATH: Path = DATA_PATH / 'jsonschema'
