@@ -15660,14 +15660,14 @@ class JsonSchemaParser(Parser["JSONSchemaParserConfig", "JsonSchemaFeatures"]):
         raw: dict[str, YamlValue] | YamlValue,
         path: list[str],
     ) -> JsonSchemaObject:
-        """Validate raw data as JsonSchemaObject with path context in errors."""
+        """Validate raw data as JsonSchemaObject with path context in errors; a too deep nesting stops the parse."""
         if raw is True:
             return self.SCHEMA_OBJECT_TYPE()
         if raw is False:
             return self.SCHEMA_OBJECT_TYPE(is_boolean_schema_false=True)
         try:
             return self._schema_object(raw)
-        except SchemaParseError:
+        except (SchemaParseError, RecursionError):
             raise
         except Exception as e:
             raise SchemaParseError(
