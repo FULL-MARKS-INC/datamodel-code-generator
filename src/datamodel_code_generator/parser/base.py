@@ -48,7 +48,7 @@ from datamodel_code_generator import (
     ReuseScope,
     cached_path_exists,
 )
-from datamodel_code_generator._checks import CheckArea, CheckMode, check_mode, read_check_flags
+from datamodel_code_generator._checks import read_check_flags
 from datamodel_code_generator._constraint_applicability import (
     overridden_declared_constraints,
     resplit_overridden_constraints,
@@ -56,7 +56,7 @@ from datamodel_code_generator._constraint_applicability import (
 )
 from datamodel_code_generator._internal_utils import HashableComparable
 from datamodel_code_generator._internal_utils import get_most_of_parent as _get_most_of_parent
-from datamodel_code_generator._model_keys import ModelKey, model_key_of
+from datamodel_code_generator._model_keys import FIELDLESS_SITE_KEY, ModelKey, model_key_of
 from datamodel_code_generator._parse_memo import PARSE_MEMO, MemoTable
 from datamodel_code_generator._parser_context import ParserSourceContext
 from datamodel_code_generator._python_target_names import target_builtin_names
@@ -64,7 +64,6 @@ from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import (
     EdgeKind,
     GraphSnapshot,
-    graph_answer,
     reference_graph,
     walk_graph,
 )
@@ -72,7 +71,6 @@ from datamodel_code_generator._requirements import (
     REQUIREMENTS,
     python_target_meets,
 )
-from datamodel_code_generator._scc import find_circular_sccs
 from datamodel_code_generator._shared_types import (
     DefaultPutDict,
     LiteralType,
@@ -112,7 +110,7 @@ from datamodel_code_generator.model.base import (
     ConstraintsBase,
     DataModel,
     DataModelFieldBase,
-    _keyed_answer,
+    _bind_builtin_names,
     _model_key_of_model,
     _overlay_constraints,
     _set_nested_model_default_factory_order,
@@ -129,11 +127,8 @@ from datamodel_code_generator.model.output import (
     _expression_names,  # noqa: F401  # Preserve the existing parser helper export.
     prepare_output_model_config,
 )
-from datamodel_code_generator.parser._check_scopes import arm_parse_checks
 from datamodel_code_generator.parser._graph_ids import (
-    is_root_or_owned,
     keyed_models,
-    unchecked,
 )
 from datamodel_code_generator.parser._held_null import OMIT_HELD_NULL
 from datamodel_code_generator.parser._imports_plan import (
@@ -207,7 +202,7 @@ from datamodel_code_generator.parser._passes._state import (
     _StructureState,
 )
 from datamodel_code_generator.parser._passes._tables import FINALIZE_SEGMENTS, MODULE_BODY, PIPELINE, STRUCTURE_BODY
-from datamodel_code_generator.parser._passes.imports import _FUTURE_IMPORTS
+from datamodel_code_generator.parser._passes.imports import _FUTURE_IMPORTS, builtin_name_bindings
 from datamodel_code_generator.parser._passes.render_prep import (
     _apply_constructor_field_adjustments as _moved_apply_constructor_field_adjustments,
 )
@@ -216,7 +211,6 @@ from datamodel_code_generator.parser._passes.render_prep import (
 )
 from datamodel_code_generator.parser._passes.render_prep import _needs_validate_default as _moved_needs_validate_default
 from datamodel_code_generator.parser._pipeline import (
-    Boundary,
     Runner,
     anchor_parse_caller,
     release_parse_caller,
@@ -226,7 +220,6 @@ from datamodel_code_generator.parser.generation import GenerationStore
 from datamodel_code_generator.parser.schema_version import SchemaFeaturesT
 from datamodel_code_generator.reference import (
     _ALIAS_RESOLUTION_CLASS_NAME_KEY,
-    SCHEMA_LOCATION_CONFLICT_KEY,
     ModelResolver,
     ModelType,
     Reference,
@@ -244,7 +237,6 @@ from datamodel_code_generator.util import record_watch_dependency
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Generator, Hashable, Iterable, Iterator, Mapping, Sequence
-    from contextlib import AbstractContextManager
 
     from datamodel_code_generator._format_types import Formatter, PythonVersion
     from datamodel_code_generator._python_type_annotation import PythonTypeExpr
@@ -296,15 +288,6 @@ _TOP_LEVEL_RELATIVE_IMPORT_PATTERN: Final = re.compile(r"(?m)^from \.")
 
 _ADDITIONAL_IMPORTS: Final = ImportProducer("additional-imports")
 _DEFERRED_ANNOTATIONS: Final = ImportProducer("deferred-annotations")
-
-
-def _parse_checks(parser: Parser[Any, Any], error: type[Exception]) -> AbstractContextManager[None]:
-    """Open the checks of one parse when an area that watches writes is on; the machinery loads only then."""
-    if check_mode(CheckArea.STORE_WRITES) is None and check_mode(CheckArea.FACT_FINALITY) is None:
-        return contextlib.nullcontext()
-    from datamodel_code_generator.parser._finality import parse_checks  # noqa: PLC0415
-
-    return parse_checks(parser, error)
 
 
 @cache
@@ -553,22 +536,7 @@ def _has_preservable_root_constraints(model: DataModel) -> bool:
     walk = walk_graph(
         GraphSnapshot.ROOT_CONSTRAINTS, EdgeKind.ROOT_TYPE, (model,), _model_key_of_model, _root_type_models
     )
-    return graph_answer(
-        GraphSnapshot.ROOT_CONSTRAINTS,
-        any(map(_constrains_root_field, walk.node_of.values())),
-        lambda: _walks_to_preservable_root_constraints(model, seen_models=set()),
-    )
-
-
-def _walks_to_preservable_root_constraints(model: DataModel, *, seen_models: set[int]) -> bool:
-    """Return whether flattening a root wrapper would discard field-owned constraints, by walking the root types."""
-    if not model.fields or id(model) in seen_models:
-        return False
-    seen_models.add(id(model))
-    return _constrains_root_field(model) or any(
-        _walks_to_preservable_root_constraints(source_model, seen_models=seen_models)
-        for source_model in _root_type_models(model)
-    )
+    return any(map(_constrains_root_field, walk.node_of.values()))
 
 
 def _copy_data_model_field(
@@ -919,10 +887,6 @@ class _ModelShapeSource:
         """Return what tells apart the models that references name: the model key."""
         return model_key_of(reference)
 
-    def agreed(self, site: str, *, by_key: bool, by_path: Callable[[], bool]) -> bool:  # noqa: PLR6301
-        """Return ``by_key``; under the ``MODEL_GRAPH`` check, a different ``by_path()`` is a violation."""
-        return _keyed_answer(site, by_key, by_path)
-
 
 def _resolve_module_file(module_: ModulePath, results: dict[ModulePath, Result]) -> tuple[ModulePath, bool]:
     is_init = False
@@ -976,6 +940,16 @@ def _qualified_python_type_import(qualified_name: str) -> Import:
 def _override_path(override_import: Import) -> str:
     """Return the path a ``--type-overrides`` value spells, which its import splits at the last dot."""
     return f"{override_import.from_}.{override_import.import_}" if override_import.from_ else override_import.import_
+
+
+def _site_needs_model_regex_engine(model: DataModel) -> bool:
+    """Return whether ``model`` is a fieldless site (``FIELDLESS_SITE_KEY``) whose pattern needs its holder's engine.
+
+    The engine is one in the config of the model that holds the pattern.
+    """
+    return bool(model.reference.__dict__.get(FIELDLESS_SITE_KEY)) and (
+        (needs_engine := model.fields[0].NEEDS_MODEL_REGEX_ENGINE) is not None and needs_engine(model.fields)
+    )
 
 
 class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
@@ -1973,12 +1947,16 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         """Return whether collapsing keeps a root model named wherever it is referenced.
 
         A circular root model cannot be fully inlined, runtime rules the model owns would be lost with it, and
-        flattening it would discard constraints that live on a nested array or union alias, or on a mapping.
+        flattening it would discard constraints that live on a nested array or union alias, or on a mapping. The
+        model of a site that earlier releases wrote as a model without fields (``FIELDLESS_SITE_KEY``) stays where
+        its pattern needs a regex engine in the config of the model that holds it: inlined, that engine would apply
+        to the other patterns of its holder.
         """
         if (
             not model.fields
             or model_key_of(model.reference) in circular_root_models
             or model.has_runtime_object_validation
+            or _site_needs_model_regex_engine(model)
         ):
             return True
         if not self.field_constraints and _has_preservable_root_constraints(model):
@@ -3072,7 +3050,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             require_update_action_models=require_update_action_models,
             unused_models=unused_models,
         )
-        self.__runner().run_module_body(MODULE_BODY, self, state)
+        self.__runner().run_steps(MODULE_BODY, self, state)
         self._prepared_modules.append(_PreparedModule.of(state))
         return ModuleContext(module, module_, state.model_list, is_init, imports, scoped_model_resolver)
 
@@ -3141,19 +3119,23 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 )
                 model_imports[model] = prepared_imports
 
-    def _finalize_modules(
+    def _finalize_modules(  # noqa: PLR0913, PLR0917
         self,
         contexts: list[ModuleContext],
         unused_models: list[DataModel],
         model_to_module_models: dict[DataModel, tuple[ModulePath, list[DataModel]]],
         module_to_import: dict[ModulePath, Imports],
+        forwarder_modules: Collection[ModulePath],
+        with_import: bool,  # noqa: FBT001
     ) -> None:
         """Finish the render preparation of every module and collect the imports of each module.
 
         The pipeline runs it after the generic base class, the decision phase and the render preparation of each
         module, which ``_process_single_module`` hands over.
         """
-        state = _FinalizeState(contexts, unused_models, model_to_module_models, module_to_import)
+        state = _FinalizeState(
+            contexts, unused_models, model_to_module_models, module_to_import, forwarder_modules, with_import
+        )
         render_ready = (
             RENDER_READY.set(RenderReady(type(self), self.generation_store._memo))  # noqa: SLF001
             if RENDER_READY.get() is None
@@ -3167,8 +3149,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 PARSE_MEMO.reset(memo)
             if render_ready is not None:
                 RENDER_READY.reset(render_ready)
-        if (mode := check_mode(CheckArea.MODEL_GRAPH)) is not None:
-            self.generation_store.check_emitted_models(mode, (model for ctx in contexts for model in ctx.models))
 
     def _check_model_inheritance(self, contexts: Sequence[ModuleContext]) -> None:  # noqa: PLR0912, PLR0914, PLR0915
         """Reject invalid builtin inheritance; an existing topological order needs no DFS."""
@@ -3374,15 +3354,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                     }
                 },
             )
-
-            def old() -> list[set[ModelKey]]:
-                silent = unchecked(keyed)
-                return find_circular_sccs({
-                    key: index.referenced_keys_for_model(model, silent) & keyed.models.keys()
-                    for key, model in keyed.models.items()
-                })
-
-            for component in graph_answer(snapshot, graph.circular_components((EdgeKind.REFERENCE,)), old):
+            for component in graph.circular_components((EdgeKind.REFERENCE,)):
                 recursive_keys = frozenset(component)
                 recursive_keys_by_model.update(dict.fromkeys(recursive_keys, recursive_keys))
         order = {
@@ -3415,8 +3387,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         result: list[str] = []
         export_imports: Imports | None = None
         module_future_imports_str = self._get_module_future_imports(ctx, config, future_imports_str)
-        if (mode := check_mode(CheckArea.MODULE_IMPORTS)) is not None:
-            self._check_module_imports(mode, ctx)
 
         if config.all_exports_scope is not None and ctx.module[-1] == "__init__.py":
             child_exports = self._collect_exports_for_init(ctx.module, contexts, config.all_exports_scope)
@@ -3448,6 +3418,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
                 result += [export_imports.dump_all(multiline=True) + "\n"]
 
             module_code = self.data_model_type.render_module_code(ctx.models)
+            if module_code and (bindings := builtin_name_bindings(self._import_ledger, ctx.imports)):
+                module_code = _bind_builtin_names(module_code, bindings)
             if module_code:
                 module_code_insertion_index = self.data_model_type.get_module_code_insertion_index(ctx.models)
                 if module_code_insertion_index:
@@ -3591,67 +3563,6 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
             tuple(redact_reference(model_identities[model]) for model, _ in models),
         )
 
-    def _check_module_imports(self, mode: CheckMode, ctx: ModuleContext) -> None:
-        """Report the shared imports and the module's imports where they differ from the replay of their ledger.
-
-        Such a difference is a write that did not go through ``parser/_imports_plan.py:ModuleImportLedger``. The
-        module's import plan (``imports.plan_module_imports``) must also hold what the module writes for each model it
-        names and every import of another module's model; a report file also gets how many it compared.
-        """
-        for label, imports in (("shared imports", self.imports), (f"imports of {'/'.join(ctx.module)}", ctx.imports)):
-            if differences := self._import_ledger.differences(imports):
-                mode.violation(
-                    Error,
-                    f"{label} differ from the replay of their ledger in {', '.join(differences)}",
-                    imports=label,
-                    parts=list(differences),
-                )
-        module, plan = "/".join(ctx.module), self._import_ledger.plan_of(ctx.imports)
-        if differences := plan.differences(self._import_ledger.replay_without(ctx.imports, "field-name-bindings")):
-            mode.violation(
-                Error,
-                f"the models {module} names differ from its import plan: {'; '.join(differences)}",
-                imports=module,
-                parts=list(differences),
-            )
-        mode.record(
-            f"{CheckArea.MODULE_IMPORTS.value}: compared {len(plan.uses)} model names of {module} with its import "
-            f"plan, which imports {len(plan.references)}",
-            kind="import-plan",
-            imports=module,
-            uses=len(plan.uses),
-            references=len(plan.references),
-        )
-
-    def _check_schema_locations(self, mode: CheckMode) -> None:
-        """Report the models parsed from a JSON document without a schema location (the copy step lost it).
-
-        A model whose Reference several schema objects reach has none by rule and is not reported.
-        """
-        if missing := [
-            model
-            for model in self.results
-            if location_of(model.reference) is None and not model.reference.__dict__.get(SCHEMA_LOCATION_CONFLICT_KEY)
-        ]:
-            paths = [(model.class_name, redact_reference(model.reference.path)) for model in missing]
-            names = ", ".join(f"{name} ({path})" for name, path in paths)
-            mode.violation(
-                Error,
-                f"models without a schema location: {names}",
-                models=[{"class_name": name, "path": path} for name, path in paths],
-            )
-
-    def _check_model_owners(self, mode: CheckMode) -> None:
-        """Report the models parsed from a JSON document that have no owner and are not roots (`is_root_or_owned`)."""
-        if unowned := [model for model in self.results if not is_root_or_owned(model.reference)]:
-            paths = [(model.class_name, redact_reference(model.reference.path)) for model in unowned]
-            names = ", ".join(f"{name} ({path})" for name, path in paths)
-            mode.violation(
-                Error,
-                f"models without an owner that are not roots: {names}",
-                models=[{"class_name": name, "path": path} for name, path in paths],
-            )
-
     def _close_http_fetch_session(self) -> None:
         """Close and discard the parser-scoped HTTP session without masking parser results."""
         if (session := self._http_fetch_session) is None:
@@ -3731,7 +3642,7 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
         memo = PARSE_MEMO.set(self.generation_store._memo)  # noqa: SLF001
         caller = anchor_parse_caller()
         try:
-            with read_check_flags(), _parse_checks(self, Error):
+            with read_check_flags():
                 self.__runner().run_steps(PIPELINE, self, run)
         finally:
             release_parse_caller(caller)
@@ -3742,34 +3653,8 @@ class Parser(ABC, Generic[ParserConfigT, SchemaFeaturesT]):
 
     def __runner(self) -> Runner:
         """Return a runner of the pipeline tables for this parser."""
-        return Runner(self.__enter_phase, {Boundary.PARSED: self.__enter_parsed})
+        return Runner(self.__enter_phase)
 
     def __enter_phase(self, phase: Phase) -> None:
         """Mark that the pipeline enters ``phase`` on the generation store."""
         self.generation_store.enter_phase(phase)
-
-    def __enter_parsed(self) -> None:
-        """Run the check-mode checks of L1 and arm the write guards."""
-        if self._schema_graph is not None and (mode := check_mode(CheckArea.SCHEMA_LOCATIONS)) is not None:
-            self._check_schema_locations(mode)
-        if self._schema_graph is not None and (mode := check_mode(CheckArea.MODEL_GRAPH)) is not None:
-            self._check_model_owners(mode)
-        if self._schema_graph is not None and (mode := check_mode(CheckArea.SCHEMA_GRAPH)) is not None:
-            if changed := [redact_reference(str(location)) for location in self._schema_graph.changed_schemas()]:
-                mode.violation(
-                    Error,
-                    f"shared schema objects changed after validation: {', '.join(changed)}",
-                    kind="shared-schema",
-                    locations=changed,
-                )
-            for (site, origin), (plain, carried) in self._schema_graph.ref_site_counts().items():
-                mode.record(
-                    f"{CheckArea.SCHEMA_GRAPH.value}: {site} read {carried} references of origin {origin.value} with "
-                    f"their edge and {plain} as plain strings",
-                    kind="ref-sites",
-                    site=site,
-                    origin=origin.value,
-                    plain=plain,
-                    carried=carried,
-                )
-        arm_parse_checks(self.generation_store, "Parser.parse")
