@@ -10,7 +10,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Final, Literal, Protocol, TypeAlias, TypeVar
 from urllib.parse import urlsplit
 
-from ..model_codecs.parameters import TOKEN, header_text
+from ..model_codecs.media import TOKEN
+from ..model_codecs.parameters import header_text
 from ..model_codecs.unset import UNSET
 from .errors import ConfigurationError
 from .timing import SYSTEM_CLOCK, Clock, ResolvedTimeoutOptions, checked_count, seconds

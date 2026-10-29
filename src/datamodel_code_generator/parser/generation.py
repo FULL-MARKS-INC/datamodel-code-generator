@@ -56,13 +56,6 @@ from datamodel_code_generator._constraint_applicability import (
     VALUES_AS_WRITTEN_KEY,
 )
 from datamodel_code_generator._model_keys import FieldKey, ModelKey, NodeKey, model_key_of
-from datamodel_code_generator._null_markers import (
-    HELD_NULL_DROPPED_KEY,
-    NAMED_NULL_REJECTED_KEY,
-    REFERENCE_NULL_KEY,
-    RENDER_PREPARATION_NULL_KEY,
-    TARGET_NULL_KEY,
-)
 from datamodel_code_generator._parse_memo import ParseMemo, bump_field, bump_model, bump_node
 from datamodel_code_generator._records import record
 from datamodel_code_generator._reference_graph import EdgeKind, reference_graph
@@ -1762,14 +1755,14 @@ class GenerationStore:  # noqa: PLR0904
         ``--omit-redundant-reference-null`` drops that None where the model the type names holds null itself, and
         duplicate models compare the marks besides their rendering (``DataModel._render_dedup_key``).
         """
-        data_type.__dict__[TARGET_NULL_KEY] = True
+        data_type._update_type_null(target=True)  # noqa: SLF001
         bump_node(data_type)
 
     @staticmethod
     @deprecated("Use GenerationStore.builder().clear_target_null() instead.", category=None)
     def clear_target_null(data_type: DataType) -> None:
         """Forget that the None of a type is its target's, after a null of another source joined it."""
-        data_type.__dict__.pop(TARGET_NULL_KEY, None)
+        data_type._update_type_null(target=False)  # noqa: SLF001
         bump_node(data_type)
 
     @staticmethod
@@ -1782,10 +1775,11 @@ class GenerationStore:  # noqa: PLR0904
         """
         if (null := data_type._hint_null_source()) in {None, "own"}:  # noqa: SLF001
             return
-        data_type.__dict__[RENDER_PREPARATION_NULL_KEY] = True
         data_type.is_optional = True
-        if null == "reference":
-            data_type.__dict__[REFERENCE_NULL_KEY] = True
+        data_type._update_type_null(  # noqa: SLF001
+            rendered=True,
+            reference_written=null == "reference" or data_type._type_null.reference_written,  # noqa: SLF001
+        )
         bump_node(data_type)
 
     @staticmethod
@@ -1796,9 +1790,9 @@ class GenerationStore:  # noqa: PLR0904
         The type loses its own None when that None is its target's or the one its nullable model gave it, and the None
         of its nullable model.
         """
-        if data_type.__dict__.pop(REFERENCE_NULL_KEY, None) or TARGET_NULL_KEY in data_type.__dict__:
+        if (null := data_type._type_null).reference_written or null.target:  # noqa: SLF001
             data_type.is_optional = False
-        data_type.__dict__[HELD_NULL_DROPPED_KEY] = True
+        data_type._update_type_null(reference_written=False, held_dropped=True)  # noqa: SLF001
         bump_node(data_type)
 
     @deprecated("Use GenerationStore.builder().note_changed_models() instead.", category=None)
@@ -2493,14 +2487,13 @@ class GenerationStore:  # noqa: PLR0904
         """Redirect every user of ``old_reference`` to ``new_reference`` and return the redirected users.
 
         Their sites are redirected from ``old_reference``. When the model of ``old_reference`` is ``merged`` into the
-        equal model of ``new_reference``, each user keeps rejecting null as the schema it names does
-        (``_keep_named_null_rejected``).
+        equal model of ``new_reference``, each user records the null of the schema it names (``_record_named_null``).
         """
         children = [child for child in old_reference.children[:] if hasattr(child, "replace_reference")]
         self._state_sites_at("redirect_reference_users", children, via=old_reference)
         cache_owners = [self._cache_owners_for_data_type(child) for child in children]
         if merged:
-            self._keep_named_null_rejected(children)
+            self._record_named_null(children)
         self._replace_reference_children(old_reference, new_reference)
         self._note_changed_data_types(children)
         self._invalidate_owner_caches_many(cache_owners)
@@ -2525,8 +2518,8 @@ class GenerationStore:  # noqa: PLR0904
     ) -> None:
         """Redirect ``model`` reference users owned by ``models`` to ``new_reference``; their sites are redirected.
 
-        ``model`` is merged into the model of ``new_reference``, so each user keeps rejecting null as the schema it
-        names does (``_keep_named_null_rejected``).
+        ``model`` is merged into the model of ``new_reference``, so each user records the null of the schema it names
+        (``_record_named_null``).
         """
         model_ids = {id(candidate) for candidate in models}
         cache_owners = []
@@ -2543,7 +2536,7 @@ class GenerationStore:  # noqa: PLR0904
                 continue
             cache_owners.append(cache_owners_for_child)
             self._state_sites_at("redirect_model_reference_users", (child,), via=model.reference)
-            self._keep_named_null_rejected((child,))  # ty: ignore[invalid-argument-type]
+            self._record_named_null((child,))  # ty: ignore[invalid-argument-type]
             child.replace_reference(new_reference)  # ty: ignore[call-non-callable]
             self._note_changed_data_types((child,))
         self._invalidate_owner_caches_many(cache_owners)
@@ -2600,15 +2593,15 @@ class GenerationStore:  # noqa: PLR0904
                 new_reference.children.append(data_type)
 
     @staticmethod
-    def _keep_named_null_rejected(data_types: Iterable[DataType]) -> None:
-        """Mark the types naming a model that rejects null, before merging it points them at an equal model.
+    def _record_named_null(data_types: Iterable[DataType]) -> None:
+        """Record whether each type admits the null of the schema it names, before a merge points it at an equal model.
 
         A reference admits None from the schema it names, not from the model it names after the merge
-        (``DataType.names_nullable_model``); the first merge marks it, as the type named that schema.
+        (``model/_decisions/nullability.py:reference_null``), in both directions; each merge records what the type
+        admitted right before it.
         """
         for data_type in data_types:
-            if not data_type.names_nullable_model:
-                data_type.__dict__[NAMED_NULL_REJECTED_KEY] = True
+            data_type._update_type_null(named=data_type.names_nullable_model)  # noqa: SLF001
 
     @staticmethod
     def _replace_reference_children(old_reference: Reference, new_reference: Reference) -> None:

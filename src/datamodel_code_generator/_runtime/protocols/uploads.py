@@ -30,6 +30,7 @@ from ..client.operations import request_errors
 from ..client.options import RequestOptions
 from ..client.retry import Delivery
 from ..client.timing import SYSTEM_CLOCK, Clock
+from ..model_codecs.media import SUCCESS_STATUSES
 from ..model_codecs.unset import UNSET
 from .errors import ProtocolDataError
 from .options import UploadOptions, layered
@@ -76,8 +77,6 @@ C = TypeVar("C")
 
 _READ: Final = 65536
 _STATE: Final = frozenset({"size", "chunk", "confirmed", "phase", "bound", "expires_at"})
-_MIN_SUCCESS: Final = 200
-_MAX_SUCCESS: Final = 299
 _GATEWAY_STATUSES: Final = frozenset({502, 504})
 _BOUND_FIELDS: Final = 3
 
@@ -681,7 +680,7 @@ def _refused(error: BaseException) -> bool:
     """
     return (
         isinstance(error, APIStatusError)
-        and not _MIN_SUCCESS <= (status := error.info.status_code) <= _MAX_SUCCESS
+        and (status := error.info.status_code) not in SUCCESS_STATUSES
         and status not in _GATEWAY_STATUSES
     )
 
