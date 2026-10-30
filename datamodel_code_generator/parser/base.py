@@ -362,6 +362,8 @@ class Parser(ABC):
         special_field_name_prefix: Optional[str] = None,
         remove_special_field_name_prefix: bool = False,
         capitalise_enum_members: bool = False,
+        allow_remote_refs: Optional[bool] = None,
+        allow_private_network: bool = False,
     ):
         self.data_type_manager: DataTypeManager = data_type_manager_type(
             python_version=target_python_version,
@@ -455,6 +457,8 @@ class Parser(ABC):
         self.wrap_string_literal: Optional[bool] = wrap_string_literal
         self.http_headers: Optional[Sequence[Tuple[str, str]]] = http_headers
         self.http_ignore_tls: bool = http_ignore_tls
+        self.allow_remote_refs: Optional[bool] = allow_remote_refs
+        self.allow_private_network: bool = allow_private_network
         self.use_annotated: bool = use_annotated
         if self.use_annotated and not self.field_constraints:  # pragma: no cover
             raise Exception(
@@ -496,7 +500,10 @@ class Parser(ABC):
         return self.remote_text_cache.get_or_put(
             url,
             default_factory=lambda url_: get_body(
-                url, self.http_headers, self.http_ignore_tls
+                url,
+                self.http_headers,
+                self.http_ignore_tls,
+                allow_private_network=self.allow_private_network,
             ),
         )
 

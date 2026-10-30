@@ -199,6 +199,8 @@ class OpenAPIParser(JsonSchemaParser):
         special_field_name_prefix: Optional[str] = None,
         remove_special_field_name_prefix: bool = False,
         capitalise_enum_members: bool = False,
+        allow_remote_refs: Optional[bool] = None,
+        allow_private_network: bool = False,
     ):
         super().__init__(
             source=source,
@@ -255,6 +257,8 @@ class OpenAPIParser(JsonSchemaParser):
             special_field_name_prefix=special_field_name_prefix,
             remove_special_field_name_prefix=remove_special_field_name_prefix,
             capitalise_enum_members=capitalise_enum_members,
+            allow_remote_refs=allow_remote_refs,
+            allow_private_network=allow_private_network,
         )
         self.open_api_scopes: List[OpenAPIScope] = openapi_scopes or [
             OpenAPIScope.Schemas

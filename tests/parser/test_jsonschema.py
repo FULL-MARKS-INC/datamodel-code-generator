@@ -16,6 +16,8 @@ from datamodel_code_generator.parser.jsonschema import (
 )
 from datamodel_code_generator.types import DataType
 
+pytestmark = pytest.mark.usefixtures('legacy_httpx_get_body')
+
 DATA_PATH: Path = Path(__file__).parents[1] / 'data' / 'jsonschema'
 
 EXPECTED_JSONSCHEMA_PATH = (
