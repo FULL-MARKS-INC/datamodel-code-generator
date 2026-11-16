@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "datamodel-code-generator"
-version = "0.0.0"
+version = "0.16.1+fms.1"
 description = "Datamodel Code Generator"
 authors = ["Koudai Aono <koxudaxi@gmail.com>"]
 readme = "README.md"
@@ -14,9 +14,6 @@ classifiers = [
         "Natural Language :: English",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: Implementation :: CPython"]
@@ -26,7 +23,7 @@ requires = ["poetry_core>=1.0.0", "poetry-dynamic-versioning"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry-dynamic-versioning]
-enable = true
+enable = false
 vcs = "git"
 pattern = "^(?P<base>\\d+\\.\\d+\\.\\d+)(-?((?P<stage>[a-zA-Z]+)\\.?(?P<revision>\\d+)?))?$"
 
@@ -39,7 +36,7 @@ patterns = ["(^version: str = ')[^']*(')"]
 datamodel-codegen = "datamodel_code_generator.__main__:main"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = ">=3.10,<4.0"
 pydantic =  [{extras = ["email"], version = ">=1.5.1,<2.0", python = "<3.10"}, {extras = ["email"], version = ">=1.9.0,<2.0", python = ">=3.10,<3.11"}, {extras = ["email"], version = ">=1.10.0,<2.0", python = ">=3.11"}]
 argcomplete = ">=1.10,<3.0"
 prance = ">=0.18.2,<1.0"
@@ -51,7 +48,9 @@ isort = ">=4.3.21,<6.0"
 PySnooper = ">=0.4.1,<2.0.0"
 toml = ">=0.10.0,<1.0.0"
 genson = ">=1.2.1,<2.0"
-httpx = { version = "*", optional = true }
+# http.py uses httpcore.SyncBackend / NetworkBackend; httpx 0.25.2+ requires httpcore 1.x
+httpx = { version = ">=0.25.2", optional = true }
+httpcore = { version = ">=1.0.0", optional = true }
 typed-ast = [{version = ">=1.5.0", python = ">=3.9.8"}, {version = ">=1.4.2", python = "<3.9.8"}, ]
 packaging = "*"
 
@@ -68,11 +67,12 @@ types-Jinja2 = "*"
 types-PyYAML = "*"
 types-toml = "*"
 pydantic =  [{version = ">=1.8.2,<2.0", python = "<3.10"}, {version = ">=1.9.0,<2.0", python = ">=3.10"}, ]
-httpx = "*"
+httpx = ">=0.25.2"
+httpcore = ">=1.0.0"
 
 
 [tool.poetry.extras]
-http = ["httpx"]
+http = ["httpx", "httpcore"]
 
 [tool.black]
 line-length = 88

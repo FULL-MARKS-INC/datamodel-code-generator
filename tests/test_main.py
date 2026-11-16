@@ -20,6 +20,8 @@ try:
 except ImportError:
     from _pytest.tmpdir import TempdirFactory
 
+pytestmark = pytest.mark.usefixtures('legacy_httpx_get_body')
+
 DATA_PATH: Path = Path(__file__).parent / 'data'
 OPEN_API_DATA_PATH: Path = DATA_PATH / 'openapi'
 JSON_SCHEMA_DATA_PATH: Path = DATA_PATH / 'jsonschema'
@@ -3785,7 +3787,7 @@ def test_version(capsys):
         main(['--version'])
     assert e.value.code == Exit.OK
     captured = capsys.readouterr()
-    assert captured.out == '0.0.0\n'
+    assert captured.out == '0.16.1+fms.1\n'
     assert captured.err == ''
 
 

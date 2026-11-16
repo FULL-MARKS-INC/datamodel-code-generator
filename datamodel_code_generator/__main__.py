@@ -96,6 +96,29 @@ arg_parser.add_argument(
 )
 
 arg_parser.add_argument(
+    '--allow-remote-refs',
+    help='Allow fetching remote $ref targets and local $ref files outside the input directory',
+    dest='allow_remote_refs',
+    action='store_true',
+    default=None,
+)
+
+arg_parser.add_argument(
+    '--no-allow-remote-refs',
+    help='Block remote $ref targets and local $ref files outside the input directory',
+    dest='allow_remote_refs',
+    action='store_false',
+    default=None,
+)
+
+arg_parser.add_argument(
+    '--allow-private-network',
+    help='Allow fetching from localhost, private, link-local and other non-public network addresses',
+    action='store_true',
+    default=None,
+)
+
+arg_parser.add_argument(
     '--input-file-type',
     help='Input file type (default: auto)',
     choices=[i.value for i in InputFileType],
@@ -535,6 +558,8 @@ class Config(BaseModel):
     use_title_as_name: bool = False
     http_headers: Optional[Sequence[Tuple[str, str]]] = None
     http_ignore_tls: bool = False
+    allow_remote_refs: Optional[bool] = None
+    allow_private_network: bool = False
     use_annotated: bool = False
     use_non_positive_negative_number_constrained_types: bool = False
     original_field_name_delimiter: Optional[str] = None
@@ -696,6 +721,8 @@ def main(args: Optional[Sequence[str]] = None) -> Exit:
             special_field_name_prefix=config.special_field_name_prefix,
             remove_special_field_name_prefix=config.remove_special_field_name_prefix,
             capitalise_enum_members=config.capitalise_enum_members,
+            allow_remote_refs=config.allow_remote_refs,
+            allow_private_network=config.allow_private_network,
         )
         return Exit.OK
     except InvalidClassNameError as e:
