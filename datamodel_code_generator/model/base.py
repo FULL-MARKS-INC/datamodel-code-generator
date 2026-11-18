@@ -35,7 +35,7 @@ OPTIONAL: str = 'Optional'
 ALL_MODEL: str = '#all#'
 
 
-# Backported from 0.60.2 (脆弱性): keep extra_template_data comments
+# Backported from 0.60.2 (CVE-2026-54654): keep extra_template_data comments
 # inside the generated Python comment block.
 def comment_safe(value: Optional[str]) -> Optional[str]:
     if value is None:

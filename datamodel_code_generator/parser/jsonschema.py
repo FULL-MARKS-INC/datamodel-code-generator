@@ -276,7 +276,7 @@ def get_ref_type(ref: str) -> JSONReference:
     return JSONReference.REMOTE
 
 
-# Backported from 0.64.0 (脆弱性): customTypePath flows into generated
+# Backported from 0.64.0 (CVE-2026-55415): customTypePath flows into generated
 # import statements, so it must be a dotted Python identifier path.
 _MIN_DOTTED_PATH_PARTS = 2
 
@@ -1265,7 +1265,7 @@ class JsonSchemaParser(Parser):
 
     def _get_ref_body(self, resolved_ref: str) -> Dict[Any, Any]:
         if is_url(resolved_ref):
-            # Backported from 0.61.0 / 0.62.0 (脆弱性)
+            # Backported from 0.61.0 / 0.62.0 (CVE-2026-54690)
             if self.allow_remote_refs is False:
                 raise Error(
                     f'Fetching remote $ref is disabled: {resolved_ref}\n'
@@ -1287,7 +1287,7 @@ class JsonSchemaParser(Parser):
         return self._get_ref_body_from_remote(resolved_ref)
 
     def _resolve_local_ref_path(self, path: Path, ref: str) -> Path:
-        # Backported from 0.62.0 (脆弱性)
+        # Backported from 0.62.0 (CVE-2026-55389)
         base_path = self.base_path.resolve()
         resolved_path = path.resolve()
         if resolved_path.is_relative_to(base_path) or self.allow_remote_refs is True:

@@ -1,7 +1,7 @@
 """HTTP utilities for fetching remote schema files.
 
 Backported from datamodel-code-generator 0.64.0 for this fork of 0.16.1
-(脆弱性). `join_url` is kept from 0.16.1.
+(CVE-2026-54690, CVE-2026-54691, CVE-2026-55391, CVE-2026-55403). `join_url` is kept from 0.16.1.
 """
 
 from __future__ import annotations
@@ -709,4 +709,9 @@ def get_body(  # noqa: PLR0913
 
 
 def join_url(url: str, ref: str = '.') -> str:
-    return str(_get_httpx().URL(url).join(ref))
+    joined = str(_get_httpx().URL(url).join(ref))
+    # httpx 0.25+ drops an empty trailing fragment ('schema.json#' -> 'schema.json'),
+    # but the parser splits joined refs on '#', so keep it as 0.16.1 did with older httpx.
+    if ref.endswith('#') and not joined.endswith('#'):
+        joined += '#'
+    return joined

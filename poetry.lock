@@ -1239,4 +1239,4 @@ http = ["httpcore", "httpx"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<4.0"
-content-hash = "6bfe2c84f67977e3eb734ddf103e1b4a62effc2cf76b8e51904cd2c705b5c343"
+content-hash = "bb781d6fbe055d9cf82adbed6a5ed8bfa70c3beea2094c86c5df6682c0d65016"

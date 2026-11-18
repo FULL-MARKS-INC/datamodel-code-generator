@@ -20,6 +20,7 @@ import pytest
 import datamodel_code_generator.http as http_module
 from datamodel_code_generator import Error
 from datamodel_code_generator.parser.jsonschema import JsonSchemaParser
+from datamodel_code_generator.parser.openapi import OpenAPIParser
 
 SECRET = 'TOP-SECRET-VALUE'
 PUBLIC_IP = '93.184.216.34'
@@ -35,17 +36,23 @@ class _SchemaServer:
 
     def __init__(self) -> None:
         self.hits: List[str] = []
+        self.request_headers: List[Dict[str, str]] = []
         hits = self.hits
+        request_headers = self.request_headers
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self) -> None:
                 hits.append(self.path)
-                if self.path == '/redirect':
-                    port = self.server.server_address[1]
+                request_headers.append({k.lower(): v for k, v in self.headers.items()})
+                port = self.server.server_address[1]
+                redirects = {
+                    '/redirect': f'http://internal.example.test:{port}/secret.json',
+                    '/redirect-other-origin': f'http://other.example.test:{port}/secret.json',
+                    '/redirect-same-origin': '/secret.json',
+                }
+                if self.path in redirects:
                     self.send_response(302)
-                    self.send_header(
-                        'Location', f'http://internal.example.test:{port}/secret.json'
-                    )
+                    self.send_header('Location', redirects[self.path])
                     self.end_headers()
                     return
                 body = json.dumps(SECRET_SCHEMA).encode()
@@ -102,7 +109,7 @@ def _schema_with_ref(ref: str) -> Dict[str, Any]:
     return {'title': 'Root', 'type': 'object', 'properties': {'s': {'$ref': ref}}}
 
 
-# 脆弱性
+# CVE-2026-54654 / GHSA-wjv6-jcfj-mf9r
 @pytest.mark.parametrize('separator', ['\r', '\r\n', '\n', '\v', '\f'])
 def test_extra_template_data_comment_cannot_inject_code(
     tmp_path: Path, separator: str
@@ -132,7 +139,7 @@ def test_extra_template_data_comment_cannot_inject_code(
             assert line.lstrip().startswith('#')
 
 
-# 脆弱性
+# CVE-2026-55415 / GHSA-5578-w22f-pfx9
 @pytest.mark.parametrize(
     'custom_type_path',
     [
@@ -184,7 +191,7 @@ def test_custom_type_path_accepts_dotted_identifier_path(tmp_path: Path) -> None
     assert 'a: Optional[datetime]' in output
 
 
-# 脆弱性
+# CVE-2026-54691 / GHSA-rfr2-mq9m-x2qx
 @pytest.mark.parametrize(
     'url',
     [
@@ -234,7 +241,7 @@ def test_get_body_revalidates_redirect_target(
     assert server.hits == ['/redirect']
 
 
-# 脆弱性
+# CVE-2026-55391 / GHSA-vx7x-vcc2-c44g
 def test_get_body_pins_validated_address_against_dns_rebinding(
     server: _SchemaServer,
     fake_dns: Dict[str, List[str]],
@@ -261,7 +268,43 @@ def test_get_body_pins_validated_address_against_dns_rebinding(
     assert server.hits == []
 
 
-# 脆弱性
+# CVE-2026-55403
+@pytest.mark.parametrize(
+    'path, credentials_forwarded',
+    [('/redirect-other-origin', False), ('/redirect-same-origin', True)],
+)
+def test_get_body_drops_credentials_on_cross_origin_redirect(
+    server: _SchemaServer,
+    fake_dns: Dict[str, List[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    credentials_forwarded: bool,
+) -> None:
+    # 127.0.0.1 stands in for public addresses of two different hosts.
+    original_is_safe_ip = http_module._is_safe_ip
+    monkeypatch.setattr(
+        http_module,
+        '_is_safe_ip',
+        lambda ip: str(ip) == '127.0.0.1' or original_is_safe_ip(ip),
+    )
+    fake_dns['schema.example.test'] = ['127.0.0.1']
+    fake_dns['other.example.test'] = ['127.0.0.1']
+
+    body = http_module.get_body(
+        f'http://schema.example.test:{server.port}{path}',
+        headers=[('Authorization', 'Bearer secret-token'), ('Cookie', 'session=1')],
+    )
+
+    assert SECRET in body
+    assert server.hits == [path, '/secret.json']
+    first_hop, second_hop = server.request_headers
+    assert first_hop['authorization'] == 'Bearer secret-token'
+    assert first_hop['cookie'] == 'session=1'
+    assert ('authorization' in second_hop) is credentials_forwarded
+    assert ('cookie' in second_hop) is credentials_forwarded
+
+
+# CVE-2026-54690 / GHSA-954p-556p-r752
 def test_http_ref_to_private_network_is_not_fetched(
     tmp_path: Path, server: _SchemaServer
 ) -> None:
@@ -288,7 +331,7 @@ def test_http_ref_is_rejected_when_remote_refs_disabled(
     assert server.hits == []
 
 
-# 脆弱性
+# CVE-2026-55389 / GHSA-8359-h9fx-j6v9
 @pytest.fixture
 def outside_secret(tmp_path: Path) -> Path:
     return _write_schema(tmp_path / 'secret.json', SECRET_SCHEMA).resolve()
@@ -353,3 +396,68 @@ def test_file_uri_ref_does_not_read_outside_base_path(
     except (Error, OSError):
         return
     assert SECRET not in output
+
+
+def _openapi_with_ref(ref: str) -> Dict[str, Any]:
+    return {
+        'openapi': '3.0.0',
+        'info': {'title': 'Test', 'version': '1.0.0'},
+        'paths': {},
+        'components': {'schemas': {'Root': _schema_with_ref(ref)}},
+    }
+
+
+# CVE-2026-54690 / CVE-2026-55389 through OpenAPIParser
+def test_openapi_http_ref_to_private_network_is_not_fetched(
+    tmp_path: Path, server: _SchemaServer
+) -> None:
+    source = _write_schema(
+        tmp_path / 'openapi.json',
+        _openapi_with_ref(f'http://127.0.0.1:{server.port}/secret.json'),
+    )
+
+    with pytest.warns(FutureWarning), pytest.raises(Error):
+        OpenAPIParser(source=source).parse()
+    assert server.hits == []
+
+
+def test_openapi_http_ref_is_rejected_when_remote_refs_disabled(
+    tmp_path: Path, server: _SchemaServer
+) -> None:
+    source = _write_schema(
+        tmp_path / 'openapi.json',
+        _openapi_with_ref(f'http://127.0.0.1:{server.port}/secret.json'),
+    )
+
+    with pytest.raises(Error, match='remote \\$ref is disabled'):
+        OpenAPIParser(source=source, allow_remote_refs=False).parse()
+    assert server.hits == []
+
+
+def test_openapi_ref_outside_base_path_is_blocked_when_remote_refs_disabled(
+    tmp_path: Path, outside_secret: Path
+) -> None:
+    source = _write_schema(
+        tmp_path / 'base' / 'openapi.json', _openapi_with_ref('../secret.json')
+    )
+
+    with pytest.raises(Error, match='outside the input base path'):
+        OpenAPIParser(source=source, allow_remote_refs=False).parse()
+
+
+# httpx 0.25+ drops an empty trailing fragment, which the parser relies on.
+@pytest.mark.parametrize(
+    'ref, expected',
+    [
+        ('pet.json#', 'https://example.com/schemas/pet.json#'),
+        (
+            'pet.json#/definitions/Pet',
+            'https://example.com/schemas/pet.json#/definitions/Pet',
+        ),
+        ('pet.json', 'https://example.com/schemas/pet.json'),
+    ],
+)
+def test_join_url_keeps_trailing_fragment(ref: str, expected: str) -> None:
+    assert (
+        http_module.join_url('https://example.com/schemas/root.json', ref) == expected
+    )
