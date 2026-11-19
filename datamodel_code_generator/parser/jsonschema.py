@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum as _enum
+import keyword
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import lru_cache
@@ -29,6 +30,7 @@ from warnings import warn
 from pydantic import BaseModel, Field, root_validator, validator
 
 from datamodel_code_generator import (
+    Error,
     InvalidClassNameError,
     cached_property,
     load_yaml,
@@ -274,6 +276,25 @@ def get_ref_type(ref: str) -> JSONReference:
     return JSONReference.REMOTE
 
 
+# Backported from 0.64.0 (CVE-2026-55415): customTypePath flows into generated
+# import statements, so it must be a dotted Python identifier path.
+_MIN_DOTTED_PATH_PARTS = 2
+
+
+def _is_python_identifier(value: str) -> bool:
+    return value.isidentifier() and not keyword.iskeyword(value)
+
+
+def _validate_schema_python_import_path(value: Any, field_name: str) -> str:
+    if isinstance(value, str):
+        parts = value.split('.')
+        if len(parts) >= _MIN_DOTTED_PATH_PARTS and all(
+            _is_python_identifier(part) for part in parts
+        ):
+            return value
+    raise Error(f'{field_name} must be a dotted Python identifier path: {value!r}')
+
+
 def _get_type(type_: str, format__: Optional[str] = None) -> Types:
     if type_ not in json_schema_data_formats:
         return Types.any
@@ -369,6 +390,8 @@ class JsonSchemaParser(Parser):
         special_field_name_prefix: Optional[str] = None,
         remove_special_field_name_prefix: bool = False,
         capitalise_enum_members: bool = False,
+        allow_remote_refs: Optional[bool] = None,
+        allow_private_network: bool = False,
     ):
         super().__init__(
             source=source,
@@ -425,6 +448,8 @@ class JsonSchemaParser(Parser):
             special_field_name_prefix=special_field_name_prefix,
             remove_special_field_name_prefix=remove_special_field_name_prefix,
             capitalise_enum_members=capitalise_enum_members,
+            allow_remote_refs=allow_remote_refs,
+            allow_private_network=allow_private_network,
         )
 
         self.remote_object_cache: DefaultPutDict[str, Dict[str, Any]] = DefaultPutDict()
@@ -829,7 +854,10 @@ class JsonSchemaParser(Parser):
             return self.get_ref_data_type(item.ref)
         elif item.custom_type_path:
             return self.data_type_manager.get_data_type_from_full_path(
-                item.custom_type_path, is_custom_type=True
+                _validate_schema_python_import_path(
+                    item.custom_type_path, 'customTypePath'
+                ),
+                is_custom_type=True,
             )
         elif item.is_array:
             return self.parse_array_fields(
@@ -1042,7 +1070,10 @@ class JsonSchemaParser(Parser):
             data_type: DataType = self.get_ref_data_type(obj.ref)
         elif obj.custom_type_path:
             data_type = self.data_type_manager.get_data_type_from_full_path(
-                obj.custom_type_path, is_custom_type=True
+                _validate_schema_python_import_path(
+                    obj.custom_type_path, 'customTypePath'
+                ),
+                is_custom_type=True,
             )
         elif obj.anyOf or obj.oneOf:
             object_path = [*path, name]
@@ -1234,8 +1265,54 @@ class JsonSchemaParser(Parser):
 
     def _get_ref_body(self, resolved_ref: str) -> Dict[Any, Any]:
         if is_url(resolved_ref):
+            # Backported from 0.61.0 / 0.62.0 (CVE-2026-54690)
+            if self.allow_remote_refs is False:
+                raise Error(
+                    f'Fetching remote $ref is disabled: {resolved_ref}\n'
+                    'Reason: --no-allow-remote-refs was set, so external $ref targets are not fetched.\n'
+                    'If this schema and all of its remote references are trusted, pass --allow-remote-refs. '
+                    'If a trusted remote reference points to an internal schema registry, also pass '
+                    '--allow-private-network.'
+                )
+            if self.allow_remote_refs is None:
+                warn(
+                    'Remote $ref fetching without --allow-remote-refs is deprecated. '
+                    f'Reference: {resolved_ref}. Pass --allow-remote-refs for trusted remote schemas, '
+                    'or --no-allow-remote-refs to block HTTP(S) $ref fetching. Internal network targets '
+                    'also require --allow-private-network.',
+                    FutureWarning,
+                    stacklevel=2,
+                )
             return self._get_ref_body_from_url(resolved_ref)
         return self._get_ref_body_from_remote(resolved_ref)
+
+    def _resolve_local_ref_path(self, path: Path, ref: str) -> Path:
+        # Backported from 0.62.0 (CVE-2026-55389)
+        base_path = self.base_path.resolve()
+        resolved_path = path.resolve()
+        if resolved_path.is_relative_to(base_path) or self.allow_remote_refs is True:
+            return resolved_path
+
+        if self.allow_remote_refs is None:
+            warn(
+                'Remote $ref fetching without --allow-remote-refs is deprecated. '
+                f'Reference: {ref}. Reason: the resolved file is outside the input base path. '
+                f'Base path: {base_path}. Resolved path: {resolved_path}. '
+                'Move trusted referenced schemas under the input directory, pass --allow-remote-refs to allow '
+                'this external local file reference without a warning, or pass --no-allow-remote-refs to block it.',
+                FutureWarning,
+                stacklevel=3,
+            )
+            return resolved_path
+
+        raise Error(
+            f'Blocked unsafe local $ref: {ref}\n'
+            'Reason: --no-allow-remote-refs was set and the resolved file is outside the input base path.\n'
+            f'Base path: {base_path}\n'
+            f'Resolved path: {resolved_path}\n'
+            'Move trusted referenced schemas under the input directory, or pass --allow-remote-refs only when the '
+            'schema and referenced files are trusted.'
+        )
 
     def _get_ref_body_from_url(self, ref: str) -> Dict[Any, Any]:
         # URL Reference – $ref: 'http://path/to/your/resource' Uses the whole document located on the different server.
@@ -1246,7 +1323,9 @@ class JsonSchemaParser(Parser):
     def _get_ref_body_from_remote(self, resolved_ref: str) -> Dict[Any, Any]:
         # Remote Reference – $ref: 'document.json' Uses the whole document located on the same server and in
         # the same location. TODO treat edge case
-        full_path = self.base_path / resolved_ref
+        full_path = self._resolve_local_ref_path(
+            self.base_path / resolved_ref, resolved_ref
+        )
 
         return self.remote_object_cache.get_or_put(
             str(full_path),

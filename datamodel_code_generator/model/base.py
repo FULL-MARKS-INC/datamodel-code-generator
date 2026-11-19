@@ -35,6 +35,31 @@ OPTIONAL: str = 'Optional'
 ALL_MODEL: str = '#all#'
 
 
+# Backported from 0.60.2 (CVE-2026-54654): keep extra_template_data comments
+# inside the generated Python comment block.
+def comment_safe(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    # Collapse CRLF before converting lone CR.
+    return value.replace('\r\n', '\n').replace('\r', '\n')
+
+
+def inline_comment_safe(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    safe_value = comment_safe(value) or ''
+    return (
+        safe_value.replace('\v', '\n').replace('\f', '\n').replace('\n', '\n# ')
+    )
+
+
+def _safe_extra_template_data(extra_template_data: Dict[str, Any]) -> Dict[str, Any]:
+    comment = extra_template_data.get('comment')
+    if not isinstance(comment, str):
+        return extra_template_data
+    return {**extra_template_data, 'comment': inline_comment_safe(comment)}
+
+
 class ConstraintsBase(_BaseModel):
     _exclude_fields: ClassVar[Set[str]] = {'has_constraints'}
 
@@ -364,6 +389,10 @@ class DataModel(TemplateBase, Nullable, ABC):
         return self.reference.path
 
     def render(self) -> str:
+        if self.template_file_path.is_absolute():
+            extra_template_data = self.extra_template_data
+        else:
+            extra_template_data = _safe_extra_template_data(self.extra_template_data)
         response = self._render(
             class_name=self.class_name,
             fields=self.fields,
@@ -371,6 +400,6 @@ class DataModel(TemplateBase, Nullable, ABC):
             base_class=self.base_class,
             methods=self.methods,
             description=self.description,
-            **self.extra_template_data,
+            **extra_template_data,
         )
         return response
